@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 小屏播放页：对照哔哩终端（顶栏标题 / 底栏进度+大控件 / 点按显隐 / 清晰度·选集浮层） -->
+<!-- 手表播放页：少遮挡、大触控、进度/选集/清晰度可点，控件可自动收起 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/playerRoot"
     android:layout_width="match_parent"
@@ -13,7 +13,6 @@
         android:layout_height="match_parent"
         android:keepScreenOn="true" />
 
-    <!-- 在控件层之下接收点按/轻扫，避免抢走底栏按钮事件 -->
     <View
         android:id="@+id/gestureLayer"
         android:layout_width="match_parent"
@@ -21,6 +20,17 @@
         android:background="@android:color/transparent"
         android:clickable="true"
         android:focusable="true" />
+
+    <!-- 控件收起时保留细进度，几乎不挡画面 -->
+    <ProgressBar
+        android:id="@+id/miniProgress"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/watch_mini_progress_h"
+        android:layout_gravity="bottom"
+        android:max="1000"
+        android:progressDrawable="@drawable/mini_progress"
+        android:visibility="gone" />
 
     <LinearLayout
         android:id="@+id/loadingBox"
@@ -32,14 +42,14 @@
         android:visibility="gone">
 
         <ProgressBar
-            android:layout_width="32dp"
-            android:layout_height="32dp" />
+            android:layout_width="28dp"
+            android:layout_height="28dp" />
 
         <TextView
             android:id="@+id/loadingText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="4dp"
             android:shadowColor="#FF000000"
             android:shadowDx="1"
             android:shadowDy="1"
@@ -58,10 +68,10 @@
         android:paddingHorizontal="12dp"
         android:paddingVertical="8dp"
         android:textColor="@color/text_primary"
-        android:textSize="14sp"
+        android:textSize="15sp"
+        android:textStyle="bold"
         android:visibility="gone" />
 
-    <!-- 控件层：点按显隐，底栏尽量薄，少挡画面 -->
     <LinearLayout
         android:id="@+id/controlsOverlay"
         android:layout_width="match_parent"
@@ -72,28 +82,30 @@
             android:id="@+id/topBar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@drawable/bg_control_bar"
+            android:background="@drawable/bg_control_bar_top"
             android:gravity="center_vertical"
-            android:minHeight="36dp"
+            android:minHeight="@dimen/watch_top_h"
             android:orientation="horizontal"
-            android:paddingHorizontal="4dp"
-            android:paddingVertical="2dp">
+            android:paddingHorizontal="2dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="8dp">
 
             <TextView
                 android:id="@+id/backButton"
-                android:layout_width="40dp"
-                android:layout_height="36dp"
+                android:layout_width="44dp"
+                android:layout_height="40dp"
                 android:background="@drawable/bg_control_button"
                 android:gravity="center"
                 android:text="@string/back"
                 android:textColor="@color/text_primary"
-                android:textSize="16sp" />
+                android:textSize="18sp" />
 
             <TextView
                 android:id="@+id/playerTitle"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="6dp"
+                android:layout_marginEnd="4dp"
                 android:layout_weight="1"
                 android:ellipsize="marquee"
                 android:focusable="true"
@@ -101,20 +113,8 @@
                 android:marqueeRepeatLimit="marquee_forever"
                 android:singleLine="true"
                 android:textColor="@color/text_primary"
-                android:textSize="@dimen/watch_body" />
-
-            <TextView
-                android:id="@+id/qualityBadge"
-                android:layout_width="wrap_content"
-                android:layout_height="28dp"
-                android:layout_marginStart="4dp"
-                android:background="@drawable/bg_quality_chip"
-                android:gravity="center"
-                android:minWidth="44dp"
-                android:paddingHorizontal="8dp"
-                android:text="480p"
-                android:textColor="@color/text_primary"
-                android:textSize="@dimen/watch_meta" />
+                android:textSize="@dimen/watch_body"
+                android:textStyle="bold" />
         </LinearLayout>
 
         <View
@@ -130,10 +130,10 @@
             android:id="@+id/bottomBar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@drawable/bg_control_bar"
+            android:background="@drawable/bg_control_bar_bottom"
             android:orientation="vertical"
-            android:paddingBottom="4dp"
-            android:paddingTop="2dp">
+            android:paddingTop="10dp"
+            android:paddingBottom="4dp">
 
             <TextView
                 android:id="@+id/playerNotice"
@@ -150,13 +150,13 @@
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="8dp">
+                android:paddingHorizontal="4dp">
 
                 <TextView
                     android:id="@+id/timeCurrent"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:minWidth="36dp"
+                    android:minWidth="34dp"
                     android:text="0:00"
                     android:textColor="@color/text_primary"
                     android:textSize="@dimen/watch_meta" />
@@ -167,30 +167,32 @@
                     android:layout_height="@dimen/watch_seek_h"
                     android:layout_weight="1"
                     android:max="1000"
-                    android:paddingStart="8dp"
-                    android:paddingEnd="8dp"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="6dp"
                     android:progressDrawable="@drawable/seek_progress"
+                    android:splitTrack="false"
                     android:thumb="@drawable/seek_thumb"
-                    android:thumbOffset="8dp" />
+                    android:thumbOffset="9dp" />
 
                 <TextView
                     android:id="@+id/timeTotal"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:gravity="end"
-                    android:minWidth="36dp"
+                    android:minWidth="34dp"
                     android:text="0:00"
                     android:textColor="@color/text_secondary"
                     android:textSize="@dimen/watch_meta" />
             </LinearLayout>
 
+            <!-- 主操作：上集 / 播放 / 下集；次操作：清晰度 · 选集 -->
             <LinearLayout
                 android:id="@+id/bottomButtons"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center"
+                android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="4dp"
+                android:paddingHorizontal="2dp"
                 android:paddingTop="2dp">
 
                 <TextView
@@ -198,12 +200,12 @@
                     android:layout_width="0dp"
                     android:layout_height="@dimen/watch_control_h"
                     android:layout_marginHorizontal="2dp"
-                    android:layout_weight="1"
+                    android:layout_weight="0.9"
                     android:background="@drawable/bg_control_button"
                     android:gravity="center"
-                    android:text="@string/quality"
+                    android:text="480p"
                     android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_body" />
+                    android:textSize="@dimen/watch_meta" />
 
                 <TextView
                     android:id="@+id/prevButton"
@@ -220,14 +222,14 @@
                 <TextView
                     android:id="@+id/playPauseButton"
                     android:layout_width="0dp"
-                    android:layout_height="@dimen/watch_control_h"
+                    android:layout_height="@dimen/watch_play_h"
                     android:layout_marginHorizontal="2dp"
-                    android:layout_weight="1.2"
-                    android:background="@drawable/bg_control_button"
+                    android:layout_weight="1.35"
+                    android:background="@drawable/bg_quality_chip"
                     android:gravity="center"
                     android:text="@string/pause"
                     android:textColor="@color/text_primary"
-                    android:textSize="14sp"
+                    android:textSize="15sp"
                     android:textStyle="bold" />
 
                 <TextView
@@ -247,19 +249,19 @@
                     android:layout_width="0dp"
                     android:layout_height="@dimen/watch_control_h"
                     android:layout_marginHorizontal="2dp"
-                    android:layout_weight="1"
+                    android:layout_weight="0.9"
                     android:background="@drawable/bg_control_button"
                     android:gravity="center"
                     android:text="@string/episodes"
                     android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_body" />
+                    android:textSize="@dimen/watch_meta" />
             </LinearLayout>
 
             <TextView
                 android:id="@+id/retryButton"
                 android:layout_width="match_parent"
-                android:layout_height="36dp"
-                android:layout_marginHorizontal="6dp"
+                android:layout_height="40dp"
+                android:layout_marginHorizontal="4dp"
                 android:layout_marginTop="4dp"
                 android:background="@drawable/bg_quality_chip"
                 android:gravity="center"
@@ -270,12 +272,11 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- 清晰度 / 选集浮层（对齐哔哩终端 bottom card） -->
     <FrameLayout
         android:id="@+id/sheetScrim"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#70000000"
+        android:background="#99000000"
         android:clickable="true"
         android:focusable="true"
         android:visibility="gone">
@@ -284,17 +285,17 @@
             android:id="@+id/qualitySheet"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:layout_marginHorizontal="6dp"
-            android:layout_marginBottom="52dp"
+            android:layout_gravity="center"
+            android:layout_marginHorizontal="10dp"
             android:background="@drawable/bg_panel"
             android:orientation="vertical"
-            android:padding="8dp"
+            android:padding="10dp"
             android:visibility="gone">
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:gravity="center"
                 android:text="@string/quality_sheet_title"
                 android:textColor="@color/text_primary"
                 android:textSize="@dimen/watch_body" />
@@ -302,44 +303,47 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="10dp"
                 android:orientation="horizontal">
 
                 <TextView
                     android:id="@+id/quality480"
                     android:layout_width="0dp"
-                    android:layout_height="40dp"
+                    android:layout_height="48dp"
                     android:layout_marginEnd="4dp"
                     android:layout_weight="1"
                     android:background="@drawable/bg_quality_chip"
                     android:gravity="center"
                     android:text="480p"
                     android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_body" />
+                    android:textSize="@dimen/watch_body"
+                    android:textStyle="bold" />
 
                 <TextView
                     android:id="@+id/quality720"
                     android:layout_width="0dp"
-                    android:layout_height="40dp"
+                    android:layout_height="48dp"
                     android:layout_marginHorizontal="2dp"
                     android:layout_weight="1"
                     android:background="@drawable/bg_quality_chip"
                     android:gravity="center"
                     android:text="720p"
                     android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_body" />
+                    android:textSize="@dimen/watch_body"
+                    android:textStyle="bold" />
 
                 <TextView
                     android:id="@+id/quality1080"
                     android:layout_width="0dp"
-                    android:layout_height="40dp"
+                    android:layout_height="48dp"
                     android:layout_marginStart="4dp"
                     android:layout_weight="1"
                     android:background="@drawable/bg_quality_chip"
                     android:gravity="center"
                     android:text="1080p"
                     android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_body" />
+                    android:textSize="@dimen/watch_body"
+                    android:textStyle="bold" />
             </LinearLayout>
         </LinearLayout>
 
@@ -349,7 +353,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="bottom"
             android:layout_marginHorizontal="6dp"
-            android:layout_marginBottom="52dp"
+            android:layout_marginBottom="8dp"
             android:background="@drawable/bg_panel"
             android:orientation="vertical"
             android:padding="8dp"
@@ -361,14 +365,17 @@
                 android:layout_height="wrap_content"
                 android:text="@string/episodes"
                 android:textColor="@color/text_primary"
-                android:textSize="@dimen/watch_body" />
+                android:textSize="@dimen/watch_body"
+                android:textStyle="bold" />
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/episodePicker"
                 android:layout_width="match_parent"
-                android:layout_height="160dp"
+                android:layout_height="148dp"
                 android:layout_marginTop="6dp"
-                android:overScrollMode="never" />
+                android:clipToPadding="false"
+                android:overScrollMode="never"
+                android:paddingBottom="2dp" />
         </LinearLayout>
     </FrameLayout>
 </FrameLayout>

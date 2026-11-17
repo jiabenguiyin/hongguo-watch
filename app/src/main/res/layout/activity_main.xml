@@ -7,15 +7,25 @@
     android:paddingHorizontal="@dimen/watch_pad"
     android:paddingTop="@dimen/watch_pad_tight">
 
-    <TextView
-        android:id="@+id/brandTitle"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingBottom="2dp"
-        android:text="@string/app_name"
-        android:textColor="@color/accent"
-        android:textSize="@dimen/watch_title"
-        android:textStyle="bold" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingBottom="2dp">
+
+        <TextView
+            android:id="@+id/brandTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/app_name"
+            android:textColor="@color/accent"
+            android:textSize="@dimen/watch_title"
+            android:textStyle="bold" />
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -25,7 +35,7 @@
         <EditText
             android:id="@+id/searchInput"
             android:layout_width="0dp"
-            android:layout_height="36dp"
+            android:layout_height="40dp"
             android:layout_weight="1"
             android:background="@color/bg_elevated"
             android:hint="@string/search_hint"
@@ -39,7 +49,7 @@
         <Button
             android:id="@+id/searchButton"
             android:layout_width="wrap_content"
-            android:layout_height="36dp"
+            android:layout_height="40dp"
             android:layout_marginStart="4dp"
             android:backgroundTint="@color/accent"
             android:minWidth="52dp"

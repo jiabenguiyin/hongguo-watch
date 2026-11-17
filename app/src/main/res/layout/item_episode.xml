@@ -6,6 +6,7 @@
     android:layout_margin="2dp"
     android:background="@drawable/bg_quality_chip"
     android:gravity="center"
-    android:minWidth="36dp"
+    android:minWidth="40dp"
     android:textColor="@color/text_primary"
-    android:textSize="@dimen/watch_body" />
+    android:textSize="@dimen/watch_body"
+    android:textStyle="bold" />

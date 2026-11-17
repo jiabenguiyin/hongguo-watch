@@ -5,9 +5,9 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
-import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.annotation.OptIn
@@ -43,15 +43,13 @@ import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
-/**
- * 手表小屏播放页：布局/控件密度对照哔哩终端（顶栏、进度条、清晰度/选集浮层、点按显隐），
- * 片源仍走本仓 Media3 + App 族逻辑，不引入 B 站协议。
- */
+/** 手表全屏播放：少遮挡、大触控、进度可拖、选集/清晰度浮层、点按显隐与横向滑动快进。 */
 class PlayerActivity : AppCompatActivity() {
     private lateinit var binding: ActivityPlayerBinding
     private var player: ExoPlayer? = null
     private var progressJob: Job? = null
     private var hideControlsJob: Job? = null
+    private var hintJob: Job? = null
     private var remoteVideo: RemoteVideo? = null
     private var userSeeking = false
     private var controlsVisible = true
@@ -70,11 +68,19 @@ class PlayerActivity : AppCompatActivity() {
     private var currentQuality = 480
 
     private lateinit var episodeAdapter: EpisodeAdapter
+    private var touchSlop = 0
+    private var downX = 0f
+    private var downY = 0f
+    private var scrubbing = false
+    private var scrubStartPos = 0L
+    private var gestureConsumedClick = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WatchUi.applyImmersive(this)
         binding = ActivityPlayerBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        WatchUi.applySafePadding(binding.playerRoot)
 
         seriesId = intent.getStringExtra(EXTRA_SERIES_ID).orEmpty()
         seriesTitle = intent.getStringExtra(EXTRA_SERIES_TITLE).orEmpty()
@@ -90,6 +96,7 @@ class PlayerActivity : AppCompatActivity() {
         val initialEpisodeId = intent.getStringExtra(EXTRA_EPISODE_ID)
         val initialNumber = intent.getIntExtra(EXTRA_EPISODE_NUMBER, 1)
 
+        touchSlop = ViewConfiguration.get(this).scaledTouchSlop
         binding.playerView.useController = false
         bindControls()
         bindSheets()
@@ -119,6 +126,11 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) WatchUi.applyImmersive(this)
+    }
+
     private fun bindControls() {
         binding.backButton.setOnClickListener { finish() }
         binding.prevButton.setOnClickListener {
@@ -137,8 +149,11 @@ class PlayerActivity : AppCompatActivity() {
         }
         binding.retryButton.setOnClickListener { loadCurrent() }
         binding.qualityButton.setOnClickListener { openQualitySheet() }
-        binding.qualityBadge.setOnClickListener { openQualitySheet() }
         binding.episodesButton.setOnClickListener { openEpisodesSheet() }
+        binding.controlsMidTap.setOnClickListener {
+            if (!gestureConsumedClick) toggleControls()
+            gestureConsumedClick = false
+        }
 
         binding.seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -157,9 +172,7 @@ class PlayerActivity : AppCompatActivity() {
                 val bar = seekBar
                 if (p != null && bar != null) {
                     val duration = p.duration.takeIf { it > 0 } ?: 0L
-                    if (duration > 0) {
-                        p.seekTo(duration * bar.progress / 1000)
-                    }
+                    if (duration > 0) p.seekTo(duration * bar.progress / 1000)
                 }
                 userSeeking = false
                 scheduleHideControls()
@@ -173,7 +186,7 @@ class PlayerActivity : AppCompatActivity() {
             if (index >= 0) switchEpisode(index)
             closeSheets()
         }
-        binding.episodePicker.layoutManager = GridLayoutManager(this, 5)
+        binding.episodePicker.layoutManager = GridLayoutManager(this, WatchUi.episodeColumns(this))
         binding.episodePicker.adapter = episodeAdapter
 
         binding.sheetScrim.setOnClickListener { closeSheets() }
@@ -184,51 +197,70 @@ class PlayerActivity : AppCompatActivity() {
 
     @SuppressLint("ClickableViewAccessibility")
     private fun bindGestures() {
-        val detector = GestureDetector(
-            this,
-            object : GestureDetector.SimpleOnGestureListener() {
-                override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+        val listener = View.OnTouchListener { _, event -> handleGesture(event) }
+        binding.gestureLayer.setOnTouchListener(listener)
+        binding.controlsMidTap.setOnTouchListener(listener)
+    }
+
+    private fun handleGesture(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downX = event.x
+                downY = event.y
+                scrubbing = false
+                gestureConsumedClick = false
+                scrubStartPos = player?.currentPosition ?: 0L
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val dx = event.x - downX
+                val dy = event.y - downY
+                if (!scrubbing && abs(dx) > touchSlop * 1.5f && abs(dx) > abs(dy) * 1.2f) {
+                    scrubbing = true
+                    gestureConsumedClick = true
+                    hideControlsJob?.cancel()
+                    showControls(autoHide = false)
+                }
+                if (scrubbing) {
+                    val duration = player?.duration?.takeIf { it > 0 } ?: return true
+                    val width = binding.playerRoot.width.coerceAtLeast(1)
+                    // 全屏横向拖：约拖满宽对应整集时长的 1/2，易微调
+                    val delta = ((dx / width) * duration * 0.5f).toLong()
+                    val target = (scrubStartPos + delta).coerceIn(0L, duration)
+                    binding.seekBar.progress = ((target * 1000) / duration).toInt().coerceIn(0, 1000)
+                    binding.timeCurrent.text = formatTime(target)
+                    val sign = if (delta >= 0) "+" else "−"
+                    showGestureHint("$sign${formatTime(abs(delta))}  ${formatTime(target)}")
+                    return true
+                }
+                return true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (scrubbing) {
+                    val duration = player?.duration?.takeIf { it > 0 }
+                    if (duration != null) {
+                        val target = duration * binding.seekBar.progress / 1000
+                        player?.seekTo(target)
+                    }
+                    scrubbing = false
+                    scheduleHideControls()
+                    return true
+                }
+                val dx = abs(event.x - downX)
+                val dy = abs(event.y - downY)
+                if (dx < touchSlop && dy < touchSlop) {
                     if (binding.sheetScrim.visibility == View.VISIBLE) {
                         closeSheets()
-                        return true
+                    } else {
+                        // 双击区域判断：短按切换显隐；点中间也可由 controlsMidTap 处理
+                        toggleControls()
                     }
-                    toggleControls()
-                    return true
+                    gestureConsumedClick = true
                 }
-
-                override fun onDoubleTap(e: MotionEvent): Boolean {
-                    val p = player ?: return false
-                    if (p.isPlaying) p.pause() else p.play()
-                    updatePlayPause()
-                    showControls(autoHide = true)
-                    return true
-                }
-
-                override fun onFling(
-                    e1: MotionEvent?,
-                    e2: MotionEvent,
-                    velocityX: Float,
-                    velocityY: Float,
-                ): Boolean {
-                    if (e1 == null) return false
-                    val dx = e2.x - e1.x
-                    val dy = e2.y - e1.y
-                    if (abs(dx) < abs(dy) || abs(dx) < 80f) return false
-                    val p = player ?: return false
-                    val delta = if (dx > 0) 10_000L else -10_000L
-                    val target = (p.currentPosition + delta).coerceAtLeast(0L)
-                    p.seekTo(target)
-                    showGestureHint(if (dx > 0) "+10s" else "−10s")
-                    showControls(autoHide = true)
-                    return true
-                }
-            },
-        )
-        binding.gestureLayer.setOnTouchListener { _, event ->
-            detector.onTouchEvent(event)
-            true
+                return true
+            }
         }
-        binding.controlsMidTap.setOnClickListener { toggleControls() }
+        return false
     }
 
     private fun toggleControls() {
@@ -238,6 +270,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun showControls(autoHide: Boolean) {
         controlsVisible = true
         binding.controlsOverlay.visibility = View.VISIBLE
+        binding.miniProgress.visibility = View.GONE
         if (autoHide) scheduleHideControls() else hideControlsJob?.cancel()
     }
 
@@ -245,14 +278,16 @@ class PlayerActivity : AppCompatActivity() {
         if (binding.sheetScrim.visibility == View.VISIBLE) return
         controlsVisible = false
         binding.controlsOverlay.visibility = View.GONE
+        binding.miniProgress.visibility = View.VISIBLE
         hideControlsJob?.cancel()
+        updateSeekUi()
     }
 
     private fun scheduleHideControls() {
         hideControlsJob?.cancel()
         hideControlsJob = lifecycleScope.launch {
-            delay(3_500)
-            if (!userSeeking && player?.isPlaying == true) {
+            delay(3_200)
+            if (!userSeeking && !scrubbing && player?.isPlaying == true) {
                 hideControls()
             }
         }
@@ -274,6 +309,9 @@ class PlayerActivity : AppCompatActivity() {
         binding.qualitySheet.visibility = View.GONE
         hideControlsJob?.cancel()
         showControls(autoHide = false)
+        binding.episodePicker.post {
+            binding.episodePicker.scrollToPosition(episodeIndex.coerceAtLeast(0))
+        }
     }
 
     private fun closeSheets() {
@@ -295,8 +333,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun refreshQualityUi() {
-        binding.qualityBadge.text = "${currentQuality}p"
-        binding.qualityBadge.isSelected = true
+        binding.qualityButton.text = "${currentQuality}p"
         binding.quality480.isSelected = currentQuality == 480
         binding.quality720.isSelected = currentQuality == 720
         binding.quality1080.isSelected = currentQuality == 1080
@@ -314,10 +351,9 @@ class PlayerActivity : AppCompatActivity() {
                 cover = cover,
             )
         }
-        val selected = episodeIds.getOrNull(episodeIndex)
-        episodeAdapter.submit(episodes, selected)
+        episodeAdapter.submit(episodes, episodeIds.getOrNull(episodeIndex))
         binding.episodesSheetTitle.text =
-            getString(R.string.episodes) + " · ${episodeIndex + 1}/${episodeIds.size}"
+            getString(R.string.episodes) + "  ${episodeIndex + 1}/${episodeIds.size}"
     }
 
     private fun switchEpisode(index: Int) {
@@ -332,7 +368,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun loadCurrent() {
         val episodeId = episodeIds.getOrNull(episodeIndex) ?: return
         val episodeNumber = episodeNumbers.getOrNull(episodeIndex) ?: (episodeIndex + 1)
-        binding.playerTitle.text = "$seriesTitle · 第 ${episodeNumber} 集"
+        binding.playerTitle.text = "$seriesTitle · 第${episodeNumber}集"
         binding.playerTitle.isSelected = true
         binding.retryButton.visibility = View.GONE
         binding.loadingBox.visibility = View.VISIBLE
@@ -350,9 +386,6 @@ class PlayerActivity : AppCompatActivity() {
                 refreshQualityUi()
                 val stream = repo.stream(seriesId, episodeId)
                 binding.playerNotice.visibility = if (stream.isPreview) View.VISIBLE else View.GONE
-                if (stream.quality.isNotBlank()) {
-                    binding.qualityBadge.text = stream.quality.replace("P", "p", ignoreCase = true)
-                }
                 playStream(stream, startPositionMs)
             } catch (e: Exception) {
                 Toast.makeText(
@@ -408,14 +441,10 @@ class PlayerActivity : AppCompatActivity() {
                 updatePlayPause()
                 binding.loadingBox.visibility =
                     if (playbackState == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
-                if (playbackState == Player.STATE_READY) {
-                    scheduleHideControls()
-                }
+                if (playbackState == Player.STATE_READY) scheduleHideControls()
                 if (playbackState == Player.STATE_ENDED) {
                     showControls(autoHide = false)
-                    if (episodeIndex < episodeIds.lastIndex) {
-                        switchEpisode(episodeIndex + 1)
-                    }
+                    if (episodeIndex < episodeIds.lastIndex) switchEpisode(episodeIndex + 1)
                 }
             }
 
@@ -446,10 +475,11 @@ class PlayerActivity : AppCompatActivity() {
     private fun updatePlayPause() {
         val playing = player?.isPlaying == true
         binding.playPauseButton.text = getString(if (playing) R.string.pause else R.string.play)
+        binding.playPauseButton.isSelected = true
         binding.prevButton.isEnabled = episodeIndex > 0
         binding.nextButton.isEnabled = episodeIndex < episodeIds.lastIndex
-        binding.prevButton.alpha = if (binding.prevButton.isEnabled) 1f else 0.4f
-        binding.nextButton.alpha = if (binding.nextButton.isEnabled) 1f else 0.4f
+        binding.prevButton.alpha = if (binding.prevButton.isEnabled) 1f else 0.35f
+        binding.nextButton.alpha = if (binding.nextButton.isEnabled) 1f else 0.35f
     }
 
     private fun startProgressLoop() {
@@ -457,23 +487,26 @@ class PlayerActivity : AppCompatActivity() {
         progressJob = lifecycleScope.launch {
             while (isActive) {
                 updateSeekUi()
-                delay(500)
+                delay(400)
                 if (isActive) saveProgress()
-                delay(1_500)
+                delay(1_600)
             }
         }
     }
 
     private fun updateSeekUi() {
         val p = player ?: return
-        if (userSeeking) return
+        if (userSeeking || scrubbing) return
         val duration = p.duration.takeIf { it > 0 } ?: 0L
         val position = p.currentPosition.coerceAtLeast(0L)
         if (duration > 0) {
-            binding.seekBar.progress = ((position * 1000) / duration).toInt().coerceIn(0, 1000)
+            val progress = ((position * 1000) / duration).toInt().coerceIn(0, 1000)
+            binding.seekBar.progress = progress
+            binding.miniProgress.progress = progress
             val buffered = p.bufferedPosition.coerceAtLeast(0L)
-            binding.seekBar.secondaryProgress =
-                ((buffered * 1000) / duration).toInt().coerceIn(0, 1000)
+            val secondary = ((buffered * 1000) / duration).toInt().coerceIn(0, 1000)
+            binding.seekBar.secondaryProgress = secondary
+            binding.miniProgress.secondaryProgress = secondary
             binding.timeTotal.text = formatTime(duration)
         }
         binding.timeCurrent.text = formatTime(position)
@@ -489,9 +522,11 @@ class PlayerActivity : AppCompatActivity() {
     private fun showGestureHint(text: String) {
         binding.gestureHint.text = text
         binding.gestureHint.visibility = View.VISIBLE
-        binding.gestureHint.postDelayed({
+        hintJob?.cancel()
+        hintJob = lifecycleScope.launch {
+            delay(700)
             binding.gestureHint.visibility = View.GONE
-        }, 700)
+        }
     }
 
     private fun saveProgress() {
@@ -539,6 +574,7 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         hideControlsJob?.cancel()
+        hintJob?.cancel()
         releasePlayer()
         super.onDestroy()
     }

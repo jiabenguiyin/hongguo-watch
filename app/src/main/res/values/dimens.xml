@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 手表小屏：优先可点面积、少挡画面、圆角安全边距 -->
+    <dimen name="watch_pad">6dp</dimen>
+    <dimen name="watch_pad_tight">4dp</dimen>
+    <dimen name="watch_control_h">44dp</dimen>
+    <dimen name="watch_play_h">48dp</dimen>
+    <dimen name="watch_seek_h">28dp</dimen>
+    <dimen name="watch_top_h">36dp</dimen>
+    <dimen name="watch_title">15sp</dimen>
+    <dimen name="watch_body">13sp</dimen>
+    <dimen name="watch_meta">11sp</dimen>
+    <dimen name="watch_cover_w">42dp</dimen>
+    <dimen name="watch_cover_h">56dp</dimen>
+    <dimen name="watch_episode_h">40dp</dimen>
+    <dimen name="watch_tab_h">42dp</dimen>
+    <dimen name="watch_mini_progress_h">2dp</dimen>
+    <dimen name="watch_safe_inset_min">8dp</dimen>
+</resources>

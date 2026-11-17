@@ -9,7 +9,6 @@ class AppContainer(context: Context) {
     val settings = SettingsStore(appContext)
     val repository = ContentRepository(
         appSource = AppSourceClient(appContext),
-        official = OfficialWebClient(),
         historyDao = database.watchHistoryDao(),
         settings = settings,
     )

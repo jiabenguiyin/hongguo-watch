@@ -2,10 +2,11 @@
 <TextView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/episodeNumber"
     android:layout_width="match_parent"
-    android:layout_height="40dp"
-    android:layout_margin="3dp"
-    android:background="@color/episode_normal"
+    android:layout_height="@dimen/watch_episode_h"
+    android:layout_margin="2dp"
+    android:background="@drawable/bg_quality_chip"
     android:gravity="center"
     android:minWidth="40dp"
     android:textColor="@color/text_primary"
-    android:textSize="13sp" />
+    android:textSize="@dimen/watch_body"
+    android:textStyle="bold" />

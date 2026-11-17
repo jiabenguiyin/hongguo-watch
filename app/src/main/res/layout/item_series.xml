@@ -2,24 +2,25 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="?attr/selectableItemBackground"
+    android:background="@drawable/bg_row"
     android:gravity="center_vertical"
-    android:minHeight="64dp"
+    android:minHeight="60dp"
     android:orientation="horizontal"
-    android:paddingVertical="6dp">
+    android:paddingHorizontal="4dp"
+    android:paddingVertical="5dp">
 
     <ImageView
         android:id="@+id/cover"
-        android:layout_width="48dp"
-        android:layout_height="64dp"
-        android:background="@color/bg_elevated"
+        android:layout_width="@dimen/watch_cover_w"
+        android:layout_height="@dimen/watch_cover_h"
+        android:background="@drawable/bg_cover"
         android:contentDescription="@null"
         android:scaleType="centerCrop" />
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="10dp"
+        android:layout_marginStart="8dp"
         android:layout_weight="1"
         android:orientation="vertical">
 
@@ -30,7 +31,7 @@
             android:ellipsize="end"
             android:maxLines="2"
             android:textColor="@color/text_primary"
-            android:textSize="14sp"
+            android:textSize="@dimen/watch_body"
             android:textStyle="bold" />
 
         <TextView
@@ -41,6 +42,20 @@
             android:ellipsize="end"
             android:maxLines="1"
             android:textColor="@color/text_secondary"
-            android:textSize="11sp" />
+            android:textSize="@dimen/watch_meta" />
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/actionHint"
+        android:layout_width="wrap_content"
+        android:layout_height="28dp"
+        android:layout_marginStart="4dp"
+        android:background="@drawable/bg_control_button"
+        android:gravity="center"
+        android:minWidth="36dp"
+        android:paddingHorizontal="8dp"
+        android:text="@string/open_hint"
+        android:textColor="@color/text_secondary"
+        android:textSize="@dimen/watch_meta"
+        android:visibility="gone" />
 </LinearLayout>

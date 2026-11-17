@@ -15,7 +15,6 @@ class SettingsStore(private val context: Context) {
     private val wifiOnlyKey = booleanPreferencesKey("wifi_only")
     private val maxQualityKey = intPreferencesKey("max_quality")
     private val showDemoKey = booleanPreferencesKey("show_demo")
-    private val enableOfficialKey = booleanPreferencesKey("enable_official_deprecated")
 
     val wifiOnly: Flow<Boolean> = context.dataStore.data.map { it[wifiOnlyKey] ?: false }
     /** 默认 480；可选 720 / 1080（手动高清，低配表可能发热/卡顿）。 */
@@ -23,10 +22,6 @@ class SettingsStore(private val context: Context) {
         normalizeQuality(it[maxQualityKey] ?: 480)
     }
     val showDemo: Flow<Boolean> = context.dataStore.data.map { it[showDemoKey] ?: true }
-    /** 官网路径已弃用，默认关闭。 */
-    val enableOfficialDeprecated: Flow<Boolean> = context.dataStore.data.map {
-        it[enableOfficialKey] ?: false
-    }
 
     suspend fun setWifiOnly(enabled: Boolean) {
         context.dataStore.edit { it[wifiOnlyKey] = enabled }
@@ -40,14 +35,9 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[showDemoKey] = enabled }
     }
 
-    suspend fun setEnableOfficialDeprecated(enabled: Boolean) {
-        context.dataStore.edit { it[enableOfficialKey] = enabled }
-    }
-
     suspend fun wifiOnlyNow(): Boolean = wifiOnly.first()
     suspend fun maxQualityNow(): Int = maxQuality.first()
     suspend fun showDemoNow(): Boolean = showDemo.first()
-    suspend fun enableOfficialDeprecatedNow(): Boolean = enableOfficialDeprecated.first()
 
     companion object {
         val QUALITY_OPTIONS = listOf(480, 720, 1080)

@@ -2,7 +2,7 @@
 
 面向安卓手表 / 华强北低配机的极简短剧客户端：**Kotlin + View + Media3**，`minSdk 24`。
 
-非官方应用。默认片源对照开源仓 [N3urda/hongguoTV](https://github.com/N3urda/hongguoTV)（`Signer` / `DeviceRegister` / `MobilePlayback` / `MediaCrypto`）与 [jackotom/hongguo-drama](https://github.com/jackotom/hongguo-drama) 的 **App 族**通路（`*.fqnovel.com`），**不**默认走官网 `hongguoduanju.com` 搜索/SSR。许可：**GPL-3.0**。
+非官方应用。片源对照开源仓 [N3urda/hongguoTV](https://github.com/N3urda/hongguoTV)（`Signer` / `DeviceRegister` / `MobilePlayback` / `MediaCrypto`）与 [jackotom/hongguo-drama](https://github.com/jackotom/hongguo-drama) 的 **App 族**通路（`*.fqnovel.com`）。许可：**GPL-3.0**。
 
 ## MVP 功能
 
@@ -10,7 +10,17 @@
 - 详情：App `multi_video_detail/preload` 分集
 - 播放：Media3 ExoPlayer（硬解优先，无 FFmpeg）；加密档走开源 `RemoteVideo`/`MediaCrypto`；上一集 / 下一集；失败重试
 - 历史：Room 落盘剧 + 集 + 进度，点进续播
-- 设置：仅 Wi‑Fi、清晰度上限（**默认 480p**，可选手动 **720p / 1080p**）、演示源开关、已弃用官网源开关、清历史 / 清缓存
+- 设置：仅 Wi‑Fi、清晰度上限（**默认 480p**，可选手动 **720p / 1080p**）、演示源开关、清历史 / 清缓存
+
+## UI（v0.3 手表小屏）
+
+面向方/圆手表做了播放与列表页装机级打磨：
+
+- **播放**：沉浸式全屏；顶栏仅返回+标题；底栏大触控进度 + 清晰度档 / 上集 / 播放 / 下集 / 选集；收起后细进度条；点按显隐；横向拖动快进
+- **首页 / 搜索**：大搜索框与按钮；分区标题；列表行易点（圆角封面 + 右侧「进」提示）；底栏 Tab 高亮
+- **历史**：隐藏搜索栏；「点一项即可续播」；行尾「续」提示，点进直接续播
+- **详情**：返回键；「续播」快捷；选集网格自适应列数并滚到上次看到的集
+- **设置**：返回键；清晰度三档大芯片（默认 480p）；演示源开关与清理操作分区成块
 
 ## 片源说明
 
@@ -20,8 +30,7 @@
 | App 分集 `novel/player/multi_video_detail/preload/v1` | **默认** |
 | App 播放模型 `novel/player/multi_video_model/player/v1`（v5，对照 hongguoTV `MobilePlayback`） | **默认** |
 | 演示流（Big Buck Bunny 等） | 设置可开关，用于验证播放器 |
-| 官网 `hongguoduanju.com` 搜索 / SSR | **已弃用**；设置内默认关闭，不推荐 |
-| 本地 Node 桥 | **不**作为手表默认路径 |
+| 本地 Node 桥 | **不**使用 |
 
 上游归因与协议说明见 [`third_party/hongguoTV-NOTICE.md`](third_party/hongguoTV-NOTICE.md)、[`third_party/SIGNING_V5.md`](third_party/SIGNING_V5.md)。
 

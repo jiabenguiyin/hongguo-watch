@@ -1,11 +1,14 @@
 package com.hongguo.watch.ui
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.hongguo.watch.HongguoWatchApp
@@ -28,10 +31,12 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        WatchUi.applySafePadding(binding.mainRoot, extraBottom = 0)
 
         adapter = SeriesListAdapter { openSeries(it) }
         binding.seriesList.layoutManager = LinearLayoutManager(this)
         binding.seriesList.adapter = adapter
+        binding.seriesList.itemAnimator = null
 
         binding.searchButton.setOnClickListener { runSearch() }
         binding.searchInput.setOnEditorActionListener { _, actionId, _ ->
@@ -68,18 +73,17 @@ class MainActivity : AppCompatActivity() {
         highlightTabs(home = true)
         lastQuery = ""
         binding.searchInput.setText("")
+        binding.searchRow.visibility = View.VISIBLE
+        binding.pageSubtitle.visibility = View.GONE
+        binding.brandTitle.text = getString(R.string.app_name)
+        adapter.showResumeHint = false
         lifecycleScope.launch {
             val rows = mutableListOf<HomeRow>()
             if (container.settings.showDemoNow()) {
                 rows += HomeRow.Header(getString(R.string.demo_section))
                 rows += repo.demoHome().map { HomeRow.Item(it) }
             }
-            val section = if (container.settings.enableOfficialDeprecatedNow()) {
-                getString(R.string.official_section)
-            } else {
-                getString(R.string.app_section)
-            }
-            rows += HomeRow.Header(section)
+            rows += HomeRow.Header(getString(R.string.app_section))
             adapter.submit(rows)
             binding.emptyView.visibility = View.VISIBLE
             binding.emptyView.text = getString(R.string.empty_search)
@@ -94,11 +98,15 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, R.string.search_hint, Toast.LENGTH_SHORT).show()
             return
         }
+        hideKeyboard()
         mode = Mode.HOME
         highlightTabs(home = true)
         lastQuery = query
+        binding.searchRow.visibility = View.VISIBLE
+        binding.pageSubtitle.visibility = View.GONE
         binding.loading.visibility = View.VISIBLE
         binding.emptyView.visibility = View.GONE
+        adapter.showResumeHint = false
         lifecycleScope.launch {
             try {
                 val page = repo.search(query, page = 1)
@@ -107,18 +115,18 @@ class MainActivity : AppCompatActivity() {
                     rows += HomeRow.Header(getString(R.string.demo_section))
                     rows += repo.demoHome().map { HomeRow.Item(it) }
                 }
-                val section = if (container.settings.enableOfficialDeprecatedNow()) {
-                    getString(R.string.official_section)
-                } else {
-                    getString(R.string.app_section)
-                }
-                rows += HomeRow.Header(section)
+                rows += HomeRow.Header(getString(R.string.app_section))
                 rows += page.items.map { HomeRow.Item(it) }
                 adapter.submit(rows)
                 binding.emptyView.visibility = if (page.items.isEmpty()) View.VISIBLE else View.GONE
-                binding.emptyView.text = if (page.items.isEmpty()) "无搜索结果" else ""
+                binding.emptyView.text =
+                    if (page.items.isEmpty()) getString(R.string.empty_search_result) else ""
             } catch (e: Exception) {
-                Toast.makeText(this@MainActivity, e.message ?: getString(R.string.error_network), Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    this@MainActivity,
+                    e.message ?: getString(R.string.error_network),
+                    Toast.LENGTH_LONG,
+                ).show()
             } finally {
                 binding.loading.visibility = View.GONE
                 binding.swipeRefresh.isRefreshing = false
@@ -129,7 +137,13 @@ class MainActivity : AppCompatActivity() {
     private fun showHistory() {
         mode = Mode.HISTORY
         highlightTabs(history = true)
+        hideKeyboard()
+        binding.searchRow.visibility = View.GONE
+        binding.pageSubtitle.visibility = View.VISIBLE
+        binding.pageSubtitle.text = getString(R.string.history_subtitle)
+        binding.brandTitle.text = getString(R.string.tab_history)
         binding.loading.visibility = View.VISIBLE
+        adapter.showResumeHint = true
         lifecycleScope.launch {
             try {
                 val history = repo.recentHistory()
@@ -187,9 +201,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun highlightTabs(home: Boolean = false, history: Boolean = false) {
-        binding.tabHome.setTextColor(getColor(if (home) R.color.accent else R.color.text_secondary))
-        binding.tabHistory.setTextColor(getColor(if (history) R.color.accent else R.color.text_secondary))
-        binding.tabSettings.setTextColor(getColor(R.color.text_secondary))
+        val accent = ContextCompat.getColor(this, R.color.accent)
+        val muted = ContextCompat.getColor(this, R.color.text_secondary)
+        binding.tabHome.setTextColor(if (home) accent else muted)
+        binding.tabHistory.setTextColor(if (history) accent else muted)
+        binding.tabSettings.setTextColor(muted)
+        binding.tabHome.setBackgroundResource(if (home) R.drawable.bg_tab_active else android.R.color.transparent)
+        binding.tabHistory.setBackgroundResource(if (history) R.drawable.bg_tab_active else android.R.color.transparent)
+        binding.tabSettings.setBackgroundResource(android.R.color.transparent)
+        binding.tabHome.paint.isFakeBoldText = home
+        binding.tabHistory.paint.isFakeBoldText = history
+        binding.tabHome.invalidate()
+        binding.tabHistory.invalidate()
+    }
+
+    private fun hideKeyboard() {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(binding.searchInput.windowToken, 0)
+        binding.searchInput.clearFocus()
     }
 
     private enum class Mode { HOME, HISTORY }

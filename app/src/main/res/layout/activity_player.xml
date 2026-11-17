@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 手表播放页：少遮挡、大触控、进度/选集/清晰度可点，控件可自动收起 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/playerRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@android:color/black">
+    android:background="@android:color/black"
+    android:keepScreenOn="true">
 
     <androidx.media3.ui.PlayerView
         android:id="@+id/playerView"
@@ -10,83 +13,369 @@
         android:layout_height="match_parent"
         android:keepScreenOn="true" />
 
-    <LinearLayout
-        android:id="@+id/controlsBar"
+    <View
+        android:id="@+id/gestureLayer"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
+        android:background="@android:color/transparent"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <!-- 控件收起时保留细进度，几乎不挡画面 -->
+    <ProgressBar
+        android:id="@+id/miniProgress"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/watch_mini_progress_h"
         android:layout_gravity="bottom"
-        android:background="#CC101418"
+        android:max="1000"
+        android:progressDrawable="@drawable/mini_progress"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/loadingBox"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
         android:gravity="center"
         android:orientation="vertical"
-        android:padding="8dp">
+        android:visibility="gone">
+
+        <ProgressBar
+            android:layout_width="28dp"
+            android:layout_height="28dp" />
 
         <TextView
-            android:id="@+id/playerTitle"
-            android:layout_width="match_parent"
+            android:id="@+id/loadingText"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxLines="1"
+            android:layout_marginTop="4dp"
+            android:shadowColor="#FF000000"
+            android:shadowDx="1"
+            android:shadowDy="1"
+            android:shadowRadius="2"
+            android:text="@string/loading"
             android:textColor="@color/text_primary"
-            android:textSize="12sp" />
+            android:textSize="@dimen/watch_meta" />
+    </LinearLayout>
 
-        <TextView
-            android:id="@+id/playerNotice"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:text="@string/play_preview_notice"
-            android:textColor="@color/text_secondary"
-            android:textSize="10sp"
-            android:visibility="gone" />
+    <TextView
+        android:id="@+id/gestureHint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_panel"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="8dp"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/controlsOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
 
         <LinearLayout
+            android:id="@+id/topBar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:gravity="center"
-            android:orientation="horizontal">
+            android:background="@drawable/bg_control_bar_top"
+            android:gravity="center_vertical"
+            android:minHeight="@dimen/watch_top_h"
+            android:orientation="horizontal"
+            android:paddingHorizontal="2dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="8dp">
 
-            <Button
-                android:id="@+id/prevButton"
-                android:layout_width="0dp"
+            <TextView
+                android:id="@+id/backButton"
+                android:layout_width="44dp"
                 android:layout_height="40dp"
-                android:layout_weight="1"
-                android:backgroundTint="@color/bg_elevated"
-                android:text="@string/prev_ep"
+                android:background="@drawable/bg_control_button"
+                android:gravity="center"
+                android:text="@string/back"
                 android:textColor="@color/text_primary"
-                android:textSize="12sp" />
+                android:textSize="18sp" />
 
-            <Button
-                android:id="@+id/playPauseButton"
+            <TextView
+                android:id="@+id/playerTitle"
                 android:layout_width="0dp"
-                android:layout_height="40dp"
-                android:layout_marginHorizontal="6dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:layout_marginEnd="4dp"
                 android:layout_weight="1"
-                android:backgroundTint="@color/accent"
-                android:text="@string/pause"
+                android:ellipsize="marquee"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
+                android:marqueeRepeatLimit="marquee_forever"
+                android:singleLine="true"
                 android:textColor="@color/text_primary"
-                android:textSize="12sp" />
-
-            <Button
-                android:id="@+id/nextButton"
-                android:layout_width="0dp"
-                android:layout_height="40dp"
-                android:layout_weight="1"
-                android:backgroundTint="@color/bg_elevated"
-                android:text="@string/next_ep"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp" />
+                android:textSize="@dimen/watch_body"
+                android:textStyle="bold" />
         </LinearLayout>
 
-        <Button
-            android:id="@+id/retryButton"
+        <View
+            android:id="@+id/controlsMidTap"
             android:layout_width="match_parent"
-            android:layout_height="36dp"
-            android:layout_marginTop="6dp"
-            android:backgroundTint="@color/accent_dim"
-            android:text="@string/retry"
-            android:textColor="@color/text_primary"
-            android:textSize="12sp"
-            android:visibility="gone" />
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@android:color/transparent"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <LinearLayout
+            android:id="@+id/bottomBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_control_bar_bottom"
+            android:orientation="vertical"
+            android:paddingTop="10dp"
+            android:paddingBottom="4dp">
+
+            <TextView
+                android:id="@+id/playerNotice"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="8dp"
+                android:text="@string/play_preview_notice"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/watch_meta"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="4dp">
+
+                <TextView
+                    android:id="@+id/timeCurrent"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="34dp"
+                    android:text="0:00"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_meta" />
+
+                <SeekBar
+                    android:id="@+id/seekBar"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/watch_seek_h"
+                    android:layout_weight="1"
+                    android:max="1000"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="6dp"
+                    android:progressDrawable="@drawable/seek_progress"
+                    android:splitTrack="false"
+                    android:thumb="@drawable/seek_thumb"
+                    android:thumbOffset="9dp" />
+
+                <TextView
+                    android:id="@+id/timeTotal"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:minWidth="34dp"
+                    android:text="0:00"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/watch_meta" />
+            </LinearLayout>
+
+            <!-- 主操作：上集 / 播放 / 下集；次操作：清晰度 · 选集 -->
+            <LinearLayout
+                android:id="@+id/bottomButtons"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="2dp"
+                android:paddingTop="2dp">
+
+                <TextView
+                    android:id="@+id/qualityButton"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/watch_control_h"
+                    android:layout_marginHorizontal="2dp"
+                    android:layout_weight="0.9"
+                    android:background="@drawable/bg_control_button"
+                    android:gravity="center"
+                    android:text="480p"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_meta" />
+
+                <TextView
+                    android:id="@+id/prevButton"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/watch_control_h"
+                    android:layout_marginHorizontal="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_control_button"
+                    android:gravity="center"
+                    android:text="@string/prev_ep_short"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_body" />
+
+                <TextView
+                    android:id="@+id/playPauseButton"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/watch_play_h"
+                    android:layout_marginHorizontal="2dp"
+                    android:layout_weight="1.35"
+                    android:background="@drawable/bg_quality_chip"
+                    android:gravity="center"
+                    android:text="@string/pause"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/nextButton"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/watch_control_h"
+                    android:layout_marginHorizontal="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_control_button"
+                    android:gravity="center"
+                    android:text="@string/next_ep_short"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_body" />
+
+                <TextView
+                    android:id="@+id/episodesButton"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/watch_control_h"
+                    android:layout_marginHorizontal="2dp"
+                    android:layout_weight="0.9"
+                    android:background="@drawable/bg_control_button"
+                    android:gravity="center"
+                    android:text="@string/episodes"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_meta" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/retryButton"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:layout_marginHorizontal="4dp"
+                android:layout_marginTop="4dp"
+                android:background="@drawable/bg_quality_chip"
+                android:gravity="center"
+                android:text="@string/retry"
+                android:textColor="@color/text_primary"
+                android:textSize="@dimen/watch_body"
+                android:visibility="gone" />
+        </LinearLayout>
     </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/sheetScrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#99000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/qualitySheet"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginHorizontal="10dp"
+            android:background="@drawable/bg_panel"
+            android:orientation="vertical"
+            android:padding="10dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="@string/quality_sheet_title"
+                android:textColor="@color/text_primary"
+                android:textSize="@dimen/watch_body" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/quality480"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_marginEnd="4dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_quality_chip"
+                    android:gravity="center"
+                    android:text="480p"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_body"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/quality720"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_marginHorizontal="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_quality_chip"
+                    android:gravity="center"
+                    android:text="720p"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_body"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/quality1080"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="4dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_quality_chip"
+                    android:gravity="center"
+                    android:text="1080p"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_body"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/episodesSheet"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:layout_marginHorizontal="6dp"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/bg_panel"
+            android:orientation="vertical"
+            android:padding="8dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/episodesSheetTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/episodes"
+                android:textColor="@color/text_primary"
+                android:textSize="@dimen/watch_body"
+                android:textStyle="bold" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/episodePicker"
+                android:layout_width="match_parent"
+                android:layout_height="148dp"
+                android:layout_marginTop="6dp"
+                android:clipToPadding="false"
+                android:overScrollMode="never"
+                android:paddingBottom="2dp" />
+        </LinearLayout>
+    </FrameLayout>
 </FrameLayout>

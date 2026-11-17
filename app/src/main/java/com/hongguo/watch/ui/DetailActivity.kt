@@ -25,11 +25,13 @@ class DetailActivity : AppCompatActivity() {
     private var cover: String = ""
     private var source: SeriesSource = SeriesSource.APP
     private var episodes: List<Episode> = emptyList()
+    private var resumeEpisodeId: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        WatchUi.applySafePadding(binding.detailRoot)
 
         seriesId = intent.getStringExtra(EXTRA_SERIES_ID).orEmpty()
         seriesTitle = intent.getStringExtra(EXTRA_SERIES_TITLE).orEmpty()
@@ -40,10 +42,16 @@ class DetailActivity : AppCompatActivity() {
 
         binding.seriesTitle.text = seriesTitle
         binding.seriesIntro.text = intent.getStringExtra(EXTRA_INTRO).orEmpty()
+        binding.backButton.setOnClickListener { finish() }
+        binding.continueButton.setOnClickListener {
+            val target = episodes.firstOrNull { it.id == resumeEpisodeId } ?: episodes.firstOrNull()
+            if (target != null) openPlayer(target)
+        }
 
         adapter = EpisodeAdapter { openPlayer(it) }
-        binding.episodeGrid.layoutManager = GridLayoutManager(this, 4)
+        binding.episodeGrid.layoutManager = GridLayoutManager(this, WatchUi.episodeColumns(this))
         binding.episodeGrid.adapter = adapter
+        binding.episodeGrid.itemAnimator = null
 
         loadDetail()
     }
@@ -59,13 +67,29 @@ class DetailActivity : AppCompatActivity() {
                 binding.seriesTitle.text = detail.series.title
                 if (detail.series.description.isNotBlank()) {
                     binding.seriesIntro.text = detail.series.description
+                    binding.seriesIntro.visibility = View.VISIBLE
+                } else if (binding.seriesIntro.text.isNullOrBlank()) {
+                    binding.seriesIntro.visibility = View.GONE
                 }
                 episodes = detail.episodes
+                binding.episodesLabel.text = getString(R.string.episodes_count, episodes.size)
                 val history = repo.historyFor(seriesId)
+                resumeEpisodeId = history?.episodeId
+                binding.continueButton.visibility =
+                    if (history != null && episodes.isNotEmpty()) View.VISIBLE else View.GONE
+                if (history != null) {
+                    binding.continueButton.text =
+                        getString(R.string.continue_watch) + " · ${history.episodeNumber}"
+                }
                 adapter.submit(episodes, history?.episodeId)
+                val index = episodes.indexOfFirst { it.id == history?.episodeId }.coerceAtLeast(0)
+                binding.episodeGrid.post {
+                    binding.episodeGrid.scrollToPosition(index)
+                }
             } catch (e: Exception) {
                 binding.errorView.visibility = View.VISIBLE
-                binding.errorView.text = e.message ?: getString(R.string.error_generic)
+                binding.errorView.text =
+                    (e.message ?: getString(R.string.error_generic)) + "\n" + getString(R.string.retry)
                 binding.errorView.setOnClickListener { loadDetail() }
                 Toast.makeText(this@DetailActivity, e.message, Toast.LENGTH_LONG).show()
             } finally {

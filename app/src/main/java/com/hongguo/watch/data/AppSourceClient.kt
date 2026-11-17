@@ -29,7 +29,7 @@ import java.util.concurrent.TimeUnit
  * 默认片源：开源 App 族上游（对照 N3urda/hongguoTV Signer / DeviceRegister / MobilePlayback，
  * 以及 jackotom/hongguo-drama 的 App 分集 preload）。
  *
- * 不走 hongguoduanju 官网搜索/SSR；不依赖本地 Node 桥。
+ * 不依赖本地 Node 桥。
  */
 class AppSourceClient(
     context: Context,

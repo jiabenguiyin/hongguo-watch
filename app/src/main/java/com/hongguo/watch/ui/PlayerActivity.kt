@@ -48,7 +48,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
 /**
- * 手表全屏播放：屏幕锁定（防误触/清屏）、左亮度/右音量、横滑进度、倍速、图标控件；
+ * 手表全屏播放：锁定、左亮度/右音量、横滑进度、图标控件；
  * 末集结束按 hongguoTV 模式无缝跨季连播（预取元数据，不预取流）。
  */
 class PlayerActivity : AppCompatActivity() {
@@ -271,7 +271,6 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    /** 屏幕锁定：清屏并屏蔽滑动/点按，防手表误触改进度音量等；非系统锁屏。 */
     private fun setLocked(value: Boolean) {
         locked = value
         if (locked) {
@@ -289,7 +288,9 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun handleGesture(event: MotionEvent): Boolean {
         if (locked) {
-            // 屏幕锁定：吞掉滑动/点按，只留中央解锁
+            if (event.actionMasked == MotionEvent.ACTION_UP) {
+                // 锁定时点空白无效；仅解锁钮可操作
+            }
             return true
         }
         when (event.actionMasked) {

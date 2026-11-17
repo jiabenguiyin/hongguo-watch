@@ -9,4 +9,7 @@
     <color name="stroke">#2A333C</color>
     <color name="episode_selected">#E85D4C</color>
     <color name="episode_normal">#24303A</color>
+    <color name="rank_gold">#E8B84A</color>
+    <color name="rank_silver">#C0C8D0</color>
+    <color name="rank_bronze">#C47A4A</color>
 </resources>

@@ -545,13 +545,52 @@ class AppSourceClient(
         }
         val allowed = RANK_CONTENT_TYPES[selectors.first]
         return rows.mapNotNull { row ->
-            val series = seriesFromFeedRow(row) ?: return@mapNotNull null
             if (allowed != null) {
                 val type = row.optInt("content_type", -1)
                 if (type !in allowed) return@mapNotNull null
             }
-            series
+            seriesFromRankRow(row)
         }.distinctBy { it.id }
+    }
+
+    /** 榜单行：题材标签 + 热度文案（收藏/点赞）进 tags，供列表 meta。 */
+    private fun seriesFromRankRow(row: JSONObject): Series? {
+        val base = seriesFromFeedRow(row) ?: return null
+        val genres = row.optJSONArray("sub_title_list")?.objects().orEmpty().mapNotNull { item ->
+            val type = item.optInt("data_type", -1)
+            if (type != 3 && type != 32) return@mapNotNull null
+            item.str("content").takeIf { it.isNotBlank() && it.length <= 12 }
+        }.distinct().take(2)
+        val heat = row.optJSONArray("secondary_info_list")?.objects().orEmpty()
+            .map { it.str("content") }
+            .firstOrNull { content ->
+                content.isNotBlank() && (
+                    content.contains("收藏") ||
+                        content.contains("点赞") ||
+                        content.contains("热") ||
+                        content.contains("评分") ||
+                        content.contains("播放")
+                    )
+            }
+            ?.takeIf { it.length <= 16 }
+            ?: formatPlayCount(row.optLong("play_cnt", 0L))
+        val tags = buildList {
+            if (!heat.isNullOrBlank()) add(heat)
+            addAll(genres)
+        }.distinct().take(3)
+        return base.copy(
+            tags = tags.ifEmpty { base.tags },
+            description = base.description.ifBlank { row.str("sub_title") },
+        )
+    }
+
+    private fun formatPlayCount(count: Long): String? {
+        if (count <= 0L) return null
+        return when {
+            count >= 100_000_000L -> String.format("%.1f亿播放", count / 100_000_000.0)
+            count >= 10_000L -> String.format("%.1f万播放", count / 10_000.0)
+            else -> "${count}播放"
+        }
     }
 
     private fun parseLandpageVideos(data: JSONObject): List<Series> {

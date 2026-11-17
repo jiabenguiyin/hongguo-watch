@@ -75,6 +75,7 @@ class PlayerActivity : AppCompatActivity() {
     private var episodeIndex = 0
     private var startPositionMs = 0L
     private var currentQuality = 480
+    private var currentSpeed = 1.0f
 
     private lateinit var episodeAdapter: EpisodeAdapter
     private lateinit var audioManager: AudioManager
@@ -127,7 +128,9 @@ class PlayerActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             currentQuality = settings.maxQualityNow()
+            currentSpeed = settings.playbackSpeedNow()
             refreshQualityUi()
+            refreshSpeedUi()
             if (episodeIds.isEmpty()) {
                 runCatching { repo.detail(seriesId) }
                     .onSuccess { detail ->
@@ -178,6 +181,7 @@ class PlayerActivity : AppCompatActivity() {
         }
         binding.retryButton.setOnClickListener { loadCurrent() }
         binding.qualityButton.setOnClickListener { openQualitySheet() }
+        binding.speedButton.setOnClickListener { openSpeedSheet() }
         binding.episodesButton.setOnClickListener { openEpisodesSheet() }
         binding.controlsMidTap.setOnClickListener {
             if (!gestureConsumedClick && !locked) toggleControls()
@@ -223,6 +227,11 @@ class PlayerActivity : AppCompatActivity() {
         binding.quality480.setOnClickListener { applyQuality(480) }
         binding.quality720.setOnClickListener { applyQuality(720) }
         binding.quality1080.setOnClickListener { applyQuality(1080) }
+        binding.speed075.setOnClickListener { applySpeed(0.75f) }
+        binding.speed100.setOnClickListener { applySpeed(1.0f) }
+        binding.speed125.setOnClickListener { applySpeed(1.25f) }
+        binding.speed150.setOnClickListener { applySpeed(1.5f) }
+        binding.speed200.setOnClickListener { applySpeed(2.0f) }
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -243,15 +252,15 @@ class PlayerActivity : AppCompatActivity() {
             lp.marginEnd = side
             binding.volumeMeter.layoutParams = lp
         }
+        val sidePad = if (WatchUi.isRoundScreen(this)) {
+            WatchUi.edgeInsetPx(this).coerceAtLeast(WatchUi.dp(this, 14f))
+        } else {
+            WatchUi.dp(this, 10f)
+        }
+        binding.midControls.setPadding(sidePad, 0, sidePad, 0)
         if (WatchUi.isRoundScreen(this)) {
             val pad = WatchUi.dp(this, 12f)
             binding.bottomButtons.setPadding(pad, binding.bottomButtons.paddingTop, pad, binding.bottomButtons.paddingBottom)
-            binding.seasonBanner.setPadding(
-                binding.seasonBanner.paddingLeft,
-                binding.seasonBanner.paddingTop,
-                binding.seasonBanner.paddingRight,
-                binding.seasonBanner.paddingBottom,
-            )
             val seasonLp = binding.seasonBanner.layoutParams as? android.widget.FrameLayout.LayoutParams
             if (seasonLp != null) {
                 val h = WatchUi.edgeInsetPx(this)
@@ -455,8 +464,20 @@ class PlayerActivity : AppCompatActivity() {
         if (locked) return
         binding.sheetScrim.visibility = View.VISIBLE
         binding.qualitySheet.visibility = View.VISIBLE
+        binding.speedSheet.visibility = View.GONE
         binding.episodesSheet.visibility = View.GONE
         refreshQualityUi()
+        hideControlsJob?.cancel()
+        showControls(autoHide = false)
+    }
+
+    private fun openSpeedSheet() {
+        if (locked) return
+        binding.sheetScrim.visibility = View.VISIBLE
+        binding.speedSheet.visibility = View.VISIBLE
+        binding.qualitySheet.visibility = View.GONE
+        binding.episodesSheet.visibility = View.GONE
+        refreshSpeedUi()
         hideControlsJob?.cancel()
         showControls(autoHide = false)
     }
@@ -467,6 +488,7 @@ class PlayerActivity : AppCompatActivity() {
         binding.sheetScrim.visibility = View.VISIBLE
         binding.episodesSheet.visibility = View.VISIBLE
         binding.qualitySheet.visibility = View.GONE
+        binding.speedSheet.visibility = View.GONE
         hideControlsJob?.cancel()
         showControls(autoHide = false)
         binding.episodePicker.post {
@@ -477,6 +499,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun closeSheets() {
         binding.sheetScrim.visibility = View.GONE
         binding.qualitySheet.visibility = View.GONE
+        binding.speedSheet.visibility = View.GONE
         binding.episodesSheet.visibility = View.GONE
         scheduleHideControls()
     }
@@ -497,6 +520,27 @@ class PlayerActivity : AppCompatActivity() {
         binding.quality480.isSelected = currentQuality == 480
         binding.quality720.isSelected = currentQuality == 720
         binding.quality1080.isSelected = currentQuality == 1080
+    }
+
+    private fun refreshSpeedUi() {
+        currentSpeed = SettingsStore.normalizeSpeed(currentSpeed)
+        binding.speedLabel.text = SettingsStore.formatSpeed(currentSpeed)
+        binding.speed075.isSelected = currentSpeed == 0.75f
+        binding.speed100.isSelected = currentSpeed == 1.0f
+        binding.speed125.isSelected = currentSpeed == 1.25f
+        binding.speed150.isSelected = currentSpeed == 1.5f
+        binding.speed200.isSelected = currentSpeed == 2.0f
+    }
+
+    private fun applySpeed(speed: Float) {
+        lifecycleScope.launch {
+            settings.setPlaybackSpeed(speed)
+            currentSpeed = SettingsStore.normalizeSpeed(speed)
+            refreshSpeedUi()
+            player?.setPlaybackSpeed(currentSpeed)
+            closeSheets()
+            scheduleHideControls()
+        }
     }
 
     private fun refreshEpisodePicker() {
@@ -638,6 +682,7 @@ class PlayerActivity : AppCompatActivity() {
         exo.setMediaItem(MediaItem.fromUri(stream.url))
         exo.prepare()
         if (positionMs > 0) exo.seekTo(positionMs)
+        exo.setPlaybackSpeed(currentSpeed)
         exo.playWhenReady = true
         startProgressLoop()
         updatePlayPause()

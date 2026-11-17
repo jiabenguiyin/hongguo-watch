@@ -229,14 +229,63 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <View
-            android:id="@+id/controlsMidTap"
+        <!-- 中区：左侧锁 · 中间点按显隐 · 右侧倍速（圆屏内收，避开四角裁切） -->
+        <LinearLayout
+            android:id="@+id/midControls"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:background="@android:color/transparent"
-            android:clickable="true"
-            android:focusable="true" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="10dp">
+
+            <ImageButton
+                android:id="@+id/lockButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/bg_side_chip"
+                android:contentDescription="@string/cd_lock"
+                android:padding="11dp"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_lock" />
+
+            <View
+                android:id="@+id/controlsMidTap"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@android:color/transparent"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <LinearLayout
+                android:id="@+id/speedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:background="@drawable/bg_side_chip"
+                android:contentDescription="@string/cd_speed"
+                android:gravity="center_vertical"
+                android:minWidth="56dp"
+                android:orientation="horizontal"
+                android:paddingHorizontal="10dp">
+
+                <ImageView
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_speed" />
+
+                <TextView
+                    android:id="@+id/speedLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:text="1.0x"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_meta"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </LinearLayout>
 
         <LinearLayout
             android:id="@+id/bottomBar"
@@ -296,19 +345,6 @@
                     android:textColor="@color/text_secondary"
                     android:textSize="@dimen/watch_meta" />
             </LinearLayout>
-
-            <!-- 圆屏：锁放底栏正中大触控，避开四角 -->
-            <ImageButton
-                android:id="@+id/lockButton"
-                android:layout_width="52dp"
-                android:layout_height="44dp"
-                android:layout_gravity="center_horizontal"
-                android:layout_marginTop="2dp"
-                android:background="@drawable/bg_control_button"
-                android:contentDescription="@string/cd_lock"
-                android:padding="8dp"
-                android:scaleType="centerInside"
-                android:src="@drawable/ic_lock" />
 
             <LinearLayout
                 android:id="@+id/bottomButtons"
@@ -466,6 +502,98 @@
                     android:text="1080p"
                     android:textColor="@color/text_primary"
                     android:textSize="@dimen/watch_body"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/speedSheet"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginHorizontal="10dp"
+            android:background="@drawable/bg_panel"
+            android:orientation="vertical"
+            android:padding="10dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="@string/speed_sheet_title"
+                android:textColor="@color/text_primary"
+                android:textSize="@dimen/watch_body" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/speed075"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_marginEnd="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_quality_chip"
+                    android:gravity="center"
+                    android:text="0.75x"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_meta"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/speed100"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_marginHorizontal="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_quality_chip"
+                    android:gravity="center"
+                    android:text="1.0x"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_meta"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/speed125"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_marginHorizontal="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_quality_chip"
+                    android:gravity="center"
+                    android:text="1.25x"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_meta"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/speed150"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_marginHorizontal="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_quality_chip"
+                    android:gravity="center"
+                    android:text="1.5x"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_meta"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/speed200"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_quality_chip"
+                    android:gravity="center"
+                    android:text="2.0x"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_meta"
                     android:textStyle="bold" />
             </LinearLayout>
         </LinearLayout>

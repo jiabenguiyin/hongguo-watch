@@ -33,7 +33,10 @@
     <string name="cd_lock">锁定屏幕</string>
     <string name="cd_unlock">解锁</string>
     <string name="cd_favorite">收藏</string>
+    <string name="cd_speed">倍速</string>
     <string name="lock_hint">已锁定 · 点中央解锁</string>
+    <string name="speed_sheet_title">倍速</string>
+    <string name="speed_label">%1$sx</string>
     <string name="brightness">亮度</string>
     <string name="volume">音量</string>
     <string name="back">←</string>

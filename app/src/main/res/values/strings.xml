@@ -30,11 +30,11 @@
     <string name="cd_pause">暂停</string>
     <string name="cd_prev">上一集</string>
     <string name="cd_next">下一集</string>
-    <string name="cd_lock">锁定屏幕</string>
-    <string name="cd_unlock">解锁</string>
+    <string name="cd_lock">屏幕锁定（防误触）</string>
+    <string name="cd_unlock">解除屏幕锁定</string>
     <string name="cd_favorite">收藏</string>
     <string name="cd_speed">倍速</string>
-    <string name="lock_hint">已锁定 · 点中央解锁</string>
+    <string name="lock_hint">屏幕已锁定 · 防误触 · 点中央解锁</string>
     <string name="speed_sheet_title">倍速</string>
     <string name="speed_label">%1$sx</string>
     <string name="brightness">亮度</string>

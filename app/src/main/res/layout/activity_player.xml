@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 手表播放页：锁定、左右亮度/音量、图标控件、可跨季连播 -->
+<!-- 手表播放页：屏幕锁定（防误触/清屏）、倍速、左右亮度/音量、图标控件、可跨季连播 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/playerRoot"
     android:layout_width="match_parent"

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#101418</color>
+    <color name="bg_elevated">#1A2128</color>
+    <color name="accent">#E85D4C</color>
+    <color name="accent_dim">#B3473A</color>
+    <color name="text_primary">#F2F4F7</color>
+    <color name="text_secondary">#A8B0BA</color>
+    <color name="stroke">#2A333C</color>
+    <color name="episode_selected">#E85D4C</color>
+    <color name="episode_normal">#24303A</color>
+</resources>

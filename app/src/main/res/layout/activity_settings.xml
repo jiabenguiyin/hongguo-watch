@@ -135,23 +135,6 @@
                 android:orientation="vertical"
                 android:padding="8dp">
 
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/showDemoSwitch"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:text="@string/show_demo"
-                    android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_body" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:background="@drawable/bg_setting_block"
-                android:orientation="vertical"
-                android:padding="8dp">
-
                 <Button
                     android:id="@+id/clearHistoryButton"
                     android:layout_width="match_parent"

@@ -15,7 +15,6 @@ private val Context.dataStore by preferencesDataStore("settings")
 class SettingsStore(private val context: Context) {
     private val wifiOnlyKey = booleanPreferencesKey("wifi_only")
     private val maxQualityKey = intPreferencesKey("max_quality")
-    private val showDemoKey = booleanPreferencesKey("show_demo")
     private val playbackSpeedKey = floatPreferencesKey("playback_speed")
 
     val wifiOnly: Flow<Boolean> = context.dataStore.data.map { it[wifiOnlyKey] ?: false }
@@ -23,7 +22,6 @@ class SettingsStore(private val context: Context) {
     val maxQuality: Flow<Int> = context.dataStore.data.map {
         normalizeQuality(it[maxQualityKey] ?: 480)
     }
-    val showDemo: Flow<Boolean> = context.dataStore.data.map { it[showDemoKey] ?: true }
     /** 默认 1.0x；可选 0.75 / 1.0 / 1.25 / 1.5 / 2.0。 */
     val playbackSpeed: Flow<Float> = context.dataStore.data.map {
         normalizeSpeed(it[playbackSpeedKey] ?: 1.0f)
@@ -37,17 +35,12 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[maxQualityKey] = normalizeQuality(height) }
     }
 
-    suspend fun setShowDemo(enabled: Boolean) {
-        context.dataStore.edit { it[showDemoKey] = enabled }
-    }
-
     suspend fun setPlaybackSpeed(speed: Float) {
         context.dataStore.edit { it[playbackSpeedKey] = normalizeSpeed(speed) }
     }
 
     suspend fun wifiOnlyNow(): Boolean = wifiOnly.first()
     suspend fun maxQualityNow(): Int = maxQuality.first()
-    suspend fun showDemoNow(): Boolean = showDemo.first()
     suspend fun playbackSpeedNow(): Float = playbackSpeed.first()
 
     companion object {

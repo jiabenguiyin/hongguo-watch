@@ -4,6 +4,8 @@ import com.hongguo.watch.data.db.FavoriteDao
 import com.hongguo.watch.data.db.FavoriteEntity
 import com.hongguo.watch.data.db.WatchHistoryDao
 import com.hongguo.watch.data.db.WatchHistoryEntity
+import com.hongguo.watch.data.model.CatalogPage
+import com.hongguo.watch.data.model.HomeCategory
 import com.hongguo.watch.data.model.RelatedWork
 import com.hongguo.watch.data.model.SearchPage
 import com.hongguo.watch.data.model.Series
@@ -19,27 +21,42 @@ class ContentRepository(
     private val favoriteDao: FavoriteDao,
     private val settings: SettingsStore,
 ) {
-    fun demoHome(): List<Series> = DemoCatalog.homeItems()
-
     suspend fun search(query: String, page: Int = 1): SearchPage = withContext(Dispatchers.IO) {
         appSource.search(query, page)
     }
 
+    /** 首页推荐流（书城 tab_type=16）。 */
+    suspend fun recommend(page: Int = 1): CatalogPage = withContext(Dispatchers.IO) {
+        appSource.fetchRecommend(page)
+    }
+
+    /**
+     * 分类落地页；`withSelector=true` 时附带题材/类型 Tab。
+     * 对照 hongguoTV `filteredDiscovery`。
+     */
+    suspend fun category(
+        filters: Map<String, String> = emptyMap(),
+        withSelector: Boolean = true,
+    ): CatalogPage = withContext(Dispatchers.IO) {
+        appSource.fetchCategory(filters = filters, withSelector = withSelector)
+    }
+
+    /** 组装默认分类条：推荐 + 落地页题材/类型（失败则只留推荐）。 */
+    suspend fun homeCategories(): List<HomeCategory> = withContext(Dispatchers.IO) {
+        val base = listOf(HomeCategory.recommend())
+        val panel = runCatching {
+            appSource.fetchCategory(filters = emptyMap(), withSelector = true)
+        }.getOrNull()
+        val extra = panel?.categories.orEmpty()
+        if (extra.isEmpty()) base else base + extra
+    }
+
     suspend fun detail(seriesId: String): SeriesDetail = withContext(Dispatchers.IO) {
-        if (seriesId == DemoCatalog.SERIES_ID || seriesId == DemoCatalog.SERIES_ID_S2) {
-            DemoCatalog.detail(seriesId)
-        } else {
-            appSource.fetchDetail(seriesId)
-        }
+        appSource.fetchDetail(seriesId)
     }
 
     suspend fun stream(seriesId: String, episodeId: String): StreamInfo = withContext(Dispatchers.IO) {
-        if (seriesId == DemoCatalog.SERIES_ID || seriesId == DemoCatalog.SERIES_ID_S2) {
-            DemoCatalog.streamFor(episodeId)
-                ?: throw IllegalStateException("演示分集不存在")
-        } else {
-            appSource.fetchStream(seriesId, episodeId, settings.maxQualityNow())
-        }
+        appSource.fetchStream(seriesId, episodeId, settings.maxQualityNow())
     }
 
     /**
@@ -47,9 +64,6 @@ class ContentRepository(
      */
     suspend fun related(seriesId: String, seriesTitle: String = "", force: Boolean = false): List<RelatedWork> =
         withContext(Dispatchers.IO) {
-            if (seriesId == DemoCatalog.SERIES_ID) {
-                return@withContext DemoCatalog.related()
-            }
             runCatching { RelatedWorks.ordered(
                 Series(id = seriesId, title = seriesTitle, source = SeriesSource.APP),
                 appSource.fetchRelated(seriesId, force),
@@ -77,9 +91,6 @@ class ContentRepository(
     /** 末集跨季：官方相关优先，标题唯一命中下一季作降级。 */
     suspend fun resolveNextSeason(seriesId: String, seriesTitle: String): RelatedWork? =
         withContext(Dispatchers.IO) {
-            if (seriesId == DemoCatalog.SERIES_ID) {
-                return@withContext DemoCatalog.nextSeason()
-            }
             val current = Series(id = seriesId, title = seriesTitle, source = SeriesSource.APP)
             val related = runCatching { related(seriesId, seriesTitle) }.getOrDefault(emptyList())
             RelatedWorks.nextSeason(current, related)

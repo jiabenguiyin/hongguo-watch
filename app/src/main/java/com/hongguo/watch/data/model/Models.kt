@@ -13,8 +13,29 @@ data class Series(
 enum class SeriesSource {
     APP,
     OFFICIAL,
-    DEMO,
 }
+
+/** 首页分类 Tab：推荐流 / 落地页筛选（对照 hongguoTV DiscoverySelection）。 */
+data class HomeCategory(
+    val id: String,
+    val label: String,
+    val filters: Map<String, String> = emptyMap(),
+) {
+    val isRecommend: Boolean get() = id == ID_RECOMMEND
+
+    companion object {
+        const val ID_RECOMMEND = "recommend"
+        fun recommend(): HomeCategory = HomeCategory(ID_RECOMMEND, "推荐")
+    }
+}
+
+data class CatalogPage(
+    val items: List<Series>,
+    val page: Int = 1,
+    val hasMore: Boolean = false,
+    /** 首次拉分类落地页时带回的可选分类（题材等）。 */
+    val categories: List<HomeCategory> = emptyList(),
+)
 
 data class Episode(
     val id: String,

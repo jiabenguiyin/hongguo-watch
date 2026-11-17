@@ -3,9 +3,11 @@ package com.hongguo.watch.ui
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -13,6 +15,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
+import com.hongguo.watch.data.model.HomeCategory
 import com.hongguo.watch.data.model.Series
 import com.hongguo.watch.data.model.SeriesSource
 import com.hongguo.watch.databinding.ActivityMainBinding
@@ -23,6 +26,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: SeriesListAdapter
     private var mode = Mode.HOME
     private var lastQuery: String = ""
+    private var categories: List<HomeCategory> = listOf(HomeCategory.recommend())
+    private var selectedCategoryId: String = HomeCategory.ID_RECOMMEND
+    private var categoryChipViews: List<TextView> = emptyList()
 
     private val container get() = (application as HongguoWatchApp).container
     private val repo get() = container.repository
@@ -49,7 +55,7 @@ class MainActivity : AppCompatActivity() {
         }
         binding.swipeRefresh.setOnRefreshListener {
             when (mode) {
-                Mode.HOME -> if (lastQuery.isNotBlank()) runSearch() else showHome()
+                Mode.HOME -> if (lastQuery.isNotBlank()) runSearch() else showHome(forceReload = true)
                 Mode.HISTORY -> showHistory()
                 Mode.FAVORITES -> showFavorites()
             }
@@ -61,6 +67,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
+        renderCategoryChips(categories)
         showHome()
     }
 
@@ -73,27 +80,112 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showHome() {
+    private fun showHome(forceReload: Boolean = false) {
         mode = Mode.HOME
         highlightTabs(home = true)
         lastQuery = ""
         binding.searchInput.setText("")
         binding.searchRow.visibility = View.VISIBLE
+        binding.categoryScroll.visibility = View.VISIBLE
         binding.pageSubtitle.visibility = View.GONE
         binding.brandTitle.text = getString(R.string.app_name)
         adapter.showResumeHint = false
+        binding.loading.visibility = View.VISIBLE
+        binding.emptyView.visibility = View.GONE
         lifecycleScope.launch {
-            val rows = mutableListOf<HomeRow>()
-            if (container.settings.showDemoNow()) {
-                rows += HomeRow.Header(getString(R.string.demo_section))
-                rows += repo.demoHome().map { HomeRow.Item(it) }
+            try {
+                if (forceReload || categories.size <= 1) {
+                    categories = repo.homeCategories()
+                    if (categories.none { it.id == selectedCategoryId }) {
+                        selectedCategoryId = HomeCategory.ID_RECOMMEND
+                    }
+                    renderCategoryChips(categories)
+                }
+                loadSelectedCategory()
+            } catch (e: Exception) {
+                adapter.submit(emptyList())
+                binding.emptyView.visibility = View.VISIBLE
+                binding.emptyView.text = e.message ?: getString(R.string.error_network)
+                Toast.makeText(
+                    this@MainActivity,
+                    e.message ?: getString(R.string.error_network),
+                    Toast.LENGTH_LONG,
+                ).show()
+            } finally {
+                binding.loading.visibility = View.GONE
+                binding.swipeRefresh.isRefreshing = false
             }
-            rows += HomeRow.Header(getString(R.string.app_section))
-            adapter.submit(rows)
-            binding.emptyView.visibility = View.VISIBLE
-            binding.emptyView.text = getString(R.string.empty_search)
-            binding.swipeRefresh.isRefreshing = false
-            binding.loading.visibility = View.GONE
+        }
+    }
+
+    private suspend fun loadSelectedCategory() {
+        val cat = categories.firstOrNull { it.id == selectedCategoryId }
+            ?: HomeCategory.recommend()
+        highlightCategoryChips()
+        val page = if (cat.isRecommend) {
+            repo.recommend(page = 1)
+        } else {
+            repo.category(filters = cat.filters, withSelector = false)
+        }
+        val rows = mutableListOf<HomeRow>()
+        rows += HomeRow.Header(cat.label)
+        rows += page.items.map { HomeRow.Item(it) }
+        adapter.submit(rows)
+        binding.emptyView.visibility = if (page.items.isEmpty()) View.VISIBLE else View.GONE
+        binding.emptyView.text =
+            if (page.items.isEmpty()) getString(R.string.empty_category) else ""
+    }
+
+    private fun selectCategory(category: HomeCategory) {
+        if (selectedCategoryId == category.id && lastQuery.isBlank()) return
+        selectedCategoryId = category.id
+        lastQuery = ""
+        binding.searchInput.setText("")
+        highlightCategoryChips()
+        binding.loading.visibility = View.VISIBLE
+        binding.emptyView.visibility = View.GONE
+        lifecycleScope.launch {
+            try {
+                loadSelectedCategory()
+            } catch (e: Exception) {
+                adapter.submit(listOf(HomeRow.Header(category.label)))
+                binding.emptyView.visibility = View.VISIBLE
+                binding.emptyView.text = e.message ?: getString(R.string.error_network)
+            } finally {
+                binding.loading.visibility = View.GONE
+                binding.swipeRefresh.isRefreshing = false
+            }
+        }
+    }
+
+    private fun renderCategoryChips(items: List<HomeCategory>) {
+        binding.categoryRow.removeAllViews()
+        val padH = dp(10f)
+        val padV = dp(6f)
+        val gap = dp(4f)
+        categoryChipViews = items.map { cat ->
+            TextView(this).apply {
+                text = cat.label
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                setPadding(padH, padV, padH, padV)
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
+                background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_quality_chip)
+                isSelected = cat.id == selectedCategoryId
+                setOnClickListener { selectCategory(cat) }
+                val lp = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                )
+                lp.marginEnd = gap
+                binding.categoryRow.addView(this, lp)
+            }
+        }
+    }
+
+    private fun highlightCategoryChips() {
+        categoryChipViews.forEachIndexed { index, view ->
+            val cat = categories.getOrNull(index) ?: return@forEachIndexed
+            view.isSelected = cat.id == selectedCategoryId
         }
     }
 
@@ -108,6 +200,7 @@ class MainActivity : AppCompatActivity() {
         highlightTabs(home = true)
         lastQuery = query
         binding.searchRow.visibility = View.VISIBLE
+        binding.categoryScroll.visibility = View.GONE
         binding.pageSubtitle.visibility = View.GONE
         binding.loading.visibility = View.VISIBLE
         binding.emptyView.visibility = View.GONE
@@ -116,10 +209,6 @@ class MainActivity : AppCompatActivity() {
             try {
                 val page = repo.search(query, page = 1)
                 val rows = mutableListOf<HomeRow>()
-                if (container.settings.showDemoNow()) {
-                    rows += HomeRow.Header(getString(R.string.demo_section))
-                    rows += repo.demoHome().map { HomeRow.Item(it) }
-                }
                 rows += HomeRow.Header(getString(R.string.app_section))
                 rows += page.items.map { HomeRow.Item(it) }
                 adapter.submit(rows)
@@ -144,6 +233,7 @@ class MainActivity : AppCompatActivity() {
         highlightTabs(history = true)
         hideKeyboard()
         binding.searchRow.visibility = View.GONE
+        binding.categoryScroll.visibility = View.GONE
         binding.pageSubtitle.visibility = View.VISIBLE
         binding.pageSubtitle.text = getString(R.string.history_subtitle)
         binding.brandTitle.text = getString(R.string.tab_history)
@@ -185,6 +275,7 @@ class MainActivity : AppCompatActivity() {
         highlightTabs(favorites = true)
         hideKeyboard()
         binding.searchRow.visibility = View.GONE
+        binding.categoryScroll.visibility = View.GONE
         binding.pageSubtitle.visibility = View.VISIBLE
         binding.pageSubtitle.text = getString(R.string.favorites_subtitle)
         binding.brandTitle.text = getString(R.string.tab_favorites)
@@ -280,6 +371,9 @@ class MainActivity : AppCompatActivity() {
         imm.hideSoftInputFromWindow(binding.searchInput.windowToken, 0)
         binding.searchInput.clearFocus()
     }
+
+    private fun dp(value: Float): Int =
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, resources.displayMetrics).toInt()
 
     private enum class Mode { HOME, HISTORY, FAVORITES }
 }

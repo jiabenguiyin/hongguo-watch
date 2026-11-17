@@ -28,14 +28,10 @@ class SettingsActivity : AppCompatActivity() {
             binding.wifiOnlySwitch.isChecked = container.settings.wifiOnly.first()
             currentQuality = container.settings.maxQuality.first()
             refreshQualityChips()
-            binding.showDemoSwitch.isChecked = container.settings.showDemo.first()
         }
 
         binding.wifiOnlySwitch.setOnCheckedChangeListener { _, checked ->
             lifecycleScope.launch { container.settings.setWifiOnly(checked) }
-        }
-        binding.showDemoSwitch.setOnCheckedChangeListener { _, checked ->
-            lifecycleScope.launch { container.settings.setShowDemo(checked) }
         }
 
         binding.quality480.setOnClickListener { pickQuality(480) }

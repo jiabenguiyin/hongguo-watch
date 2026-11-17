@@ -6,7 +6,7 @@
 
 ## 功能
 
-- 首页：演示片源（可关）+ App 搜索列表（封面 / 标题）
+- 首页：横向可滑**分类 Tab**（推荐 + 类型/题材）+ 列表；支持搜索
 - 详情：App `multi_video_detail/preload` 分集；**收藏**；下方**相关季 / 同系列**
 - 播放：Media3 ExoPlayer（硬解优先）；加密档走开源 `RemoteVideo`/`MediaCrypto`
   - **锁定**在画面中区左侧；**倍速**在对侧（仪表图标 + `1.0x`，可选 0.75/1/1.25/1.5/2）；解锁仍用中央大钮（圆盘避开四角）
@@ -16,7 +16,7 @@
   - 圆盘：`isScreenRound` / 近正方小屏加大安全边距，侧边锁/倍速内收落在可点区
 - **历史续播**：Room 落盘剧 + 集 + 进度百分比；近片尾续播按规则归零；暂停/退出即时写入
 - **收藏夹** Tab
-- 设置：仅 Wi‑Fi、清晰度上限（**默认 480p**，可选手动 **720p / 1080p**）、演示源开关、清历史 / 清缓存
+- 设置：仅 Wi‑Fi、清晰度上限（**默认 480p**，可选手动 **720p / 1080p**）、清历史 / 清缓存
 
 ## 跨季连播能力边界
 
@@ -35,20 +35,22 @@
 
 ## UI（手表小屏）
 
-- **播放**：沉浸式；顶栏返回+标题+锁；底栏进度 + 清晰度 / 上集 / 播放 / 下集 / 选集（图标）；收起后细进度；锁定后仅解锁钮
-- **首页 / 搜索 / 历史 / 收藏**：四 Tab；历史显示「第 N 集 · 进度%」
+- **播放**：沉浸式；顶栏返回+标题；中区左锁右倍速；底栏进度 + 清晰度 / 上集 / 播放 / 下集 / 选集（图标）；收起后细进度；锁定后仅中央解锁钮
+- **首页**：搜索 + 横向分类芯片 + 列表；历史 / 收藏 Tab；历史显示「第 N 集 · 进度%」
 - **详情**：收藏钮；续播带进度；选集网格；下方相关季列表
-- **设置**：清晰度三档大芯片；演示源；清理操作
+- **设置**：清晰度三档大芯片；清理操作
 
 ## 片源说明
 
 | 路径 | 状态 |
 |------|------|
 | App 族搜索 `reading/bookapi/search/tab/v` + 开源 Signer | **默认** |
+| App 书城推荐 `reading/bookapi/bookmall/tab/v1/`（`tab_type=16`） | **默认** |
+| App 分类落地页 `reading/distribution/category/landpage/v/`（类型/题材 selector） | **默认** |
 | App 分集 `novel/player/multi_video_detail/preload/v1` | **默认** |
 | App 播放模型 `novel/player/multi_video_model/player/v1`（对照 hongguoTV `MobilePlayback`） | **默认** |
 | App 相关作品 `reading/bookapi/plan/v:version/`（`detail_page_more_related`） | **默认** |
-| 演示流（Big Buck Bunny + 演示第二季） | 设置可开关，用于验证播放器与跨季 |
+| 书城 cell 无限续刷 / 官网榜单 | **未接**（手表首屏分页边界） |
 | 本地 Node 桥 / 官网源入口 | **不**使用 |
 
 上游归因见 [`third_party/hongguoTV-NOTICE.md`](third_party/hongguoTV-NOTICE.md)、[`third_party/SIGNING_V5.md`](third_party/SIGNING_V5.md)。

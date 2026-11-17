@@ -1,7 +1,9 @@
 package com.hongguo.watch.data
 
 import android.content.Context
+import com.hongguo.watch.data.model.CatalogPage
 import com.hongguo.watch.data.model.Episode
+import com.hongguo.watch.data.model.HomeCategory
 import com.hongguo.watch.data.model.RelatedWork
 import com.hongguo.watch.data.model.SearchPage
 import com.hongguo.watch.data.model.Series
@@ -115,6 +117,111 @@ class AppSourceClient(
             page = page.coerceAtLeast(1),
             hasMore = tab.optBoolean("has_more", false) && page < 100,
         )
+    }
+
+    /**
+     * 书城推荐流。对照 hongguoTV `RecommendationFeed`：
+     * `GET .../reading/bookapi/bookmall/tab/v1/`，`tab_type=16`。
+     * 手表首屏只取第一页；续页 / cell 无限流未接。
+     */
+    fun fetchRecommend(page: Int = 1): CatalogPage {
+        require(page in 1..20)
+        ensureDevice()
+        val values = feedIdentity().toMutableMap()
+        values.putAll(
+            linkedMapOf(
+                "tab_type" to "16",
+                "bottom_tab_type" to "7",
+                "landing_bottom_tab_type" to "7",
+                "offset" to ((page - 1) * 12).toString(),
+                "client_req_type" to if (page <= 1) "1" else "2",
+            ),
+        )
+        var last: Exception? = null
+        for (host in FEED_HOSTS) {
+            try {
+                val signed = signer.sign("https://$host/reading/bookapi/bookmall/tab/v1/", values)
+                val root = JSONObject(execute(signed))
+                if (root.optInt("code", -1) != 0) {
+                    throw IllegalStateException("推荐暂不可用（code=${root.optInt("code")}）")
+                }
+                val items = parseBookmallTab(root)
+                if (items.isEmpty()) throw IllegalStateException("推荐未返回可播放剧集")
+                return CatalogPage(items = items, page = page, hasMore = page < 20)
+            } catch (e: Exception) {
+                last = e
+            }
+        }
+        throw IllegalStateException(last?.message ?: "推荐暂时无法加载", last)
+    }
+
+    /**
+     * 分类落地页。对照 hongguoTV `DiscoverySelection` / `filteredDiscovery`：
+     * `POST .../reading/distribution/category/landpage/v/`。
+     * `need_selector_panel=true` 时解析 `selector_rows` 作为首页分类 Tab。
+     */
+    fun fetchCategory(
+        filters: Map<String, String> = emptyMap(),
+        offset: Int = 0,
+        sessionId: String = "",
+        withSelector: Boolean = offset == 0,
+    ): CatalogPage {
+        require(offset in 0..200_000)
+        ensureDevice()
+        val selected = JSONObject()
+        for (key in SELECTOR_KEYS) {
+            selected.put(key, JSONArray().apply {
+                filters[key]?.takeIf { it.isNotBlank() }?.let { put(it) }
+            })
+        }
+        val bodyObj = JSONObject()
+            .put("offset", offset)
+            .put("limit", 24)
+            .put("need_selector_panel", withSelector)
+            .put("select_items", selected)
+            .put("session_id", sessionId)
+            .put("req_type", if (offset == 0) "default" else "only_content")
+            .put("client_req_type", 3)
+            .put("filter_ids", "")
+            .put(
+                "req_scene",
+                when (filters["genre"]) {
+                    "comic_series", "ai_series" -> filters.getValue("genre")
+                    else -> "default"
+                },
+            )
+        val body = bodyObj.toString().toByteArray(Charsets.UTF_8)
+        val values = feedIdentity()
+        var last: Exception? = null
+        for (host in FEED_HOSTS) {
+            try {
+                val signed = signer.sign(
+                    "https://$host/reading/distribution/category/landpage/v/",
+                    values,
+                    body = body,
+                )
+                val root = JSONObject(execute(signed))
+                if (root.optInt("code", -1) != 0) {
+                    throw IllegalStateException("分类暂不可用（code=${root.optInt("code")}）")
+                }
+                val data = root.optJSONObject("data")
+                    ?: throw IllegalStateException("分类数据缺失")
+                val items = parseLandpageVideos(data)
+                val categories = if (withSelector) parseSelectorCategories(data) else emptyList()
+                if (items.isEmpty() && categories.isEmpty()) {
+                    throw IllegalStateException("分类未返回内容")
+                }
+                return CatalogPage(
+                    items = items,
+                    page = 1,
+                    hasMore = data.optBoolean("has_more", false),
+                    categories = categories,
+                )
+            } catch (e: Exception) {
+                last = e
+            }
+        }
+        throw IllegalStateException(last?.message ?: "分类暂时无法加载", last)
     }
 
     fun fetchDetail(seriesId: String): SeriesDetail {
@@ -320,6 +427,80 @@ class AppSourceClient(
         )
     }
 
+    /** 推荐 / 分类用 73532 版本组合（对照 hongguoTV RecommendationFeed 游客态）。 */
+    private fun feedIdentity(): Map<String, String> {
+        val base = identityQuery().toMutableMap()
+        for (k in listOf("version_code", "manifest_version_code", "update_version_code", "pv_player")) {
+            base[k] = "73532"
+        }
+        base["version_name"] = "7.3.5.32"
+        return base
+    }
+
+    private fun parseBookmallTab(root: JSONObject): List<Series> {
+        val tab = root.optJSONObject("data")?.optJSONArray("tab_item")?.objects()
+            ?.firstOrNull { it.str("tab_type") == "16" || it.optInt("tab_type") == 16 }
+            ?: throw IllegalStateException("推荐数据格式已变化")
+        val rows = tab.optJSONArray("cell_data")?.objects().orEmpty().flatMap { cell ->
+            cell.optJSONArray("cell_data")?.objects().orEmpty().flatMap { card ->
+                card.optJSONArray("video_data")?.objects().orEmpty().map {
+                    it.optJSONObject("video_detail") ?: it
+                }
+            }
+        }
+        return rows.mapNotNull { row -> seriesFromFeedRow(row) }.distinctBy { it.id }
+    }
+
+    private fun parseLandpageVideos(data: JSONObject): List<Series> {
+        val rows = data.optJSONArray("video_data")?.objects().orEmpty()
+        return rows.mapNotNull { row -> seriesFromFeedRow(row) }.distinctBy { it.id }
+    }
+
+    private fun seriesFromFeedRow(row: JSONObject): Series? {
+        val id = row.str("series_id").ifBlank { row.str("book_id") }
+        if (!SERIES_ID.matches(id)) return null
+        val title = row.str("series_title")
+            .ifBlank { row.str("book_name") }
+            .ifBlank { row.str("title") }
+        if (title.isBlank()) return null
+        val count = row.optInt("episode_cnt")
+        return Series(
+            id = id,
+            title = title,
+            cover = safeCover(
+                row.str("series_cover").ifBlank { row.str("cover").ifBlank { row.str("cover_url") } },
+            ),
+            description = row.str("series_intro").ifBlank { row.str("video_desc") },
+            episodeCount = count,
+            source = SeriesSource.APP,
+        )
+    }
+
+    /** 从 selector_rows 抽出类型 + 主题，拼成手表横向分类 Tab。 */
+    private fun parseSelectorCategories(data: JSONObject): List<HomeCategory> {
+        val rows = data.optJSONArray("selector_rows")?.objects().orEmpty()
+        val out = mutableListOf<HomeCategory>()
+        val seen = HashSet<String>()
+        for (row in rows) {
+            val type = row.str("type")
+            if (type !in setOf("genre", "category_dim_theme")) continue
+            val options = row.optJSONArray("items")?.objects().orEmpty()
+            for (opt in options) {
+                val sid = opt.str("selector_item_id")
+                val name = opt.str("show_name")
+                if (!SELECTOR_ID.matches(sid) || name.isBlank() || name.length > 40) continue
+                val id = "$type:$sid"
+                if (!seen.add(id)) continue
+                out += HomeCategory(
+                    id = id,
+                    label = name,
+                    filters = mapOf(type to sid),
+                )
+            }
+        }
+        return out.take(48)
+    }
+
     private fun execute(signed: Signer.Request): String {
         val builder = Request.Builder()
             .url(signed.url)
@@ -353,6 +534,23 @@ class AppSourceClient(
             "api5-normal-lf.fqnovel.com",
             "api5-normal-sinfonlineb.fqnovel.com",
         )
+        private val FEED_HOSTS = listOf(
+            "api5-normal-sinfonlinea.fqnovel.com",
+            "api5-normal-hl.fqnovel.com",
+            "api5-normal-lf.fqnovel.com",
+            "api5-normal-sinfonlineb.fqnovel.com",
+        )
+        private val SELECTOR_KEYS = listOf(
+            "genre",
+            "category_dim_theme",
+            "category_dim_role",
+            "category_dim_epoch",
+            "sort",
+            "gender",
+            "online_time",
+            "creation_status",
+        )
+        private val SELECTOR_ID = Regex("^[a-zA-Z0-9_-]{1,80}$")
 
         private fun defaultClient(): OkHttpClient {
             return OkHttpClient.Builder()

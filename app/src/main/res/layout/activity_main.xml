@@ -4,16 +4,17 @@
     android:layout_height="match_parent"
     android:background="@color/bg"
     android:orientation="vertical"
-    android:padding="8dp">
+    android:paddingHorizontal="@dimen/watch_pad"
+    android:paddingTop="@dimen/watch_pad_tight">
 
     <TextView
         android:id="@+id/brandTitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingBottom="4dp"
+        android:paddingBottom="2dp"
         android:text="@string/app_name"
         android:textColor="@color/accent"
-        android:textSize="18sp"
+        android:textSize="@dimen/watch_title"
         android:textStyle="bold" />
 
     <LinearLayout
@@ -24,33 +25,35 @@
         <EditText
             android:id="@+id/searchInput"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="36dp"
             android:layout_weight="1"
             android:background="@color/bg_elevated"
             android:hint="@string/search_hint"
             android:imeOptions="actionSearch"
             android:inputType="text"
-            android:paddingHorizontal="10dp"
+            android:paddingHorizontal="8dp"
             android:textColor="@color/text_primary"
             android:textColorHint="@color/text_secondary"
-            android:textSize="14sp" />
+            android:textSize="@dimen/watch_body" />
 
         <Button
             android:id="@+id/searchButton"
             android:layout_width="wrap_content"
-            android:layout_height="40dp"
-            android:layout_marginStart="6dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="4dp"
             android:backgroundTint="@color/accent"
-            android:minWidth="56dp"
+            android:minWidth="52dp"
+            android:minHeight="0dp"
+            android:paddingHorizontal="10dp"
             android:text="@string/search"
             android:textColor="@color/text_primary"
-            android:textSize="13sp" />
+            android:textSize="@dimen/watch_body" />
     </LinearLayout>
 
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="4dp"
         android:layout_weight="1">
 
         <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -63,7 +66,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:clipToPadding="false"
-                android:paddingBottom="8dp" />
+                android:paddingBottom="4dp" />
         </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
         <TextView
@@ -72,22 +75,22 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:gravity="center"
-            android:padding="16dp"
+            android:padding="12dp"
             android:text="@string/empty_search"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
+            android:textSize="@dimen/watch_body" />
 
         <ProgressBar
             android:id="@+id/loading"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
             android:layout_gravity="center"
             android:visibility="gone" />
     </FrameLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="44dp"
+        android:layout_height="@dimen/watch_tab_h"
         android:background="@color/bg_elevated"
         android:orientation="horizontal">
 
@@ -97,9 +100,12 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minHeight="0dp"
             android:text="@string/tab_home"
             android:textColor="@color/accent"
-            android:textSize="12sp" />
+            android:textSize="@dimen/watch_body" />
 
         <Button
             android:id="@+id/tabHistory"
@@ -107,9 +113,12 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minHeight="0dp"
             android:text="@string/tab_history"
             android:textColor="@color/text_secondary"
-            android:textSize="12sp" />
+            android:textSize="@dimen/watch_body" />
 
         <Button
             android:id="@+id/tabSettings"
@@ -117,8 +126,11 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minHeight="0dp"
             android:text="@string/tab_settings"
             android:textColor="@color/text_secondary"
-            android:textSize="12sp" />
+            android:textSize="@dimen/watch_body" />
     </LinearLayout>
 </LinearLayout>

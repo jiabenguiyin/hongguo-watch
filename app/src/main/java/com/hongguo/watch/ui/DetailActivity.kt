@@ -42,7 +42,8 @@ class DetailActivity : AppCompatActivity() {
         binding.seriesIntro.text = intent.getStringExtra(EXTRA_INTRO).orEmpty()
 
         adapter = EpisodeAdapter { openPlayer(it) }
-        binding.episodeGrid.layoutManager = GridLayoutManager(this, 4)
+        // 手表小屏：5 列更贴近哔哩终端分集密度
+        binding.episodeGrid.layoutManager = GridLayoutManager(this, 5)
         binding.episodeGrid.adapter = adapter
 
         loadDetail()

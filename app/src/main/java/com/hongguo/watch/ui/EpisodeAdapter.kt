@@ -2,9 +2,7 @@ package com.hongguo.watch.ui
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
-import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
-import com.hongguo.watch.R
 import com.hongguo.watch.data.model.Episode
 import com.hongguo.watch.databinding.ItemEpisodeBinding
 
@@ -37,12 +35,7 @@ class EpisodeAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
         fun bind(episode: Episode) {
             binding.episodeNumber.text = episode.number.toString()
-            val selected = episode.id == selectedId
-            val color = ContextCompat.getColor(
-                binding.root.context,
-                if (selected) R.color.episode_selected else R.color.episode_normal,
-            )
-            binding.episodeNumber.setBackgroundColor(color)
+            binding.episodeNumber.isSelected = episode.id == selectedId
             binding.root.setOnClickListener { onClick(episode) }
         }
     }

@@ -4,7 +4,8 @@
     android:layout_height="match_parent"
     android:background="@color/bg"
     android:orientation="vertical"
-    android:padding="8dp">
+    android:paddingHorizontal="@dimen/watch_pad"
+    android:paddingTop="@dimen/watch_pad_tight">
 
     <TextView
         android:id="@+id/seriesTitle"
@@ -13,26 +14,26 @@
         android:ellipsize="end"
         android:maxLines="2"
         android:textColor="@color/text_primary"
-        android:textSize="16sp"
+        android:textSize="@dimen/watch_title"
         android:textStyle="bold" />
 
     <TextView
         android:id="@+id/seriesIntro"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="2dp"
         android:ellipsize="end"
-        android:maxLines="3"
+        android:maxLines="2"
         android:textColor="@color/text_secondary"
-        android:textSize="11sp" />
+        android:textSize="@dimen/watch_meta" />
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="6dp"
         android:text="@string/episodes"
         android:textColor="@color/text_secondary"
-        android:textSize="12sp" />
+        android:textSize="@dimen/watch_meta" />
 
     <FrameLayout
         android:layout_width="match_parent"
@@ -44,12 +45,13 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:clipToPadding="false"
-            android:paddingTop="6dp" />
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp" />
 
         <ProgressBar
             android:id="@+id/loading"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
             android:layout_gravity="center"
             android:visibility="gone" />
 
@@ -59,9 +61,9 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:gravity="center"
-            android:padding="12dp"
+            android:padding="10dp"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
+            android:textSize="@dimen/watch_body"
             android:visibility="gone" />
     </FrameLayout>
 </LinearLayout>

@@ -17,7 +17,13 @@
     <string name="pause">暂停</string>
     <string name="prev_ep">上一集</string>
     <string name="next_ep">下一集</string>
+    <string name="prev_ep_short">上集</string>
+    <string name="next_ep_short">下集</string>
+    <string name="back">←</string>
+    <string name="quality">清晰度</string>
+    <string name="quality_sheet_title">选择清晰度（默认 480p）</string>
     <string name="episodes">选集</string>
+    <string name="tap_controls_hint">点按显示/隐藏控件</string>
     <string name="continue_watch">续播</string>
     <string name="clear_history">清除历史</string>
     <string name="clear_cache">清除缓存</string>

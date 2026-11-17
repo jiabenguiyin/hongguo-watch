@@ -2,6 +2,7 @@ package com.hongguo.watch.data
 
 import android.content.Context
 import com.hongguo.watch.data.model.Episode
+import com.hongguo.watch.data.model.RelatedWork
 import com.hongguo.watch.data.model.SearchPage
 import com.hongguo.watch.data.model.Series
 import com.hongguo.watch.data.model.SeriesDetail
@@ -24,6 +25,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 默认片源：开源 App 族上游（对照 N3urda/hongguoTV Signer / DeviceRegister / MobilePlayback，
@@ -38,6 +40,7 @@ class AppSourceClient(
     private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val signer = Signer()
     private val clock: () -> Long = System::currentTimeMillis
+    private val relatedCache = ConcurrentHashMap<String, List<RelatedWork>>()
 
     fun search(query: String, page: Int = 1): SearchPage {
         val keyword = query.trim()
@@ -188,6 +191,64 @@ class AppSourceClient(
         )
     }
 
+    /**
+     * 相关作品 / 同系列季表。对照 hongguoTV：
+     * `GET .../reading/bookapi/plan/v:version/` + `scene=10` + `from=detail_page_more_related`。
+     */
+    fun fetchRelated(seriesId: String, force: Boolean = false): List<RelatedWork> {
+        val id = seriesId.trim()
+        require(SERIES_ID.matches(id)) { "无效剧集 ID" }
+        if (!force) relatedCache[id]?.let { return it }
+        ensureDevice()
+
+        val values = identityQuery().toMutableMap()
+        for (k in listOf("version_code", "manifest_version_code", "update_version_code", "pv_player")) {
+            values[k] = "72232"
+        }
+        values["version_name"] = "7.2.2.32"
+        values.putAll(
+            mapOf(
+                "scene" to "10",
+                "from" to "detail_page_more_related",
+                "book_id" to id,
+                "new_search_middle_page" to "false",
+                "bookstore_tab_type" to "0",
+                "query_history_removed" to "false",
+                "user_is_login" to "0",
+                "bookstore_tab" to "0",
+                "search_middle_page_version" to "0",
+                "pad_column_detail" to "0",
+                "hot_word_exchange" to "false",
+                "device_level" to "3",
+                "limit" to "0",
+                "offset" to "0",
+                "is_horizontal_screen" to "false",
+                "reader_single_col_from_ip_strategy" to "false",
+            ),
+        )
+
+        var lastError: Exception? = null
+        for (host in RELATED_HOSTS) {
+            try {
+                val signed = signer.sign("https://$host/reading/bookapi/plan/v:version/", values)
+                val raw = execute(signed)
+                if (raw.isBlank()) {
+                    lastError = IllegalStateException("相关作品接口暂无响应")
+                    continue
+                }
+                val rows = RelatedWorks.parse(raw, id)
+                relatedCache[id] = rows
+                return rows
+            } catch (e: Exception) {
+                lastError = e
+            }
+        }
+        throw IllegalStateException(
+            lastError?.message ?: "相关作品暂时无法加载",
+            lastError,
+        )
+    }
+
     fun fetchStream(seriesId: String, episodeId: String, maxHeight: Int): StreamInfo {
         require(SERIES_ID.matches(seriesId.trim())) { "无效剧集 ID" }
         val vid = episodeId.trim()
@@ -286,6 +347,12 @@ class AppSourceClient(
         private const val VIDEO_REFERER = "https://novel.snssdk.com/"
         private val SERIES_ID = Regex("^[1-9][0-9]{5,29}$")
         private val DEVICE_ID = Regex("^[1-9][0-9]{0,29}$")
+        private val RELATED_HOSTS = listOf(
+            "api5-normal-sinfonlinec.fqnovel.com",
+            "api5-normal-hl.fqnovel.com",
+            "api5-normal-lf.fqnovel.com",
+            "api5-normal-sinfonlineb.fqnovel.com",
+        )
 
         private fun defaultClient(): OkHttpClient {
             return OkHttpClient.Builder()

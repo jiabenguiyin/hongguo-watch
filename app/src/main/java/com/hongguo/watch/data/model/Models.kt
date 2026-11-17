@@ -45,3 +45,17 @@ data class SearchPage(
     val page: Int,
     val hasMore: Boolean,
 )
+
+/** App 族相关季 / 同系列条目（对照 hongguoTV RelatedWork）。 */
+data class RelatedWork(
+    val series: Series,
+    val seasonLabel: String = "",
+    val upcoming: Boolean = false,
+    val seasonIndex: Int = 0,
+) {
+    val label: String
+        get() = listOf(
+            seasonLabel,
+            if (upcoming) "待上线" else if (series.episodeCount > 0) "全${series.episodeCount}集" else "已上线",
+        ).filter { it.isNotBlank() }.joinToString(" · ")
+}

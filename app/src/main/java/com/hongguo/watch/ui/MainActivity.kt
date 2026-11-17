@@ -51,10 +51,12 @@ class MainActivity : AppCompatActivity() {
             when (mode) {
                 Mode.HOME -> if (lastQuery.isNotBlank()) runSearch() else showHome()
                 Mode.HISTORY -> showHistory()
+                Mode.FAVORITES -> showFavorites()
             }
         }
         binding.tabHome.setOnClickListener { showHome() }
         binding.tabHistory.setOnClickListener { showHistory() }
+        binding.tabFavorites.setOnClickListener { showFavorites() }
         binding.tabSettings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
@@ -64,8 +66,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (mode == Mode.HISTORY) showHistory()
-        else if (mode == Mode.HOME && lastQuery.isBlank()) showHome()
+        when (mode) {
+            Mode.HISTORY -> showHistory()
+            Mode.FAVORITES -> showFavorites()
+            Mode.HOME -> if (lastQuery.isBlank()) showHome()
+        }
     }
 
     private fun showHome() {
@@ -148,12 +153,17 @@ class MainActivity : AppCompatActivity() {
             try {
                 val history = repo.recentHistory()
                 val rows = history.map {
+                    val percent = if (it.durationMs > 0) {
+                        ((it.positionMs * 100) / it.durationMs).toInt().coerceIn(0, 100)
+                    } else {
+                        0
+                    }
                     HomeRow.Item(
                         Series(
                             id = it.seriesId,
                             title = it.seriesTitle,
                             cover = it.cover,
-                            description = "看到第 ${it.episodeNumber} 集",
+                            description = getString(R.string.progress_meta, it.episodeNumber, percent),
                             episodeCount = it.episodeNumber,
                             source = runCatching { SeriesSource.valueOf(it.source) }
                                 .getOrDefault(SeriesSource.APP),
@@ -170,49 +180,99 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun openSeries(series: Series) {
-        if (mode == Mode.HISTORY) {
-            lifecycleScope.launch {
-                val history = repo.historyFor(series.id)
-                val intent = Intent(this@MainActivity, PlayerActivity::class.java).apply {
-                    putExtra(PlayerActivity.EXTRA_SERIES_ID, series.id)
-                    putExtra(PlayerActivity.EXTRA_SERIES_TITLE, series.title)
-                    putExtra(PlayerActivity.EXTRA_COVER, series.cover)
-                    putExtra(PlayerActivity.EXTRA_SOURCE, series.source.name)
-                    if (history != null) {
-                        putExtra(PlayerActivity.EXTRA_EPISODE_ID, history.episodeId)
-                        putExtra(PlayerActivity.EXTRA_EPISODE_NUMBER, history.episodeNumber)
-                        putExtra(PlayerActivity.EXTRA_START_POSITION_MS, history.positionMs)
-                    }
+    private fun showFavorites() {
+        mode = Mode.FAVORITES
+        highlightTabs(favorites = true)
+        hideKeyboard()
+        binding.searchRow.visibility = View.GONE
+        binding.pageSubtitle.visibility = View.VISIBLE
+        binding.pageSubtitle.text = getString(R.string.favorites_subtitle)
+        binding.brandTitle.text = getString(R.string.tab_favorites)
+        binding.loading.visibility = View.VISIBLE
+        adapter.showResumeHint = false
+        lifecycleScope.launch {
+            try {
+                val favorites = repo.favorites()
+                val rows = favorites.map {
+                    HomeRow.Item(
+                        Series(
+                            id = it.seriesId,
+                            title = it.seriesTitle,
+                            cover = it.cover,
+                            description = if (it.episodeCount > 0) "全${it.episodeCount}集" else "",
+                            episodeCount = it.episodeCount,
+                            source = runCatching { SeriesSource.valueOf(it.source) }
+                                .getOrDefault(SeriesSource.APP),
+                        ),
+                    )
                 }
-                startActivity(intent)
+                adapter.submit(rows)
+                binding.emptyView.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+                binding.emptyView.text = getString(R.string.empty_favorites)
+            } finally {
+                binding.loading.visibility = View.GONE
+                binding.swipeRefresh.isRefreshing = false
             }
-        } else {
-            startActivity(
-                Intent(this, DetailActivity::class.java).apply {
-                    putExtra(DetailActivity.EXTRA_SERIES_ID, series.id)
-                    putExtra(DetailActivity.EXTRA_SERIES_TITLE, series.title)
-                    putExtra(DetailActivity.EXTRA_COVER, series.cover)
-                    putExtra(DetailActivity.EXTRA_INTRO, series.description)
-                    putExtra(DetailActivity.EXTRA_SOURCE, series.source.name)
-                },
-            )
         }
     }
 
-    private fun highlightTabs(home: Boolean = false, history: Boolean = false) {
+    private fun openSeries(series: Series) {
+        when (mode) {
+            Mode.HISTORY -> {
+                lifecycleScope.launch {
+                    val history = repo.historyFor(series.id)
+                    val intent = Intent(this@MainActivity, PlayerActivity::class.java).apply {
+                        putExtra(PlayerActivity.EXTRA_SERIES_ID, series.id)
+                        putExtra(PlayerActivity.EXTRA_SERIES_TITLE, series.title)
+                        putExtra(PlayerActivity.EXTRA_COVER, series.cover)
+                        putExtra(PlayerActivity.EXTRA_SOURCE, series.source.name)
+                        if (history != null) {
+                            putExtra(PlayerActivity.EXTRA_EPISODE_ID, history.episodeId)
+                            putExtra(PlayerActivity.EXTRA_EPISODE_NUMBER, history.episodeNumber)
+                            putExtra(
+                                PlayerActivity.EXTRA_START_POSITION_MS,
+                                repo.resumePositionMs(history),
+                            )
+                        }
+                    }
+                    startActivity(intent)
+                }
+            }
+            Mode.HOME, Mode.FAVORITES -> {
+                startActivity(
+                    Intent(this, DetailActivity::class.java).apply {
+                        putExtra(DetailActivity.EXTRA_SERIES_ID, series.id)
+                        putExtra(DetailActivity.EXTRA_SERIES_TITLE, series.title)
+                        putExtra(DetailActivity.EXTRA_COVER, series.cover)
+                        putExtra(DetailActivity.EXTRA_INTRO, series.description)
+                        putExtra(DetailActivity.EXTRA_SOURCE, series.source.name)
+                    },
+                )
+            }
+        }
+    }
+
+    private fun highlightTabs(
+        home: Boolean = false,
+        history: Boolean = false,
+        favorites: Boolean = false,
+    ) {
         val accent = ContextCompat.getColor(this, R.color.accent)
         val muted = ContextCompat.getColor(this, R.color.text_secondary)
         binding.tabHome.setTextColor(if (home) accent else muted)
         binding.tabHistory.setTextColor(if (history) accent else muted)
+        binding.tabFavorites.setTextColor(if (favorites) accent else muted)
         binding.tabSettings.setTextColor(muted)
         binding.tabHome.setBackgroundResource(if (home) R.drawable.bg_tab_active else android.R.color.transparent)
         binding.tabHistory.setBackgroundResource(if (history) R.drawable.bg_tab_active else android.R.color.transparent)
+        binding.tabFavorites.setBackgroundResource(if (favorites) R.drawable.bg_tab_active else android.R.color.transparent)
         binding.tabSettings.setBackgroundResource(android.R.color.transparent)
         binding.tabHome.paint.isFakeBoldText = home
         binding.tabHistory.paint.isFakeBoldText = history
+        binding.tabFavorites.paint.isFakeBoldText = favorites
         binding.tabHome.invalidate()
         binding.tabHistory.invalidate()
+        binding.tabFavorites.invalidate()
     }
 
     private fun hideKeyboard() {
@@ -221,5 +281,5 @@ class MainActivity : AppCompatActivity() {
         binding.searchInput.clearFocus()
     }
 
-    private enum class Mode { HOME, HISTORY }
+    private enum class Mode { HOME, HISTORY, FAVORITES }
 }

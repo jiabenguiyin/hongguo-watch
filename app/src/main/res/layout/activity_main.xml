@@ -111,22 +111,23 @@
         android:background="@drawable/bg_tab_bar"
         android:gravity="center"
         android:orientation="horizontal"
-        android:padding="3dp">
+        android:padding="2dp">
 
         <Button
             android:id="@+id/tabHome"
             style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_marginEnd="2dp"
+            android:layout_marginEnd="1dp"
             android:layout_weight="1"
             android:background="@drawable/bg_tab_active"
             android:insetTop="0dp"
             android:insetBottom="0dp"
             android:minHeight="0dp"
+            android:paddingHorizontal="0dp"
             android:text="@string/tab_home"
             android:textColor="@color/accent"
-            android:textSize="@dimen/watch_body"
+            android:textSize="11sp"
             android:textStyle="bold" />
 
         <Button
@@ -134,29 +135,47 @@
             style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_marginHorizontal="2dp"
+            android:layout_marginHorizontal="1dp"
             android:layout_weight="1"
             android:background="@android:color/transparent"
             android:insetTop="0dp"
             android:insetBottom="0dp"
             android:minHeight="0dp"
+            android:paddingHorizontal="0dp"
             android:text="@string/tab_history"
             android:textColor="@color/text_secondary"
-            android:textSize="@dimen/watch_body" />
+            android:textSize="11sp" />
+
+        <Button
+            android:id="@+id/tabFavorites"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginHorizontal="1dp"
+            android:layout_weight="1"
+            android:background="@android:color/transparent"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minHeight="0dp"
+            android:paddingHorizontal="0dp"
+            android:text="@string/tab_favorites"
+            android:textColor="@color/text_secondary"
+            android:textSize="11sp" />
 
         <Button
             android:id="@+id/tabSettings"
             style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_marginStart="2dp"
+            android:layout_marginStart="1dp"
             android:layout_weight="1"
             android:background="@android:color/transparent"
             android:insetTop="0dp"
             android:insetBottom="0dp"
             android:minHeight="0dp"
+            android:paddingHorizontal="0dp"
             android:text="@string/tab_settings"
             android:textColor="@color/text_secondary"
-            android:textSize="@dimen/watch_body" />
+            android:textSize="11sp" />
     </LinearLayout>
 </LinearLayout>

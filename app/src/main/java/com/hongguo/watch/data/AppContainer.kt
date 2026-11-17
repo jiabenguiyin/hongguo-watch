@@ -10,6 +10,7 @@ class AppContainer(context: Context) {
     val repository = ContentRepository(
         appSource = AppSourceClient(appContext),
         historyDao = database.watchHistoryDao(),
+        favoriteDao = database.favoriteDao(),
         settings = settings,
     )
 }

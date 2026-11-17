@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 手表播放页：少遮挡、大触控、进度/选集/清晰度可点，控件可自动收起 -->
+<!-- 手表播放页：锁定、左右亮度/音量、图标控件、可跨季连播 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/playerRoot"
     android:layout_width="match_parent"
@@ -21,7 +21,6 @@
         android:clickable="true"
         android:focusable="true" />
 
-    <!-- 控件收起时保留细进度，几乎不挡画面 -->
     <ProgressBar
         android:id="@+id/miniProgress"
         style="?android:attr/progressBarStyleHorizontal"
@@ -31,6 +30,68 @@
         android:max="1000"
         android:progressDrawable="@drawable/mini_progress"
         android:visibility="gone" />
+
+    <!-- 左侧亮度条 -->
+    <LinearLayout
+        android:id="@+id/brightnessMeter"
+        android:layout_width="28dp"
+        android:layout_height="120dp"
+        android:layout_gravity="start|center_vertical"
+        android:layout_marginStart="6dp"
+        android:background="@drawable/bg_side_meter"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="4dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/brightness"
+            android:textColor="@color/text_secondary"
+            android:textSize="8sp" />
+
+        <ProgressBar
+            android:id="@+id/brightnessBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="72dp"
+            android:layout_height="10dp"
+            android:layout_marginTop="8dp"
+            android:max="100"
+            android:progressDrawable="@drawable/mini_progress"
+            android:rotation="270" />
+    </LinearLayout>
+
+    <!-- 右侧音量条 -->
+    <LinearLayout
+        android:id="@+id/volumeMeter"
+        android:layout_width="28dp"
+        android:layout_height="120dp"
+        android:layout_gravity="end|center_vertical"
+        android:layout_marginEnd="6dp"
+        android:background="@drawable/bg_side_meter"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="4dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/volume"
+            android:textColor="@color/text_secondary"
+            android:textSize="8sp" />
+
+        <ProgressBar
+            android:id="@+id/volumeBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="72dp"
+            android:layout_height="10dp"
+            android:layout_marginTop="8dp"
+            android:max="100"
+            android:progressDrawable="@drawable/mini_progress"
+            android:rotation="270" />
+    </LinearLayout>
 
     <LinearLayout
         android:id="@+id/loadingBox"
@@ -72,6 +133,50 @@
         android:textStyle="bold"
         android:visibility="gone" />
 
+    <TextView
+        android:id="@+id/lockBanner"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/bg_panel"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp"
+        android:text="@string/lock_hint"
+        android:textColor="@color/text_secondary"
+        android:textSize="@dimen/watch_meta"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/seasonBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:layout_marginHorizontal="10dp"
+        android:layout_marginBottom="52dp"
+        android:background="@drawable/bg_panel"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp"
+        android:textColor="@color/text_primary"
+        android:textSize="@dimen/watch_meta"
+        android:visibility="gone" />
+
+    <!-- 锁定时仅显示解锁钮 -->
+    <ImageButton
+        android:id="@+id/unlockButton"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="8dp"
+        android:background="@drawable/bg_control_button"
+        android:contentDescription="@string/cd_unlock"
+        android:padding="10dp"
+        android:scaleType="centerInside"
+        android:src="@drawable/ic_unlock"
+        android:visibility="gone" />
+
     <LinearLayout
         android:id="@+id/controlsOverlay"
         android:layout_width="match_parent"
@@ -92,7 +197,7 @@
 
             <TextView
                 android:id="@+id/backButton"
-                android:layout_width="44dp"
+                android:layout_width="40dp"
                 android:layout_height="40dp"
                 android:background="@drawable/bg_control_button"
                 android:gravity="center"
@@ -104,7 +209,7 @@
                 android:id="@+id/playerTitle"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
+                android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
                 android:layout_weight="1"
                 android:ellipsize="marquee"
@@ -115,6 +220,16 @@
                 android:textColor="@color/text_primary"
                 android:textSize="@dimen/watch_body"
                 android:textStyle="bold" />
+
+            <ImageButton
+                android:id="@+id/lockButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/bg_control_button"
+                android:contentDescription="@string/cd_lock"
+                android:padding="8dp"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_lock" />
         </LinearLayout>
 
         <View
@@ -185,7 +300,6 @@
                     android:textSize="@dimen/watch_meta" />
             </LinearLayout>
 
-            <!-- 主操作：上集 / 播放 / 下集；次操作：清晰度 · 选集 -->
             <LinearLayout
                 android:id="@+id/bottomButtons"
                 android:layout_width="match_parent"
@@ -200,56 +314,55 @@
                     android:layout_width="0dp"
                     android:layout_height="@dimen/watch_control_h"
                     android:layout_marginHorizontal="2dp"
-                    android:layout_weight="0.9"
+                    android:layout_weight="0.85"
                     android:background="@drawable/bg_control_button"
                     android:gravity="center"
                     android:text="480p"
                     android:textColor="@color/text_primary"
                     android:textSize="@dimen/watch_meta" />
 
-                <TextView
+                <ImageButton
                     android:id="@+id/prevButton"
                     android:layout_width="0dp"
                     android:layout_height="@dimen/watch_control_h"
                     android:layout_marginHorizontal="2dp"
                     android:layout_weight="1"
                     android:background="@drawable/bg_control_button"
-                    android:gravity="center"
-                    android:text="@string/prev_ep_short"
-                    android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_body" />
+                    android:contentDescription="@string/cd_prev"
+                    android:padding="8dp"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_prev" />
 
-                <TextView
+                <ImageButton
                     android:id="@+id/playPauseButton"
                     android:layout_width="0dp"
                     android:layout_height="@dimen/watch_play_h"
                     android:layout_marginHorizontal="2dp"
                     android:layout_weight="1.35"
                     android:background="@drawable/bg_quality_chip"
-                    android:gravity="center"
-                    android:text="@string/pause"
-                    android:textColor="@color/text_primary"
-                    android:textSize="15sp"
-                    android:textStyle="bold" />
+                    android:contentDescription="@string/cd_pause"
+                    android:padding="8dp"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_pause" />
 
-                <TextView
+                <ImageButton
                     android:id="@+id/nextButton"
                     android:layout_width="0dp"
                     android:layout_height="@dimen/watch_control_h"
                     android:layout_marginHorizontal="2dp"
                     android:layout_weight="1"
                     android:background="@drawable/bg_control_button"
-                    android:gravity="center"
-                    android:text="@string/next_ep_short"
-                    android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_body" />
+                    android:contentDescription="@string/cd_next"
+                    android:padding="8dp"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_next" />
 
                 <TextView
                     android:id="@+id/episodesButton"
                     android:layout_width="0dp"
                     android:layout_height="@dimen/watch_control_h"
                     android:layout_marginHorizontal="2dp"
-                    android:layout_weight="0.9"
+                    android:layout_weight="0.85"
                     android:background="@drawable/bg_control_button"
                     android:gravity="center"
                     android:text="@string/episodes"

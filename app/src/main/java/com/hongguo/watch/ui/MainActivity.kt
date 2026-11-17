@@ -21,7 +21,8 @@ class MainActivity : AppCompatActivity() {
     private var mode = Mode.HOME
     private var lastQuery: String = ""
 
-    private val repo get() = (application as HongguoWatchApp).container.repository
+    private val container get() = (application as HongguoWatchApp).container
+    private val repo get() = container.repository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,6 +60,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (mode == Mode.HISTORY) showHistory()
+        else if (mode == Mode.HOME && lastQuery.isBlank()) showHome()
     }
 
     private fun showHome() {
@@ -66,15 +68,24 @@ class MainActivity : AppCompatActivity() {
         highlightTabs(home = true)
         lastQuery = ""
         binding.searchInput.setText("")
-        val rows = mutableListOf<HomeRow>()
-        rows += HomeRow.Header(getString(R.string.demo_section))
-        rows += repo.demoHome().map { HomeRow.Item(it) }
-        rows += HomeRow.Header(getString(R.string.official_section))
-        adapter.submit(rows)
-        binding.emptyView.visibility = View.VISIBLE
-        binding.emptyView.text = getString(R.string.empty_search)
-        binding.swipeRefresh.isRefreshing = false
-        binding.loading.visibility = View.GONE
+        lifecycleScope.launch {
+            val rows = mutableListOf<HomeRow>()
+            if (container.settings.showDemoNow()) {
+                rows += HomeRow.Header(getString(R.string.demo_section))
+                rows += repo.demoHome().map { HomeRow.Item(it) }
+            }
+            val section = if (container.settings.enableOfficialDeprecatedNow()) {
+                getString(R.string.official_section)
+            } else {
+                getString(R.string.app_section)
+            }
+            rows += HomeRow.Header(section)
+            adapter.submit(rows)
+            binding.emptyView.visibility = View.VISIBLE
+            binding.emptyView.text = getString(R.string.empty_search)
+            binding.swipeRefresh.isRefreshing = false
+            binding.loading.visibility = View.GONE
+        }
     }
 
     private fun runSearch() {
@@ -90,11 +101,18 @@ class MainActivity : AppCompatActivity() {
         binding.emptyView.visibility = View.GONE
         lifecycleScope.launch {
             try {
-                val page = repo.searchOfficial(query, page = 1)
+                val page = repo.search(query, page = 1)
                 val rows = mutableListOf<HomeRow>()
-                rows += HomeRow.Header(getString(R.string.demo_section))
-                rows += repo.demoHome().map { HomeRow.Item(it) }
-                rows += HomeRow.Header(getString(R.string.official_section))
+                if (container.settings.showDemoNow()) {
+                    rows += HomeRow.Header(getString(R.string.demo_section))
+                    rows += repo.demoHome().map { HomeRow.Item(it) }
+                }
+                val section = if (container.settings.enableOfficialDeprecatedNow()) {
+                    getString(R.string.official_section)
+                } else {
+                    getString(R.string.app_section)
+                }
+                rows += HomeRow.Header(section)
                 rows += page.items.map { HomeRow.Item(it) }
                 adapter.submit(rows)
                 binding.emptyView.visibility = if (page.items.isEmpty()) View.VISIBLE else View.GONE
@@ -123,7 +141,8 @@ class MainActivity : AppCompatActivity() {
                             cover = it.cover,
                             description = "看到第 ${it.episodeNumber} 集",
                             episodeCount = it.episodeNumber,
-                            source = runCatching { SeriesSource.valueOf(it.source) }.getOrDefault(SeriesSource.OFFICIAL),
+                            source = runCatching { SeriesSource.valueOf(it.source) }
+                                .getOrDefault(SeriesSource.APP),
                         ),
                     )
                 }

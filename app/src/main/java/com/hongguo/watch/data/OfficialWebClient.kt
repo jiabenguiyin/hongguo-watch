@@ -15,14 +15,12 @@ import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
 /**
- * 官网优先路径（对照 jackotom/hongguo-drama 的 hongguo-search.js / hongguo.js，
- * 以及 N3urda/hongguoTV 文档中的 hongguoduanju.com 主机与字段）。
+ * 【已弃用 / 不推荐】官网 hongguoduanju.com 路径。
  *
- * - 搜索：GET /api/search/result
- * - 分集：解析 /detail 或 /player SSR 中的 _ROUTER_DATA.vid_list
- * - 播放：解析 player 页 VideoObject.contentUrl（当前多为公开预览档）
+ * 片源少且限制多；默认关闭。仅当设置中显式开启「已弃用官网源」时使用。
+ * 默认片源请用 [AppSourceClient]（开源 App 族）。
  *
- * 不在此实现 App 族签名头；完整正片需另跟进开源 Signer。
+ * 对照 jackotom/hongguo-drama 的 hongguo-search.js / hongguo.js（官网优先策略，手表不默认采用）。
  */
 class OfficialWebClient(
     private val client: OkHttpClient = defaultClient(),

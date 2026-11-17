@@ -8,6 +8,7 @@ class AppContainer(context: Context) {
     private val database = AppDatabase.create(appContext)
     val settings = SettingsStore(appContext)
     val repository = ContentRepository(
+        appSource = AppSourceClient(appContext),
         official = OfficialWebClient(),
         historyDao = database.watchHistoryDao(),
         settings = settings,

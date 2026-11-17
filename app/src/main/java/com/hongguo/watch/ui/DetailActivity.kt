@@ -23,7 +23,7 @@ class DetailActivity : AppCompatActivity() {
     private var seriesId: String = ""
     private var seriesTitle: String = ""
     private var cover: String = ""
-    private var source: SeriesSource = SeriesSource.OFFICIAL
+    private var source: SeriesSource = SeriesSource.APP
     private var episodes: List<Episode> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,8 +35,8 @@ class DetailActivity : AppCompatActivity() {
         seriesTitle = intent.getStringExtra(EXTRA_SERIES_TITLE).orEmpty()
         cover = intent.getStringExtra(EXTRA_COVER).orEmpty()
         source = runCatching {
-            SeriesSource.valueOf(intent.getStringExtra(EXTRA_SOURCE) ?: SeriesSource.OFFICIAL.name)
-        }.getOrDefault(SeriesSource.OFFICIAL)
+            SeriesSource.valueOf(intent.getStringExtra(EXTRA_SOURCE) ?: SeriesSource.APP.name)
+        }.getOrDefault(SeriesSource.APP)
 
         binding.seriesTitle.text = seriesTitle
         binding.seriesIntro.text = intent.getStringExtra(EXTRA_INTRO).orEmpty()

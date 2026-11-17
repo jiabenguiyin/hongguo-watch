@@ -41,6 +41,22 @@
             android:layout_marginTop="4dp"
             android:background="@color/bg_elevated" />
 
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/showDemoSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="8dp"
+            android:text="@string/show_demo"
+            android:textColor="@color/text_primary" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/officialSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="4dp"
+            android:text="@string/enable_official"
+            android:textColor="@color/text_secondary" />
+
         <Button
             android:id="@+id/clearHistoryButton"
             android:layout_width="match_parent"

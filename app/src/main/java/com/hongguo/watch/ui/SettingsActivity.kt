@@ -8,6 +8,7 @@ import androidx.lifecycle.lifecycleScope
 import coil.imageLoader
 import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
+import com.hongguo.watch.data.SettingsStore
 import com.hongguo.watch.databinding.ActivitySettingsBinding
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -21,18 +22,31 @@ class SettingsActivity : AppCompatActivity() {
         binding = ActivitySettingsBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        val qualities = listOf(360, 480)
-        val labels = listOf(getString(R.string.quality_360), getString(R.string.quality_480))
-        binding.qualitySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, labels)
+        val qualities = SettingsStore.QUALITY_OPTIONS
+        val labels = listOf(
+            getString(R.string.quality_480),
+            getString(R.string.quality_720),
+            getString(R.string.quality_1080),
+        )
+        binding.qualitySpinner.adapter =
+            ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, labels)
 
         lifecycleScope.launch {
             binding.wifiOnlySwitch.isChecked = container.settings.wifiOnly.first()
             val maxQ = container.settings.maxQuality.first()
             binding.qualitySpinner.setSelection(qualities.indexOf(maxQ).coerceAtLeast(0))
+            binding.showDemoSwitch.isChecked = container.settings.showDemo.first()
+            binding.officialSwitch.isChecked = container.settings.enableOfficialDeprecated.first()
         }
 
         binding.wifiOnlySwitch.setOnCheckedChangeListener { _, checked ->
             lifecycleScope.launch { container.settings.setWifiOnly(checked) }
+        }
+        binding.showDemoSwitch.setOnCheckedChangeListener { _, checked ->
+            lifecycleScope.launch { container.settings.setShowDemo(checked) }
+        }
+        binding.officialSwitch.setOnCheckedChangeListener { _, checked ->
+            lifecycleScope.launch { container.settings.setEnableOfficialDeprecated(checked) }
         }
         binding.qualitySpinner.setOnItemSelectedListener(object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(

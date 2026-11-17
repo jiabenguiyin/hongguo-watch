@@ -6,28 +6,40 @@ import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
+import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
 import com.hongguo.watch.data.model.SeriesSource
+import com.hongguo.watch.data.model.StreamInfo
 import com.hongguo.watch.databinding.ActivityPlayerBinding
+import com.hongguo.watch.player.VideoDataSource
+import com.hongguo.watch.upstream.RemoteVideo
+import com.hongguo.watch.upstream.StreamInfo as UpstreamStreamInfo
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 
 class PlayerActivity : AppCompatActivity() {
     private lateinit var binding: ActivityPlayerBinding
     private var player: ExoPlayer? = null
     private var progressJob: Job? = null
+    private var remoteVideo: RemoteVideo? = null
 
     private val repo get() = (application as HongguoWatchApp).container.repository
     private val settings get() = (application as HongguoWatchApp).container.settings
@@ -35,7 +47,7 @@ class PlayerActivity : AppCompatActivity() {
     private var seriesId = ""
     private var seriesTitle = ""
     private var cover = ""
-    private var source = SeriesSource.OFFICIAL
+    private var source = SeriesSource.APP
     private var episodeIds: List<String> = emptyList()
     private var episodeNumbers: List<Int> = emptyList()
     private var episodeIndex = 0
@@ -50,8 +62,8 @@ class PlayerActivity : AppCompatActivity() {
         seriesTitle = intent.getStringExtra(EXTRA_SERIES_TITLE).orEmpty()
         cover = intent.getStringExtra(EXTRA_COVER).orEmpty()
         source = runCatching {
-            SeriesSource.valueOf(intent.getStringExtra(EXTRA_SOURCE) ?: SeriesSource.OFFICIAL.name)
-        }.getOrDefault(SeriesSource.OFFICIAL)
+            SeriesSource.valueOf(intent.getStringExtra(EXTRA_SOURCE) ?: SeriesSource.APP.name)
+        }.getOrDefault(SeriesSource.APP)
         startPositionMs = intent.getLongExtra(EXTRA_START_POSITION_MS, 0L)
 
         episodeIds = intent.getStringArrayListExtra(EXTRA_EPISODE_IDS)?.toList().orEmpty()
@@ -116,7 +128,7 @@ class PlayerActivity : AppCompatActivity() {
             try {
                 val stream = repo.stream(seriesId, episodeId)
                 binding.playerNotice.visibility = if (stream.isPreview) View.VISIBLE else View.GONE
-                playUrl(stream.url, stream.userAgent, stream.referer, startPositionMs)
+                playStream(stream, startPositionMs)
             } catch (e: Exception) {
                 Toast.makeText(this@PlayerActivity, e.message ?: getString(R.string.error_no_play_url), Toast.LENGTH_LONG).show()
                 binding.retryButton.visibility = View.VISIBLE
@@ -124,27 +136,42 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    private fun playUrl(url: String, userAgent: String?, referer: String?, positionMs: Long) {
+    @OptIn(UnstableApi::class)
+    private suspend fun playStream(stream: StreamInfo, positionMs: Long) {
         releasePlayer()
-        val factory = DefaultHttpDataSource.Factory()
-            .setUserAgent(userAgent ?: "HongguoWatch/0.1")
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(8_000)
-            .setReadTimeoutMs(12_000)
-            .setDefaultRequestProperties(
-                buildMap {
-                    if (!referer.isNullOrBlank()) put("Referer", referer)
-                },
-            )
-
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(1_500, 8_000, 1_000, 1_500)
             .build()
 
-        val exo = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(factory))
-            .setLoadControl(loadControl)
-            .build()
+        val key = stream.decryptionKey
+        val exo = if (key != null) {
+            val remote = withContext(Dispatchers.IO) {
+                RemoteVideo(
+                    mediaHttp,
+                    UpstreamStreamInfo(stream.url, key, stream.quality),
+                ).prepare()
+            }
+            remoteVideo = remote
+            ExoPlayer.Builder(this)
+                .setMediaSourceFactory(ProgressiveMediaSource.Factory { VideoDataSource(remote) })
+                .setLoadControl(loadControl)
+                .build()
+        } else {
+            val factory = DefaultHttpDataSource.Factory()
+                .setUserAgent(stream.userAgent ?: "HongguoWatch/0.1")
+                .setAllowCrossProtocolRedirects(true)
+                .setConnectTimeoutMs(8_000)
+                .setReadTimeoutMs(12_000)
+                .setDefaultRequestProperties(
+                    buildMap {
+                        if (!stream.referer.isNullOrBlank()) put("Referer", stream.referer)
+                    },
+                )
+            ExoPlayer.Builder(this)
+                .setMediaSourceFactory(DefaultMediaSourceFactory(factory))
+                .setLoadControl(loadControl)
+                .build()
+        }
 
         exo.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -159,7 +186,7 @@ class PlayerActivity : AppCompatActivity() {
 
         binding.playerView.player = exo
         player = exo
-        exo.setMediaItem(MediaItem.fromUri(url))
+        exo.setMediaItem(MediaItem.fromUri(stream.url))
         exo.prepare()
         if (positionMs > 0) exo.seekTo(positionMs)
         exo.playWhenReady = true
@@ -217,6 +244,8 @@ class PlayerActivity : AppCompatActivity() {
         binding.playerView.player = null
         player?.release()
         player = null
+        remoteVideo?.close()
+        remoteVideo = null
     }
 
     override fun onStop() {
@@ -240,5 +269,11 @@ class PlayerActivity : AppCompatActivity() {
         const val EXTRA_EPISODE_IDS = "episode_ids"
         const val EXTRA_EPISODE_NUMBERS = "episode_numbers"
         const val EXTRA_START_POSITION_MS = "start_position_ms"
+
+        private val mediaHttp: OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .build()
     }
 }

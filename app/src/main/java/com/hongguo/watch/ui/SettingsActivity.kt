@@ -15,6 +15,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySettingsBinding
     private val container get() = (application as HongguoWatchApp).container
     private var currentQuality = 480
+    private var roundSwitchReady = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -28,14 +29,21 @@ class SettingsActivity : AppCompatActivity() {
             binding.wifiOnlySwitch.isChecked = container.settings.wifiOnly.first()
             currentQuality = container.settings.maxQuality.first()
             refreshQualityChips()
-            binding.showDemoSwitch.isChecked = container.settings.showDemo.first()
+            // 开关展示当前生效状态；AUTO 时跟 isRoundScreen
+            binding.roundAdaptSwitch.isChecked = WatchUi.useRoundLayout(this@SettingsActivity)
+            roundSwitchReady = true
         }
 
         binding.wifiOnlySwitch.setOnCheckedChangeListener { _, checked ->
             lifecycleScope.launch { container.settings.setWifiOnly(checked) }
         }
-        binding.showDemoSwitch.setOnCheckedChangeListener { _, checked ->
-            lifecycleScope.launch { container.settings.setShowDemo(checked) }
+        binding.roundAdaptSwitch.setOnCheckedChangeListener { _, checked ->
+            if (!roundSwitchReady) return@setOnCheckedChangeListener
+            lifecycleScope.launch {
+                container.settings.setRoundAdaptEnabled(checked)
+                WatchUi.setRoundAdaptOverride(checked)
+                WatchUi.applySafePadding(binding.settingsRoot)
+            }
         }
 
         binding.quality480.setOnClickListener { pickQuality(480) }

@@ -6,14 +6,23 @@ import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import com.hongguo.watch.data.AppContainer
+import com.hongguo.watch.ui.WatchUi
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class HongguoWatchApp : Application(), ImageLoaderFactory {
     lateinit var container: AppContainer
         private set
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        appScope.launch {
+            WatchUi.setRoundAdaptOverride(container.settings.roundAdaptOverrideNow())
+        }
     }
 
     override fun newImageLoader(): ImageLoader {

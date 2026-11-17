@@ -2,61 +2,78 @@
 
 面向安卓手表 / 华强北低配机的极简短剧客户端：**Kotlin + View + Media3**，`minSdk 24`。
 
-非官方应用。片源对照开源仓 [N3urda/hongguoTV](https://github.com/N3urda/hongguoTV)（`Signer` / `DeviceRegister` / `MobilePlayback` / `MediaCrypto`）与 [jackotom/hongguo-drama](https://github.com/jackotom/hongguo-drama) 的 **App 族**通路（`*.fqnovel.com`）。许可：**GPL-3.0**。
+非官方应用。片源对照开源仓 [N3urda/hongguoTV](https://github.com/N3urda/hongguoTV)（`Signer` / `DeviceRegister` / `MobilePlayback` / `MediaCrypto` / `RelatedWorks`）与 [jackotom/hongguo-drama](https://github.com/jackotom/hongguo-drama) 的 **App 族**通路（`*.fqnovel.com`）。许可：**GPL-3.0**。
 
-## MVP 功能
+## 功能
 
-- 首页：演示片源（可关）+ App 搜索列表（封面 / 标题）
-- 详情：App `multi_video_detail/preload` 分集
-- 播放：Media3 ExoPlayer（硬解优先，无 FFmpeg）；加密档走开源 `RemoteVideo`/`MediaCrypto`；上一集 / 下一集；失败重试
-- 历史：Room 落盘剧 + 集 + 进度，点进续播
-- 设置：仅 Wi‑Fi、清晰度上限（**默认 480p**，可选手动 **720p / 1080p**）、演示源开关、清历史 / 清缓存
+- 首页：横向可滑**分类 Tab**（推荐 + 类型/题材）+ 列表；支持搜索
+- 详情：App `multi_video_detail/preload` 分集；**收藏**；下方**相关季 / 同系列**
+- 播放：Media3 ExoPlayer（硬解优先）；加密档走开源 `RemoteVideo`/`MediaCrypto`
+  - **锁定**在画面中区左侧；**倍速**在对侧（仪表图标 + `1.0x`，可选 0.75/1/1.25/1.5/2）；解锁仍用中央大钮（圆盘避开四角）
+  - **左侧竖直亮度 / 右侧竖直音量 / 横向进度**（圆屏侧条内收）
+  - 暂停/播放、上/下集为**图标按钮**
+  - 本季末集结束 → **无缝连播同系列下一季第 1 集**（见下）
+  - 圆盘：`isScreenRound` / 近正方小屏加大安全边距，侧边锁/倍速内收落在可点区
+- **历史续播**：Room 落盘剧 + 集 + 进度百分比；近片尾续播按规则归零；暂停/退出即时写入
+- **收藏夹** Tab
+- 设置：仅 Wi‑Fi、**圆屏适配**（默认跟 `isRoundScreen`，可强制开）、清晰度上限（**默认 480p**，可选手动 **720p / 1080p**）、清历史 / 清缓存
 
-## UI（v0.3 手表小屏）
+## 跨季连播能力边界
 
-面向方/圆手表做了播放与列表页装机级打磨：
+对照 hongguoTV `RelatedWorks` / `ContentRepository.related` 与公开系列文档：
 
-- **播放**：沉浸式全屏；顶栏仅返回+标题；底栏大触控进度 + 清晰度档 / 上集 / 播放 / 下集 / 选集；收起后细进度条；点按显隐；横向拖动快进
-- **首页 / 搜索**：大搜索框与按钮；分区标题；列表行易点（圆角封面 + 右侧「进」提示）；底栏 Tab 高亮
-- **历史**：隐藏搜索栏；「点一项即可续播」；行尾「续」提示，点进直接续播
-- **详情**：返回键；「续播」快捷；选集网格自适应列数并滚到上次看到的集
-- **设置**：返回键；清晰度三档大芯片（默认 480p）；演示源开关与清理操作分区成块
+| 能力 | 本仓行为 |
+|------|----------|
+| 相关列表 | `GET .../reading/bookapi/plan/v:version/`，`scene=10`，`from=detail_page_more_related`；解析 `video_data` 的 `series_id` / `season_index` / `content_type`(1004 可播 / 1007 待上线) |
+| 下一季挑选 | 同标题 stem + **连续**季号 + **唯一**可播候选；待上线 / 禁播 / 非唯一 → **不自动跳** |
+| 预取时机 | 播到本季**最后一集**且进度 ≥ 半程：只拉相关**元数据**，不预取下一季媒体流 |
+| 结束跳转 | `Player.STATE_ENDED`：非末集 → 下一集；末集 → `detail(下一季)` → 第 1 集 0 秒；失败停住并提示 |
+| 降级 | plan 失败时可用标题搜索作相关列表展示；自动连播仍要求唯一命中下一季，否则不强猜 |
+| 不做 | 不跳过待上线季；不拉官网源；不后台连播 / 拉活 |
+
+更细的开源对照见 Project 文档 `docs/season-handoff-notes.md`。
+
+## UI（手表小屏）
+
+- **播放**：沉浸式；顶栏返回+标题；中区左锁右倍速；底栏进度 + 清晰度 / 上集 / 播放 / 下集 / 选集（图标）；收起后细进度；锁定后仅中央解锁钮
+- **首页**：搜索 + 横向分类芯片 + 列表；历史 / 收藏 Tab；历史显示「第 N 集 · 进度%」
+- **详情**：收藏钮；续播带进度；选集网格；下方相关季列表
+- **设置**：圆屏适配开关；清晰度三档大芯片；清理操作
 
 ## 片源说明
 
 | 路径 | 状态 |
 |------|------|
 | App 族搜索 `reading/bookapi/search/tab/v` + 开源 Signer | **默认** |
+| App 书城推荐 `reading/bookapi/bookmall/tab/v1/`（`tab_type=16`） | **默认** |
+| App 分类落地页 `reading/distribution/category/landpage/v/`（类型/题材 selector） | **默认** |
 | App 分集 `novel/player/multi_video_detail/preload/v1` | **默认** |
-| App 播放模型 `novel/player/multi_video_model/player/v1`（v5，对照 hongguoTV `MobilePlayback`） | **默认** |
-| 演示流（Big Buck Bunny 等） | 设置可开关，用于验证播放器 |
-| 本地 Node 桥 | **不**使用 |
+| App 播放模型 `novel/player/multi_video_model/player/v1`（对照 hongguoTV `MobilePlayback`） | **默认** |
+| App 相关作品 `reading/bookapi/plan/v:version/`（`detail_page_more_related`） | **默认** |
+| 书城 cell 无限续刷 / 官网榜单 | **未接**（手表首屏分页边界） |
+| 本地 Node 桥 / 官网源入口 | **不**使用 |
 
-上游归因与协议说明见 [`third_party/hongguoTV-NOTICE.md`](third_party/hongguoTV-NOTICE.md)、[`third_party/SIGNING_V5.md`](third_party/SIGNING_V5.md)。
+上游归因见 [`third_party/hongguoTV-NOTICE.md`](third_party/hongguoTV-NOTICE.md)、[`third_party/SIGNING_V5.md`](third_party/SIGNING_V5.md)。
 
 ## 清晰度
 
-开源 App 播放模型可解析多档清晰度（含 **360 / 480 / 720 / 1080**，标签还可识别到 1440 / 2160）。手表**默认上限 480p**；设置可手动提到 **720p / 1080p**（参考多数手表用户常用档）。**高配发热 / 卡顿风险自负**，低配机请保持 480p。
+开源 App 播放模型可解析多档清晰度。手表**默认上限 480p**；设置可手动提到 **720p / 1080p**。**高配发热 / 卡顿风险自负**，低配机请保持 480p。
 
 ## 打 APK
 
 环境：JDK 17+、Android SDK（platform 34、build-tools 34）。
 
 ```bash
-# 可选：写入 SDK 路径
 echo "sdk.dir=$ANDROID_HOME" > local.properties
-
 ./gradlew :app:assembleRelease
 ```
 
-产物（按 ABI 分包，非 universal）：
+产物（按 ABI 分包）：
 
 - `app/build/outputs/apk/release/app-armeabi-v7a-release.apk`
 - `app/build/outputs/apk/release/app-arm64-v8a-release.apk`
 
-未设置 `WATCH_RELEASE_STORE_*` 环境变量时，Release 使用 **debug 密钥**签名（方便侧载验证）。正式分发请自备 keystore。
-
-Debug：
+未设置 `WATCH_RELEASE_STORE_*` 时 Release 使用 **debug 密钥**签名。正式分发请自备 keystore。
 
 ```bash
 ./gradlew :app:assembleDebug
@@ -71,18 +88,19 @@ Debug：
 3. **GPL-3.0**：跟进 Signer / MediaCrypto 等核心代码并分发 → 本仓保持 GPL，须提供对应源码。
 4. **高清**：手动 720p/1080p 可能导致手表发热或卡顿，风险自负。
 5. **低配机限制**：不做后台连播 / 拉活；切表盘可能被杀，进度依赖本地即时写入。
-6. **网络安全**：默认仅 HTTPS；部分 ROM 证书异常需自行诊断，勿默认关闭校验。
-7. **不做**：不写破解鉴权 / 盗链 / DRM 绕过教程；只移植开源仓已公开的签名与请求逻辑。
+6. **跨季**：依赖上游 plan 相关作品字段；无可靠下一季时停在本集结束，不盲跳。
+7. **网络安全**：默认仅 HTTPS。
+8. **不做**：不写破解鉴权 / 盗链 / DRM 绕过教程；只移植开源仓已公开的签名与请求逻辑。
 
 ## 技术栈
 
 - minSdk 24 / targetSdk 34
 - ViewBinding + RecyclerView（不用 Compose / Flutter）
-- Media3 ExoPlayer + HLS 依赖（便于后续流类型）
+- Media3 ExoPlayer + HLS 依赖
 - OkHttp、Coil、Room、DataStore、BouncyCastle（SM3）
 - ABI split：`armeabi-v7a`、`arm64-v8a`
 
 ## 参考
 
-- 方案与接口手册见本 Project 文档（`watch-hongguo-plan.md` / `third-party-api.md` / `source-repo-choice.md`）
+- 方案与接口手册见本 Project 文档（`watch-hongguo-plan.md` / `third-party-api.md` / `season-handoff-notes.md`）
 - Media3：[androidx/media](https://github.com/androidx/media)

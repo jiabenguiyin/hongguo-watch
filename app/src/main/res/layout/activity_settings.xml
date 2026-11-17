@@ -65,10 +65,26 @@
                     android:textColor="@color/text_primary"
                     android:textSize="@dimen/watch_body" />
 
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/roundAdaptSwitch"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="@string/round_adapt"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_body" />
+
+                <TextView
+                    android:id="@+id/roundAdaptHint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/round_adapt_hint"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/watch_meta" />
+
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
+                    android:layout_marginTop="8dp"
                     android:text="@string/max_quality"
                     android:textColor="@color/text_secondary"
                     android:textSize="@dimen/watch_meta" />
@@ -125,23 +141,6 @@
                     android:layout_width="0dp"
                     android:layout_height="0dp"
                     android:visibility="gone" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:background="@drawable/bg_setting_block"
-                android:orientation="vertical"
-                android:padding="8dp">
-
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/showDemoSwitch"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:text="@string/show_demo"
-                    android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_body" />
             </LinearLayout>
 
             <LinearLayout

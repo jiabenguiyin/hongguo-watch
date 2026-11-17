@@ -2,12 +2,15 @@ package com.hongguo.watch.ui
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.media.AudioManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
+import android.provider.Settings
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.WindowManager
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.annotation.OptIn
@@ -27,6 +30,7 @@ import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
 import com.hongguo.watch.data.SettingsStore
 import com.hongguo.watch.data.model.Episode
+import com.hongguo.watch.data.model.RelatedWork
 import com.hongguo.watch.data.model.SeriesSource
 import com.hongguo.watch.data.model.StreamInfo
 import com.hongguo.watch.databinding.ActivityPlayerBinding
@@ -43,16 +47,21 @@ import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
-/** 手表全屏播放：少遮挡、大触控、进度可拖、选集/清晰度浮层、点按显隐与横向滑动快进。 */
+/**
+ * 手表全屏播放：锁定、左亮度/右音量、横滑进度、图标控件；
+ * 末集结束按 hongguoTV 模式无缝跨季连播（预取元数据，不预取流）。
+ */
 class PlayerActivity : AppCompatActivity() {
     private lateinit var binding: ActivityPlayerBinding
     private var player: ExoPlayer? = null
     private var progressJob: Job? = null
     private var hideControlsJob: Job? = null
     private var hintJob: Job? = null
+    private var seasonJob: Job? = null
     private var remoteVideo: RemoteVideo? = null
     private var userSeeking = false
     private var controlsVisible = true
+    private var locked = false
 
     private val repo get() = (application as HongguoWatchApp).container.repository
     private val settings get() = (application as HongguoWatchApp).container.settings
@@ -66,14 +75,27 @@ class PlayerActivity : AppCompatActivity() {
     private var episodeIndex = 0
     private var startPositionMs = 0L
     private var currentQuality = 480
+    private var currentSpeed = 1.0f
 
     private lateinit var episodeAdapter: EpisodeAdapter
+    private lateinit var audioManager: AudioManager
     private var touchSlop = 0
     private var downX = 0f
     private var downY = 0f
     private var scrubbing = false
+    private var adjustingBrightness = false
+    private var adjustingVolume = false
     private var scrubStartPos = 0L
+    private var brightnessStart = 0f
+    private var volumeStart = 0
     private var gestureConsumedClick = false
+    private var nextSeasonWork: RelatedWork? = null
+    private var seasonGeneration = 0
+    private var seasonPrepared = false
+
+    private enum class GestureMode { NONE, SEEK, BRIGHTNESS, VOLUME }
+
+    private var gestureMode = GestureMode.NONE
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,6 +104,7 @@ class PlayerActivity : AppCompatActivity() {
         setContentView(binding.root)
         WatchUi.applySafePadding(binding.playerRoot)
 
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         seriesId = intent.getStringExtra(EXTRA_SERIES_ID).orEmpty()
         seriesTitle = intent.getStringExtra(EXTRA_SERIES_TITLE).orEmpty()
         cover = intent.getStringExtra(EXTRA_COVER).orEmpty()
@@ -98,13 +121,16 @@ class PlayerActivity : AppCompatActivity() {
 
         touchSlop = ViewConfiguration.get(this).scaledTouchSlop
         binding.playerView.useController = false
+        applyRoundPlayerChrome()
         bindControls()
         bindSheets()
         bindGestures()
 
         lifecycleScope.launch {
             currentQuality = settings.maxQualityNow()
+            currentSpeed = settings.playbackSpeedNow()
             refreshQualityUi()
+            refreshSpeedUi()
             if (episodeIds.isEmpty()) {
                 runCatching { repo.detail(seriesId) }
                     .onSuccess { detail ->
@@ -133,6 +159,11 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun bindControls() {
         binding.backButton.setOnClickListener { finish() }
+        binding.lockButton.setOnClickListener { setLocked(true) }
+        binding.unlockButton.setOnClickListener { setLocked(false) }
+        // 整块中央提示区都可点解锁，圆屏更好点
+        binding.lockOverlay.setOnClickListener { setLocked(false) }
+        binding.lockBanner.setOnClickListener { setLocked(false) }
         binding.prevButton.setOnClickListener {
             switchEpisode(episodeIndex - 1)
             scheduleHideControls()
@@ -145,13 +176,15 @@ class PlayerActivity : AppCompatActivity() {
             val p = player ?: return@setOnClickListener
             if (p.isPlaying) p.pause() else p.play()
             updatePlayPause()
+            saveProgress()
             scheduleHideControls()
         }
         binding.retryButton.setOnClickListener { loadCurrent() }
         binding.qualityButton.setOnClickListener { openQualitySheet() }
+        binding.speedButton.setOnClickListener { openSpeedSheet() }
         binding.episodesButton.setOnClickListener { openEpisodesSheet() }
         binding.controlsMidTap.setOnClickListener {
-            if (!gestureConsumedClick) toggleControls()
+            if (!gestureConsumedClick && !locked) toggleControls()
             gestureConsumedClick = false
         }
 
@@ -175,6 +208,7 @@ class PlayerActivity : AppCompatActivity() {
                     if (duration > 0) p.seekTo(duration * bar.progress / 1000)
                 }
                 userSeeking = false
+                saveProgress()
                 scheduleHideControls()
             }
         })
@@ -193,6 +227,11 @@ class PlayerActivity : AppCompatActivity() {
         binding.quality480.setOnClickListener { applyQuality(480) }
         binding.quality720.setOnClickListener { applyQuality(720) }
         binding.quality1080.setOnClickListener { applyQuality(1080) }
+        binding.speed075.setOnClickListener { applySpeed(0.75f) }
+        binding.speed100.setOnClickListener { applySpeed(1.0f) }
+        binding.speed125.setOnClickListener { applySpeed(1.25f) }
+        binding.speed150.setOnClickListener { applySpeed(1.5f) }
+        binding.speed200.setOnClickListener { applySpeed(2.0f) }
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -202,65 +241,191 @@ class PlayerActivity : AppCompatActivity() {
         binding.controlsMidTap.setOnTouchListener(listener)
     }
 
+    /** 圆盘：加大侧栏内收；锁定解锁只用屏幕正中大钮，绝不放四角。 */
+    private fun applyRoundPlayerChrome() {
+        val side = WatchUi.sideMeterMarginPx(this)
+        (binding.brightnessMeter.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
+            lp.marginStart = side
+            binding.brightnessMeter.layoutParams = lp
+        }
+        (binding.volumeMeter.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
+            lp.marginEnd = side
+            binding.volumeMeter.layoutParams = lp
+        }
+        val round = WatchUi.useRoundLayout(this)
+        val sidePad = if (round) {
+            WatchUi.edgeInsetPx(this).coerceAtLeast(WatchUi.dp(this, 14f))
+        } else {
+            WatchUi.dp(this, 10f)
+        }
+        binding.midControls.setPadding(sidePad, 0, sidePad, 0)
+        if (round) {
+            val pad = WatchUi.dp(this, 12f)
+            binding.bottomButtons.setPadding(pad, binding.bottomButtons.paddingTop, pad, binding.bottomButtons.paddingBottom)
+            val seasonLp = binding.seasonBanner.layoutParams as? android.widget.FrameLayout.LayoutParams
+            if (seasonLp != null) {
+                val h = WatchUi.edgeInsetPx(this)
+                seasonLp.marginStart = h
+                seasonLp.marginEnd = h
+                binding.seasonBanner.layoutParams = seasonLp
+            }
+        }
+    }
+
+    private fun setLocked(value: Boolean) {
+        locked = value
+        if (locked) {
+            closeSheets()
+            hideControls()
+            binding.lockOverlay.visibility = View.VISIBLE
+            binding.controlsOverlay.visibility = View.GONE
+            binding.miniProgress.visibility = View.GONE
+            showGestureHint(getString(R.string.lock_hint))
+        } else {
+            binding.lockOverlay.visibility = View.GONE
+            showControls(autoHide = true)
+        }
+    }
+
     private fun handleGesture(event: MotionEvent): Boolean {
+        if (locked) {
+            if (event.actionMasked == MotionEvent.ACTION_UP) {
+                // 锁定时点空白无效；仅解锁钮可操作
+            }
+            return true
+        }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = event.x
                 downY = event.y
                 scrubbing = false
+                adjustingBrightness = false
+                adjustingVolume = false
+                gestureMode = GestureMode.NONE
                 gestureConsumedClick = false
                 scrubStartPos = player?.currentPosition ?: 0L
+                brightnessStart = currentBrightness()
+                volumeStart = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
                 val dx = event.x - downX
                 val dy = event.y - downY
-                if (!scrubbing && abs(dx) > touchSlop * 1.5f && abs(dx) > abs(dy) * 1.2f) {
-                    scrubbing = true
-                    gestureConsumedClick = true
-                    hideControlsJob?.cancel()
-                    showControls(autoHide = false)
+                if (gestureMode == GestureMode.NONE) {
+                    if (abs(dx) > touchSlop * 1.5f || abs(dy) > touchSlop * 1.5f) {
+                        gestureMode = classifyGesture(downX, dx, dy)
+                        gestureConsumedClick = true
+                        hideControlsJob?.cancel()
+                    }
                 }
-                if (scrubbing) {
-                    val duration = player?.duration?.takeIf { it > 0 } ?: return true
-                    val width = binding.playerRoot.width.coerceAtLeast(1)
-                    // 全屏横向拖：约拖满宽对应整集时长的 1/2，易微调
-                    val delta = ((dx / width) * duration * 0.5f).toLong()
-                    val target = (scrubStartPos + delta).coerceIn(0L, duration)
-                    binding.seekBar.progress = ((target * 1000) / duration).toInt().coerceIn(0, 1000)
-                    binding.timeCurrent.text = formatTime(target)
-                    val sign = if (delta >= 0) "+" else "−"
-                    showGestureHint("$sign${formatTime(abs(delta))}  ${formatTime(target)}")
-                    return true
+                when (gestureMode) {
+                    GestureMode.SEEK -> {
+                        scrubbing = true
+                        showControls(autoHide = false)
+                        val duration = player?.duration?.takeIf { it > 0 } ?: return true
+                        val width = binding.playerRoot.width.coerceAtLeast(1)
+                        val delta = ((dx / width) * duration * 0.5f).toLong()
+                        val target = (scrubStartPos + delta).coerceIn(0L, duration)
+                        binding.seekBar.progress = ((target * 1000) / duration).toInt().coerceIn(0, 1000)
+                        binding.timeCurrent.text = formatTime(target)
+                        val sign = if (delta >= 0) "+" else "−"
+                        showGestureHint("$sign${formatTime(abs(delta))}  ${formatTime(target)}")
+                    }
+                    GestureMode.BRIGHTNESS -> {
+                        adjustingBrightness = true
+                        val height = binding.playerRoot.height.coerceAtLeast(1)
+                        val delta = (-dy / height) // 上滑增亮
+                        val next = (brightnessStart + delta).coerceIn(0.05f, 1f)
+                        applyBrightness(next)
+                        binding.brightnessMeter.visibility = View.VISIBLE
+                        binding.volumeMeter.visibility = View.GONE
+                        binding.brightnessBar.progress = (next * 100).toInt()
+                        showGestureHint("${getString(R.string.brightness)} ${(next * 100).toInt()}%")
+                    }
+                    GestureMode.VOLUME -> {
+                        adjustingVolume = true
+                        val height = binding.playerRoot.height.coerceAtLeast(1)
+                        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                            .coerceAtLeast(1)
+                        val delta = ((-dy / height) * maxVol).toInt()
+                        val next = (volumeStart + delta).coerceIn(0, maxVol)
+                        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, next, 0)
+                        binding.volumeMeter.visibility = View.VISIBLE
+                        binding.brightnessMeter.visibility = View.GONE
+                        binding.volumeBar.progress = (next * 100 / maxVol)
+                        showGestureHint("${getString(R.string.volume)} ${next * 100 / maxVol}%")
+                    }
+                    GestureMode.NONE -> Unit
                 }
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                if (scrubbing) {
-                    val duration = player?.duration?.takeIf { it > 0 }
-                    if (duration != null) {
-                        val target = duration * binding.seekBar.progress / 1000
-                        player?.seekTo(target)
+                when (gestureMode) {
+                    GestureMode.SEEK -> {
+                        val duration = player?.duration?.takeIf { it > 0 }
+                        if (duration != null) {
+                            val target = duration * binding.seekBar.progress / 1000
+                            player?.seekTo(target)
+                            saveProgress()
+                        }
+                        scrubbing = false
+                        scheduleHideControls()
                     }
-                    scrubbing = false
-                    scheduleHideControls()
-                    return true
-                }
-                val dx = abs(event.x - downX)
-                val dy = abs(event.y - downY)
-                if (dx < touchSlop && dy < touchSlop) {
-                    if (binding.sheetScrim.visibility == View.VISIBLE) {
-                        closeSheets()
-                    } else {
-                        // 双击区域判断：短按切换显隐；点中间也可由 controlsMidTap 处理
-                        toggleControls()
+                    GestureMode.BRIGHTNESS, GestureMode.VOLUME -> {
+                        binding.brightnessMeter.visibility = View.GONE
+                        binding.volumeMeter.visibility = View.GONE
+                        scheduleHideControls()
                     }
-                    gestureConsumedClick = true
+                    GestureMode.NONE -> {
+                        val dx = abs(event.x - downX)
+                        val dy = abs(event.y - downY)
+                        if (dx < touchSlop && dy < touchSlop) {
+                            if (binding.sheetScrim.visibility == View.VISIBLE) {
+                                closeSheets()
+                            } else {
+                                toggleControls()
+                            }
+                            gestureConsumedClick = true
+                        }
+                    }
                 }
+                gestureMode = GestureMode.NONE
                 return true
             }
         }
         return false
+    }
+
+    /** 左 1/3 竖直→亮度，右 1/3 竖直→音量，中间或以横向为主→进度。 */
+    private fun classifyGesture(startX: Float, dx: Float, dy: Float): GestureMode {
+        val width = binding.playerRoot.width.coerceAtLeast(1)
+        val vertical = abs(dy) > abs(dx) * 1.15f
+        return when {
+            vertical && startX < width / 3f -> GestureMode.BRIGHTNESS
+            vertical && startX > width * 2f / 3f -> GestureMode.VOLUME
+            abs(dx) > abs(dy) * 1.05f -> GestureMode.SEEK
+            vertical && startX < width / 2f -> GestureMode.BRIGHTNESS
+            vertical -> GestureMode.VOLUME
+            else -> GestureMode.SEEK
+        }
+    }
+
+    private fun currentBrightness(): Float {
+        val lp = window.attributes
+        return if (lp.screenBrightness in 0f..1f) {
+            lp.screenBrightness
+        } else {
+            runCatching {
+                Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f
+            }.getOrDefault(0.5f)
+        }
+    }
+
+    private fun applyBrightness(value: Float) {
+        val lp = window.attributes
+        lp.screenBrightness = value
+        window.attributes = lp
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     private fun toggleControls() {
@@ -268,6 +433,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun showControls(autoHide: Boolean) {
+        if (locked) return
         controlsVisible = true
         binding.controlsOverlay.visibility = View.VISIBLE
         binding.miniProgress.visibility = View.GONE
@@ -278,7 +444,7 @@ class PlayerActivity : AppCompatActivity() {
         if (binding.sheetScrim.visibility == View.VISIBLE) return
         controlsVisible = false
         binding.controlsOverlay.visibility = View.GONE
-        binding.miniProgress.visibility = View.VISIBLE
+        binding.miniProgress.visibility = if (locked) View.GONE else View.VISIBLE
         hideControlsJob?.cancel()
         updateSeekUi()
     }
@@ -287,26 +453,43 @@ class PlayerActivity : AppCompatActivity() {
         hideControlsJob?.cancel()
         hideControlsJob = lifecycleScope.launch {
             delay(3_200)
-            if (!userSeeking && !scrubbing && player?.isPlaying == true) {
+            if (!userSeeking && !scrubbing && !adjustingBrightness && !adjustingVolume &&
+                player?.isPlaying == true && !locked
+            ) {
                 hideControls()
             }
         }
     }
 
     private fun openQualitySheet() {
+        if (locked) return
         binding.sheetScrim.visibility = View.VISIBLE
         binding.qualitySheet.visibility = View.VISIBLE
+        binding.speedSheet.visibility = View.GONE
         binding.episodesSheet.visibility = View.GONE
         refreshQualityUi()
         hideControlsJob?.cancel()
         showControls(autoHide = false)
     }
 
+    private fun openSpeedSheet() {
+        if (locked) return
+        binding.sheetScrim.visibility = View.VISIBLE
+        binding.speedSheet.visibility = View.VISIBLE
+        binding.qualitySheet.visibility = View.GONE
+        binding.episodesSheet.visibility = View.GONE
+        refreshSpeedUi()
+        hideControlsJob?.cancel()
+        showControls(autoHide = false)
+    }
+
     private fun openEpisodesSheet() {
+        if (locked) return
         refreshEpisodePicker()
         binding.sheetScrim.visibility = View.VISIBLE
         binding.episodesSheet.visibility = View.VISIBLE
         binding.qualitySheet.visibility = View.GONE
+        binding.speedSheet.visibility = View.GONE
         hideControlsJob?.cancel()
         showControls(autoHide = false)
         binding.episodePicker.post {
@@ -317,6 +500,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun closeSheets() {
         binding.sheetScrim.visibility = View.GONE
         binding.qualitySheet.visibility = View.GONE
+        binding.speedSheet.visibility = View.GONE
         binding.episodesSheet.visibility = View.GONE
         scheduleHideControls()
     }
@@ -337,6 +521,27 @@ class PlayerActivity : AppCompatActivity() {
         binding.quality480.isSelected = currentQuality == 480
         binding.quality720.isSelected = currentQuality == 720
         binding.quality1080.isSelected = currentQuality == 1080
+    }
+
+    private fun refreshSpeedUi() {
+        currentSpeed = SettingsStore.normalizeSpeed(currentSpeed)
+        binding.speedLabel.text = SettingsStore.formatSpeed(currentSpeed)
+        binding.speed075.isSelected = currentSpeed == 0.75f
+        binding.speed100.isSelected = currentSpeed == 1.0f
+        binding.speed125.isSelected = currentSpeed == 1.25f
+        binding.speed150.isSelected = currentSpeed == 1.5f
+        binding.speed200.isSelected = currentSpeed == 2.0f
+    }
+
+    private fun applySpeed(speed: Float) {
+        lifecycleScope.launch {
+            settings.setPlaybackSpeed(speed)
+            currentSpeed = SettingsStore.normalizeSpeed(speed)
+            refreshSpeedUi()
+            player?.setPlaybackSpeed(currentSpeed)
+            closeSheets()
+            scheduleHideControls()
+        }
     }
 
     private fun refreshEpisodePicker() {
@@ -361,6 +566,9 @@ class PlayerActivity : AppCompatActivity() {
         saveProgress()
         episodeIndex = index
         startPositionMs = 0L
+        seasonPrepared = false
+        nextSeasonWork = null
+        binding.seasonBanner.visibility = View.GONE
         refreshEpisodePicker()
         loadCurrent()
     }
@@ -372,7 +580,7 @@ class PlayerActivity : AppCompatActivity() {
         binding.playerTitle.isSelected = true
         binding.retryButton.visibility = View.GONE
         binding.loadingBox.visibility = View.VISIBLE
-        showControls(autoHide = false)
+        if (!locked) showControls(autoHide = false)
 
         lifecycleScope.launch {
             if (settings.wifiOnlyNow() && !isWifi()) {
@@ -441,22 +649,31 @@ class PlayerActivity : AppCompatActivity() {
                 updatePlayPause()
                 binding.loadingBox.visibility =
                     if (playbackState == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
-                if (playbackState == Player.STATE_READY) scheduleHideControls()
+                if (playbackState == Player.STATE_READY && !locked) scheduleHideControls()
                 if (playbackState == Player.STATE_ENDED) {
-                    showControls(autoHide = false)
-                    if (episodeIndex < episodeIds.lastIndex) switchEpisode(episodeIndex + 1)
+                    saveProgress()
+                    if (episodeIndex < episodeIds.lastIndex) {
+                        switchEpisode(episodeIndex + 1)
+                    } else {
+                        finishSeasonOrStop()
+                    }
                 }
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 updatePlayPause()
-                if (isPlaying) scheduleHideControls() else hideControlsJob?.cancel()
+                if (isPlaying) {
+                    if (!locked) scheduleHideControls()
+                } else {
+                    hideControlsJob?.cancel()
+                    saveProgress()
+                }
             }
 
             override fun onPlayerError(error: PlaybackException) {
                 binding.retryButton.visibility = View.VISIBLE
                 binding.loadingBox.visibility = View.GONE
-                showControls(autoHide = false)
+                if (!locked) showControls(autoHide = false)
                 Toast.makeText(this@PlayerActivity, error.message ?: "播放失败", Toast.LENGTH_LONG).show()
             }
         })
@@ -466,6 +683,7 @@ class PlayerActivity : AppCompatActivity() {
         exo.setMediaItem(MediaItem.fromUri(stream.url))
         exo.prepare()
         if (positionMs > 0) exo.seekTo(positionMs)
+        exo.setPlaybackSpeed(currentSpeed)
         exo.playWhenReady = true
         startProgressLoop()
         updatePlayPause()
@@ -474,10 +692,12 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun updatePlayPause() {
         val playing = player?.isPlaying == true
-        binding.playPauseButton.text = getString(if (playing) R.string.pause else R.string.play)
+        binding.playPauseButton.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
+        binding.playPauseButton.contentDescription =
+            getString(if (playing) R.string.cd_pause else R.string.cd_play)
         binding.playPauseButton.isSelected = true
         binding.prevButton.isEnabled = episodeIndex > 0
-        binding.nextButton.isEnabled = episodeIndex < episodeIds.lastIndex
+        binding.nextButton.isEnabled = episodeIndex < episodeIds.lastIndex || nextSeasonWork != null
         binding.prevButton.alpha = if (binding.prevButton.isEnabled) 1f else 0.35f
         binding.nextButton.alpha = if (binding.nextButton.isEnabled) 1f else 0.35f
     }
@@ -487,9 +707,77 @@ class PlayerActivity : AppCompatActivity() {
         progressJob = lifecycleScope.launch {
             while (isActive) {
                 updateSeekUi()
-                delay(400)
+                maybePrepareSeason()
+                delay(500)
                 if (isActive) saveProgress()
-                delay(1_600)
+                delay(1_000)
+            }
+        }
+    }
+
+    /** 末集过半程：只预取下一季元数据（对照 hongguoTV offerNextSeason）。 */
+    private fun maybePrepareSeason() {
+        val p = player ?: return
+        if (episodeIndex != episodeIds.lastIndex) return
+        if (seasonPrepared) return
+        val duration = p.duration.takeIf { it > 0 } ?: return
+        if (p.currentPosition < duration / 2) return
+        if (!p.isPlaying) return
+        seasonPrepared = true
+        val token = ++seasonGeneration
+        seasonJob?.cancel()
+        seasonJob = lifecycleScope.launch {
+            val next = runCatching { repo.resolveNextSeason(seriesId, seriesTitle) }.getOrNull()
+            if (token != seasonGeneration) return@launch
+            nextSeasonWork = next
+            if (next != null) {
+                binding.seasonBanner.text =
+                    getString(R.string.next_season_banner, next.series.title)
+                binding.seasonBanner.visibility = View.VISIBLE
+            } else {
+                binding.seasonBanner.visibility = View.GONE
+            }
+            updatePlayPause()
+        }
+    }
+
+    private fun finishSeasonOrStop() {
+        val next = nextSeasonWork
+        if (next == null) {
+            if (!locked) showControls(autoHide = false)
+            return
+        }
+        val token = seasonGeneration
+        binding.loadingBox.visibility = View.VISIBLE
+        binding.loadingText.text = getString(R.string.next_season_loading)
+        showGestureHint(getString(R.string.next_season_loading))
+        seasonJob?.cancel()
+        seasonJob = lifecycleScope.launch {
+            try {
+                val detail = repo.detail(next.series.id)
+                if (token != seasonGeneration) return@launch
+                seriesId = detail.series.id
+                seriesTitle = detail.series.title
+                cover = detail.series.cover
+                source = detail.series.source
+                episodeIds = detail.episodes.map { it.id }
+                episodeNumbers = detail.episodes.map { it.number }
+                episodeIndex = 0
+                startPositionMs = 0L
+                nextSeasonWork = null
+                seasonPrepared = false
+                binding.seasonBanner.visibility = View.GONE
+                refreshEpisodePicker()
+                loadCurrent()
+            } catch (e: Exception) {
+                binding.loadingBox.visibility = View.GONE
+                binding.loadingText.text = getString(R.string.loading)
+                Toast.makeText(
+                    this@PlayerActivity,
+                    e.message ?: getString(R.string.next_season_failed),
+                    Toast.LENGTH_LONG,
+                ).show()
+                if (!locked) showControls(autoHide = false)
             }
         }
     }
@@ -570,11 +858,14 @@ class PlayerActivity : AppCompatActivity() {
         super.onStop()
         player?.pause()
         saveProgress()
+        // 退后台取消未完成跨季（对照 hongguoTV）
+        seasonGeneration++
     }
 
     override fun onDestroy() {
         hideControlsJob?.cancel()
         hintJob?.cancel()
+        seasonJob?.cancel()
         releasePlayer()
         super.onDestroy()
     }

@@ -1,7 +1,6 @@
 package com.hongguo.watch.ui
 
 import android.os.Bundle
-import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -16,25 +15,20 @@ import kotlinx.coroutines.launch
 class SettingsActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySettingsBinding
     private val container get() = (application as HongguoWatchApp).container
+    private var currentQuality = 480
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivitySettingsBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        WatchUi.applySafePadding(binding.settingsRoot)
 
-        val qualities = SettingsStore.QUALITY_OPTIONS
-        val labels = listOf(
-            getString(R.string.quality_480),
-            getString(R.string.quality_720),
-            getString(R.string.quality_1080),
-        )
-        binding.qualitySpinner.adapter =
-            ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, labels)
+        binding.backButton.setOnClickListener { finish() }
 
         lifecycleScope.launch {
             binding.wifiOnlySwitch.isChecked = container.settings.wifiOnly.first()
-            val maxQ = container.settings.maxQuality.first()
-            binding.qualitySpinner.setSelection(qualities.indexOf(maxQ).coerceAtLeast(0))
+            currentQuality = container.settings.maxQuality.first()
+            refreshQualityChips()
             binding.showDemoSwitch.isChecked = container.settings.showDemo.first()
             binding.officialSwitch.isChecked = container.settings.enableOfficialDeprecated.first()
         }
@@ -48,20 +42,10 @@ class SettingsActivity : AppCompatActivity() {
         binding.officialSwitch.setOnCheckedChangeListener { _, checked ->
             lifecycleScope.launch { container.settings.setEnableOfficialDeprecated(checked) }
         }
-        binding.qualitySpinner.setOnItemSelectedListener(object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: android.widget.AdapterView<*>?,
-                view: android.view.View?,
-                position: Int,
-                id: Long,
-            ) {
-                lifecycleScope.launch {
-                    container.settings.setMaxQuality(qualities[position])
-                }
-            }
 
-            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
-        })
+        binding.quality480.setOnClickListener { pickQuality(480) }
+        binding.quality720.setOnClickListener { pickQuality(720) }
+        binding.quality1080.setOnClickListener { pickQuality(1080) }
 
         binding.clearHistoryButton.setOnClickListener {
             lifecycleScope.launch {
@@ -82,5 +66,19 @@ class SettingsActivity : AppCompatActivity() {
                 Toast.makeText(this@SettingsActivity, "缓存已清除", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    private fun pickQuality(height: Int) {
+        lifecycleScope.launch {
+            container.settings.setMaxQuality(height)
+            currentQuality = SettingsStore.normalizeQuality(height)
+            refreshQualityChips()
+        }
+    }
+
+    private fun refreshQualityChips() {
+        binding.quality480.isSelected = currentQuality == 480
+        binding.quality720.isSelected = currentQuality == 720
+        binding.quality1080.isSelected = currentQuality == 1080
     }
 }

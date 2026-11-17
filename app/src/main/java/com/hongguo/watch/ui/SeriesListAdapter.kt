@@ -1,9 +1,12 @@
 package com.hongguo.watch.ui
 
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
+import coil.transform.RoundedCornersTransformation
+import com.hongguo.watch.R
 import com.hongguo.watch.data.model.Series
 import com.hongguo.watch.databinding.ItemSectionHeaderBinding
 import com.hongguo.watch.databinding.ItemSeriesBinding
@@ -17,6 +20,13 @@ class SeriesListAdapter(
     private val onClick: (Series) -> Unit,
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     private val rows = mutableListOf<HomeRow>()
+    var showResumeHint: Boolean = false
+        set(value) {
+            if (field != value) {
+                field = value
+                notifyDataSetChanged()
+            }
+        }
 
     fun submit(rows: List<HomeRow>) {
         this.rows.clear()
@@ -60,18 +70,31 @@ class SeriesListAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
         fun bind(series: Series) {
             binding.title.text = series.title
-            val meta = buildString {
-                if (series.episodeCount > 0) append("全${series.episodeCount}集")
-                if (series.tags.isNotEmpty()) {
-                    if (isNotEmpty()) append(" · ")
-                    append(series.tags.take(2).joinToString(" "))
-                }
+            val meta = when {
+                series.description.isNotBlank() && showResumeHint -> series.description
+                series.episodeCount > 0 && series.tags.isNotEmpty() ->
+                    "全${series.episodeCount}集 · ${series.tags.take(2).joinToString(" ")}"
+                series.episodeCount > 0 -> "全${series.episodeCount}集"
+                series.tags.isNotEmpty() -> series.tags.take(2).joinToString(" ")
+                series.description.isNotBlank() -> series.description
+                else -> ""
             }
             binding.meta.text = meta
+            binding.meta.visibility = if (meta.isBlank()) View.GONE else View.VISIBLE
+
+            val radius = binding.root.resources.displayMetrics.density * 6f
             binding.cover.load(series.cover) {
-                size(96, 128)
+                size(120, 160)
                 crossfade(false)
+                transformations(RoundedCornersTransformation(radius))
+                placeholder(R.drawable.bg_cover)
+                error(R.drawable.bg_cover)
             }
+
+            binding.actionHint.visibility = View.VISIBLE
+            binding.actionHint.text = binding.root.context.getString(
+                if (showResumeHint) R.string.resume_hint else R.string.open_hint,
+            )
             binding.root.setOnClickListener { onClick(series) }
         }
     }

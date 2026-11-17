@@ -9,8 +9,13 @@
     <string name="demo_section">演示片源（可完整播放）</string>
     <string name="app_section">App 片源搜索结果</string>
     <string name="official_section">官网搜索结果（已弃用）</string>
-    <string name="empty_search">输入关键词搜索，或先播演示片源验证播放器</string>
-    <string name="empty_history">暂无观看历史</string>
+    <string name="empty_search">输入关键词搜索短剧\n或先播演示片源验证播放</string>
+    <string name="empty_history">暂无观看历史\n看过的剧会显示在这里</string>
+    <string name="empty_search_result">没有搜到相关短剧</string>
+    <string name="history_subtitle">点一项即可续播</string>
+    <string name="open_hint">进</string>
+    <string name="resume_hint">续</string>
+    <string name="episodes_count">共 %1$d 集</string>
     <string name="loading">加载中…</string>
     <string name="retry">重试</string>
     <string name="play">播放</string>

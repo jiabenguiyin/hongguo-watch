@@ -12,41 +12,29 @@ import kotlinx.coroutines.withContext
 
 class ContentRepository(
     private val appSource: AppSourceClient,
-    private val official: OfficialWebClient,
     private val historyDao: WatchHistoryDao,
     private val settings: SettingsStore,
 ) {
     fun demoHome(): List<Series> = DemoCatalog.homeItems()
 
     suspend fun search(query: String, page: Int = 1): SearchPage = withContext(Dispatchers.IO) {
-        if (settings.enableOfficialDeprecatedNow()) {
-            // 已弃用官网：仅在用户显式开启时使用。
-            official.search(query, page)
-        } else {
-            appSource.search(query, page)
-        }
+        appSource.search(query, page)
     }
 
     suspend fun detail(seriesId: String): SeriesDetail = withContext(Dispatchers.IO) {
-        when {
-            seriesId == DemoCatalog.SERIES_ID -> DemoCatalog.detail()
-            settings.enableOfficialDeprecatedNow() -> official.fetchDetail(seriesId)
-            else -> appSource.fetchDetail(seriesId)
+        if (seriesId == DemoCatalog.SERIES_ID) {
+            DemoCatalog.detail()
+        } else {
+            appSource.fetchDetail(seriesId)
         }
     }
 
     suspend fun stream(seriesId: String, episodeId: String): StreamInfo = withContext(Dispatchers.IO) {
-        when {
-            seriesId == DemoCatalog.SERIES_ID -> {
-                DemoCatalog.streamFor(episodeId)
-                    ?: throw IllegalStateException("演示分集不存在")
-            }
-            settings.enableOfficialDeprecatedNow() -> {
-                official.fetchStream(seriesId, episodeId, settings.maxQualityNow())
-            }
-            else -> {
-                appSource.fetchStream(seriesId, episodeId, settings.maxQualityNow())
-            }
+        if (seriesId == DemoCatalog.SERIES_ID) {
+            DemoCatalog.streamFor(episodeId)
+                ?: throw IllegalStateException("演示分集不存在")
+        } else {
+            appSource.fetchStream(seriesId, episodeId, settings.maxQualityNow())
         }
     }
 

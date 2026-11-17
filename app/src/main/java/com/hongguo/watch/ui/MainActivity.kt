@@ -83,12 +83,7 @@ class MainActivity : AppCompatActivity() {
                 rows += HomeRow.Header(getString(R.string.demo_section))
                 rows += repo.demoHome().map { HomeRow.Item(it) }
             }
-            val section = if (container.settings.enableOfficialDeprecatedNow()) {
-                getString(R.string.official_section)
-            } else {
-                getString(R.string.app_section)
-            }
-            rows += HomeRow.Header(section)
+            rows += HomeRow.Header(getString(R.string.app_section))
             adapter.submit(rows)
             binding.emptyView.visibility = View.VISIBLE
             binding.emptyView.text = getString(R.string.empty_search)
@@ -120,12 +115,7 @@ class MainActivity : AppCompatActivity() {
                     rows += HomeRow.Header(getString(R.string.demo_section))
                     rows += repo.demoHome().map { HomeRow.Item(it) }
                 }
-                val section = if (container.settings.enableOfficialDeprecatedNow()) {
-                    getString(R.string.official_section)
-                } else {
-                    getString(R.string.app_section)
-                }
-                rows += HomeRow.Header(section)
+                rows += HomeRow.Header(getString(R.string.app_section))
                 rows += page.items.map { HomeRow.Item(it) }
                 adapter.submit(rows)
                 binding.emptyView.visibility = if (page.items.isEmpty()) View.VISIBLE else View.GONE

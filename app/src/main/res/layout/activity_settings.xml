@@ -142,14 +142,6 @@
                     android:text="@string/show_demo"
                     android:textColor="@color/text_primary"
                     android:textSize="@dimen/watch_body" />
-
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/officialSwitch"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:text="@string/enable_official"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="@dimen/watch_body" />
             </LinearLayout>
 
             <LinearLayout

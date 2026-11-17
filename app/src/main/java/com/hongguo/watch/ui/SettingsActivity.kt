@@ -6,7 +6,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import coil.imageLoader
 import com.hongguo.watch.HongguoWatchApp
-import com.hongguo.watch.R
 import com.hongguo.watch.data.SettingsStore
 import com.hongguo.watch.databinding.ActivitySettingsBinding
 import kotlinx.coroutines.flow.first
@@ -30,7 +29,6 @@ class SettingsActivity : AppCompatActivity() {
             currentQuality = container.settings.maxQuality.first()
             refreshQualityChips()
             binding.showDemoSwitch.isChecked = container.settings.showDemo.first()
-            binding.officialSwitch.isChecked = container.settings.enableOfficialDeprecated.first()
         }
 
         binding.wifiOnlySwitch.setOnCheckedChangeListener { _, checked ->
@@ -38,9 +36,6 @@ class SettingsActivity : AppCompatActivity() {
         }
         binding.showDemoSwitch.setOnCheckedChangeListener { _, checked ->
             lifecycleScope.launch { container.settings.setShowDemo(checked) }
-        }
-        binding.officialSwitch.setOnCheckedChangeListener { _, checked ->
-            lifecycleScope.launch { container.settings.setEnableOfficialDeprecated(checked) }
         }
 
         binding.quality480.setOnClickListener { pickQuality(480) }

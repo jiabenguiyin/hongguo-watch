@@ -14,18 +14,48 @@ private val Context.dataStore by preferencesDataStore("settings")
 class SettingsStore(private val context: Context) {
     private val wifiOnlyKey = booleanPreferencesKey("wifi_only")
     private val maxQualityKey = intPreferencesKey("max_quality")
+    private val showDemoKey = booleanPreferencesKey("show_demo")
+    private val enableOfficialKey = booleanPreferencesKey("enable_official_deprecated")
 
     val wifiOnly: Flow<Boolean> = context.dataStore.data.map { it[wifiOnlyKey] ?: false }
-    val maxQuality: Flow<Int> = context.dataStore.data.map { it[maxQualityKey] ?: 480 }
+    /** 默认 480；可选 720 / 1080（手动高清，低配表可能发热/卡顿）。 */
+    val maxQuality: Flow<Int> = context.dataStore.data.map {
+        normalizeQuality(it[maxQualityKey] ?: 480)
+    }
+    val showDemo: Flow<Boolean> = context.dataStore.data.map { it[showDemoKey] ?: true }
+    /** 官网路径已弃用，默认关闭。 */
+    val enableOfficialDeprecated: Flow<Boolean> = context.dataStore.data.map {
+        it[enableOfficialKey] ?: false
+    }
 
     suspend fun setWifiOnly(enabled: Boolean) {
         context.dataStore.edit { it[wifiOnlyKey] = enabled }
     }
 
     suspend fun setMaxQuality(height: Int) {
-        context.dataStore.edit { it[maxQualityKey] = height }
+        context.dataStore.edit { it[maxQualityKey] = normalizeQuality(height) }
+    }
+
+    suspend fun setShowDemo(enabled: Boolean) {
+        context.dataStore.edit { it[showDemoKey] = enabled }
+    }
+
+    suspend fun setEnableOfficialDeprecated(enabled: Boolean) {
+        context.dataStore.edit { it[enableOfficialKey] = enabled }
     }
 
     suspend fun wifiOnlyNow(): Boolean = wifiOnly.first()
     suspend fun maxQualityNow(): Int = maxQuality.first()
+    suspend fun showDemoNow(): Boolean = showDemo.first()
+    suspend fun enableOfficialDeprecatedNow(): Boolean = enableOfficialDeprecated.first()
+
+    companion object {
+        val QUALITY_OPTIONS = listOf(480, 720, 1080)
+
+        fun normalizeQuality(height: Int): Int = when {
+            height >= 1080 -> 1080
+            height >= 720 -> 720
+            else -> 480
+        }
+    }
 }

@@ -7,10 +7,11 @@ data class Series(
     val description: String = "",
     val episodeCount: Int = 0,
     val tags: List<String> = emptyList(),
-    val source: SeriesSource = SeriesSource.OFFICIAL,
+    val source: SeriesSource = SeriesSource.APP,
 )
 
 enum class SeriesSource {
+    APP,
     OFFICIAL,
     DEMO,
 }
@@ -35,6 +36,8 @@ data class StreamInfo(
     val isPreview: Boolean = false,
     val referer: String? = null,
     val userAgent: String? = null,
+    /** App 族 spade_a 派生密钥；非空时播放走 RemoteVideo / MediaCrypto。 */
+    val decryptionKey: ByteArray? = null,
 )
 
 data class SearchPage(

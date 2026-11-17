@@ -12,8 +12,8 @@ android {
         applicationId = "com.hongguo.watch"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         resourceConfigurations += listOf("zh", "en")
     }
 
@@ -93,6 +93,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // SM3 for App-path Signer（对照 hongguoTV Bytes.kt）
+    implementation("org.bouncycastle:bcprov-jdk18on:1.79")
 
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.4.1")

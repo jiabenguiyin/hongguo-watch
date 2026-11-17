@@ -30,6 +30,11 @@ class ContentRepository(
         appSource.fetchRecommend(page)
     }
 
+    /** App 热播榜（bookmall cell/change）。 */
+    suspend fun rank(rankKey: String, page: Int = 1): CatalogPage = withContext(Dispatchers.IO) {
+        appSource.fetchRank(rankKey, page)
+    }
+
     /**
      * 分类落地页；`withSelector=true` 时附带题材/类型 Tab。
      * 对照 hongguoTV `filteredDiscovery`。
@@ -41,9 +46,9 @@ class ContentRepository(
         appSource.fetchCategory(filters = filters, withSelector = withSelector)
     }
 
-    /** 组装默认分类条：推荐 + 落地页题材/类型（失败则只留推荐）。 */
+    /** 组装默认分类条：推荐 + App 热播榜 + 落地页题材/类型（题材失败仍保留榜）。 */
     suspend fun homeCategories(): List<HomeCategory> = withContext(Dispatchers.IO) {
-        val base = listOf(HomeCategory.recommend())
+        val base = listOf(HomeCategory.recommend()) + HomeCategory.ranks()
         val panel = runCatching {
             appSource.fetchCategory(filters = emptyMap(), withSelector = true)
         }.getOrNull()

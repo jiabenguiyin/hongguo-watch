@@ -122,10 +122,10 @@ class MainActivity : AppCompatActivity() {
         val cat = categories.firstOrNull { it.id == selectedCategoryId }
             ?: HomeCategory.recommend()
         highlightCategoryChips()
-        val page = if (cat.isRecommend) {
-            repo.recommend(page = 1)
-        } else {
-            repo.category(filters = cat.filters, withSelector = false)
+        val page = when {
+            cat.isRecommend -> repo.recommend(page = 1)
+            cat.isRank -> repo.rank(rankKey = cat.rankKey.orEmpty(), page = 1)
+            else -> repo.category(filters = cat.filters, withSelector = false)
         }
         val rows = mutableListOf<HomeRow>()
         rows += HomeRow.Header(cat.label)

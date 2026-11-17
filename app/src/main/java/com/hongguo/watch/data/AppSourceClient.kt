@@ -156,6 +156,60 @@ class AppSourceClient(
     }
 
     /**
+     * App 热播榜。对照 jackotom/hongguo-drama `hongguo-app-catalog.js`：
+     * `GET .../reading/bookapi/bookmall/cell/change/v`，
+     * `selected_items` + `sub_selected_items` 指定榜单。
+     * 手表首屏只取第 1 页（offset=0）；续页游标未接。
+     */
+    fun fetchRank(rankKey: String, page: Int = 1): CatalogPage {
+        require(page in 1..20)
+        val selectors = RANK_SELECTORS[rankKey]
+            ?: throw IllegalArgumentException("未知榜单：$rankKey")
+        ensureDevice()
+        val values = feedIdentity().toMutableMap()
+        values.putAll(
+            linkedMapOf(
+                "tab_type" to if (page <= 1) "26" else "18",
+                "client_req_type" to "2",
+                "client_template" to "2",
+                "background_selected_items" to "",
+                "category_id" to "0",
+                "limit" to "20",
+                "cell_sub_id" to "0",
+                "gender" to "2",
+                "cell_id" to RANK_CELL_ID,
+                "selected_items" to selectors.first,
+                "sub_selected_items" to selectors.second,
+                "panel_selected_items" to "",
+                "offset" to "0",
+                "session_id" to "",
+                "filter_ids" to "",
+                "unlimited_selector_change_type" to "0",
+            ),
+        )
+        var last: Exception? = null
+        for (host in FEED_HOSTS) {
+            for (path in RANK_PATHS) {
+                try {
+                    val signed = signer.sign("https://$host$path", values)
+                    val root = JSONObject(execute(signed))
+                    if (root.optInt("code", -1) != 0) {
+                        throw IllegalStateException("榜单暂不可用（code=${root.optInt("code")}）")
+                    }
+                    val data = root.optJSONObject("data")
+                        ?: throw IllegalStateException("榜单数据缺失")
+                    val items = parseRankCellView(data, selectors)
+                    if (items.isEmpty()) throw IllegalStateException("榜单未返回可播放剧集")
+                    return CatalogPage(items = items, page = page, hasMore = false)
+                } catch (e: Exception) {
+                    last = e
+                }
+            }
+        }
+        throw IllegalStateException(last?.message ?: "榜单暂时无法加载", last)
+    }
+
+    /**
      * 分类落地页。对照 hongguoTV `DiscoverySelection` / `filteredDiscovery`：
      * `POST .../reading/distribution/category/landpage/v/`。
      * `need_selector_panel=true` 时解析 `selector_rows` 作为首页分类 Tab。
@@ -451,6 +505,55 @@ class AppSourceClient(
         return rows.mapNotNull { row -> seriesFromFeedRow(row) }.distinctBy { it.id }
     }
 
+    /**
+     * 热播榜响应：`data.cell_view.cell_data[].video_data`。
+     * 若带 selector，核对外层/子层选中项与请求一致；演员榜（仅 ugc_user_data）拒绝。
+     */
+    private fun parseRankCellView(
+        data: JSONObject,
+        selectors: Pair<String, String>,
+    ): List<Series> {
+        val view = data.optJSONObject("cell_view")
+            ?: throw IllegalStateException("榜单结构异常")
+        val selected = view.optJSONObject("cell_selector")
+            ?.optJSONObject("outer_row")
+            ?.optJSONArray("items")
+            ?.objects()
+            ?.firstOrNull { it.optBoolean("is_selected", false) }
+        if (selected != null) {
+            val outer = selected.str("selector_item_id")
+            val child = selected.optJSONObject("sub_cell_selector")
+                ?.optJSONObject("outer_row")
+                ?.optJSONArray("items")
+                ?.objects()
+                ?.firstOrNull { it.optBoolean("is_selected", false) }
+                ?.str("selector_item_id")
+            if (outer != selectors.first || child != selectors.second) {
+                throw IllegalStateException("榜单返回与请求不一致")
+            }
+        }
+        val cells = view.optJSONArray("cell_data")?.objects().orEmpty()
+        val rows = cells.flatMap { cell ->
+            when (val video = cell.opt("video_data")) {
+                is JSONArray -> video.objects()
+                is JSONObject -> listOf(video)
+                else -> emptyList()
+            }
+        }
+        if (rows.isEmpty() && cells.any { it.optJSONArray("ugc_user_data")?.length() ?: 0 > 0 }) {
+            throw IllegalStateException("返回了演员榜，未作为短剧展示")
+        }
+        val allowed = RANK_CONTENT_TYPES[selectors.first]
+        return rows.mapNotNull { row ->
+            val series = seriesFromFeedRow(row) ?: return@mapNotNull null
+            if (allowed != null) {
+                val type = row.optInt("content_type", -1)
+                if (type !in allowed) return@mapNotNull null
+            }
+            series
+        }.distinctBy { it.id }
+    }
+
     private fun parseLandpageVideos(data: JSONObject): List<Series> {
         val rows = data.optJSONArray("video_data")?.objects().orEmpty()
         return rows.mapNotNull { row -> seriesFromFeedRow(row) }.distinctBy { it.id }
@@ -539,6 +642,25 @@ class AppSourceClient(
             "api5-normal-hl.fqnovel.com",
             "api5-normal-lf.fqnovel.com",
             "api5-normal-sinfonlineb.fqnovel.com",
+        )
+        /** drama 现行 `/v`；TV 推荐续刷用 `/v1/`，作备选。 */
+        private val RANK_PATHS = listOf(
+            "/reading/bookapi/bookmall/cell/change/v",
+            "/reading/bookapi/bookmall/cell/change/v1/",
+        )
+        private const val RANK_CELL_ID = "7470092475068071998"
+        private val RANK_SELECTORS = mapOf(
+            "hot-drama" to ("all" to "ranklist_hot_play_sc"),
+            "hot-real-drama" to ("human" to "human_hot_play"),
+            "hot-comic-drama" to ("comic_series_rank" to "comic_series_hot_play"),
+            "hot-ai-drama" to ("ai_playlet" to "ai_playlet_hot_play"),
+        )
+        /** 与 drama `cards()` 一致：综合=真人+漫剧，其余按类型过滤。 */
+        private val RANK_CONTENT_TYPES = mapOf(
+            "all" to setOf(1, 1004),
+            "human" to setOf(1),
+            "comic_series_rank" to setOf(1004),
+            "ai_playlet" to setOf(1004),
         )
         private val SELECTOR_KEYS = listOf(
             "genre",

@@ -65,10 +65,26 @@
                     android:textColor="@color/text_primary"
                     android:textSize="@dimen/watch_body" />
 
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/roundAdaptSwitch"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="@string/round_adapt"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_body" />
+
+                <TextView
+                    android:id="@+id/roundAdaptHint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/round_adapt_hint"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/watch_meta" />
+
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
+                    android:layout_marginTop="8dp"
                     android:text="@string/max_quality"
                     android:textColor="@color/text_secondary"
                     android:textSize="@dimen/watch_meta" />

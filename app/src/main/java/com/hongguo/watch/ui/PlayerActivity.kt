@@ -252,13 +252,14 @@ class PlayerActivity : AppCompatActivity() {
             lp.marginEnd = side
             binding.volumeMeter.layoutParams = lp
         }
-        val sidePad = if (WatchUi.isRoundScreen(this)) {
+        val round = WatchUi.useRoundLayout(this)
+        val sidePad = if (round) {
             WatchUi.edgeInsetPx(this).coerceAtLeast(WatchUi.dp(this, 14f))
         } else {
             WatchUi.dp(this, 10f)
         }
         binding.midControls.setPadding(sidePad, 0, sidePad, 0)
-        if (WatchUi.isRoundScreen(this)) {
+        if (round) {
             val pad = WatchUi.dp(this, 12f)
             binding.bottomButtons.setPadding(pad, binding.bottomButtons.paddingTop, pad, binding.bottomButtons.paddingBottom)
             val seasonLp = binding.seasonBanner.layoutParams as? android.widget.FrameLayout.LayoutParams

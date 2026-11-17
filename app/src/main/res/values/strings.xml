@@ -56,6 +56,8 @@
     <string name="clear_history">清除历史</string>
     <string name="clear_cache">清除缓存</string>
     <string name="wifi_only">仅 Wi‑Fi 播放</string>
+    <string name="round_adapt">圆屏适配</string>
+    <string name="round_adapt_hint">加大安全边距，锁/倍速内收避开裁切。默认跟随圆屏检测，也可强制开启。</string>
     <string name="max_quality">清晰度上限</string>
     <string name="quality_480">480p（默认，省电）</string>
     <string name="quality_720">720p</string>

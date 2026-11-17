@@ -18,6 +18,19 @@ import kotlin.math.roundToInt
 
 /** 手表小屏度量与沉浸式辅助（含纯圆盘屏）。 */
 object WatchUi {
+    /**
+     * 圆屏适配偏好缓存：`null` = 跟随 [isRoundScreen]；
+     * `true`/`false` = 强制开/关（设置里可改）。
+     */
+    @Volatile
+    private var roundAdaptOverride: Boolean? = null
+
+    fun setRoundAdaptOverride(enabled: Boolean?) {
+        roundAdaptOverride = enabled
+    }
+
+    fun roundAdaptOverride(): Boolean? = roundAdaptOverride
+
     fun widthDp(context: Context): Int {
         val metrics = context.resources.displayMetrics
         return (metrics.widthPixels / metrics.density).roundToInt()
@@ -47,6 +60,13 @@ object WatchUi {
         return isCompactWatch(context) && absDiff(w, h) <= 24 && min(w, h) <= 320
     }
 
+    /**
+     * 布局是否按圆屏处理：设置强制开/关优先，否则跟随 [isRoundScreen]。
+     */
+    fun useRoundLayout(context: Context): Boolean {
+        return roundAdaptOverride ?: isRoundScreen(context)
+    }
+
     private fun absDiff(a: Int, b: Int): Int = if (a >= b) a - b else b - a
 
     /**
@@ -56,7 +76,7 @@ object WatchUi {
     fun edgeInsetPx(context: Context): Int {
         val metrics = context.resources.displayMetrics
         val edge = min(metrics.widthPixels, metrics.heightPixels)
-        val round = isRoundScreen(context)
+        val round = useRoundLayout(context)
         val ratio = if (round) 0.14f else 0.04f
         val preferred = (edge * ratio).roundToInt()
         val minDp = if (round) 20f else 8f
@@ -69,7 +89,7 @@ object WatchUi {
     /** 圆屏侧栏（亮度/音量条）额外内收，避免贴圆弧。 */
     fun sideMeterMarginPx(context: Context): Int {
         val base = edgeInsetPx(context)
-        return if (isRoundScreen(context)) (base * 0.85f).roundToInt() else dp(context, 6f)
+        return if (useRoundLayout(context)) (base * 0.85f).roundToInt() else dp(context, 6f)
     }
 
     fun dp(context: Context, value: Float): Int {
@@ -109,7 +129,7 @@ object WatchUi {
     fun applySafePadding(view: View, extraBottom: Int = 0) {
         val inset = edgeInsetPx(view.context)
         // 圆屏顶部也按满 inset，避免返回/标题贴圆弧
-        val topFactor = if (isRoundScreen(view.context)) 1f else 0.5f
+        val topFactor = if (useRoundLayout(view.context)) 1f else 0.5f
         ViewCompat.setOnApplyWindowInsetsListener(view) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(

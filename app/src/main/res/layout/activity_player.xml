@@ -31,13 +31,13 @@
         android:progressDrawable="@drawable/mini_progress"
         android:visibility="gone" />
 
-    <!-- 左侧亮度条 -->
+    <!-- 左侧亮度条（圆屏由代码加大 margin，避开圆弧） -->
     <LinearLayout
         android:id="@+id/brightnessMeter"
         android:layout_width="28dp"
         android:layout_height="120dp"
         android:layout_gravity="start|center_vertical"
-        android:layout_marginStart="6dp"
+        android:layout_marginStart="18dp"
         android:background="@drawable/bg_side_meter"
         android:gravity="center_horizontal"
         android:orientation="vertical"
@@ -68,7 +68,7 @@
         android:layout_width="28dp"
         android:layout_height="120dp"
         android:layout_gravity="end|center_vertical"
-        android:layout_marginEnd="6dp"
+        android:layout_marginEnd="18dp"
         android:background="@drawable/bg_side_meter"
         android:gravity="center_horizontal"
         android:orientation="vertical"
@@ -134,25 +134,11 @@
         android:visibility="gone" />
 
     <TextView
-        android:id="@+id/lockBanner"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="10dp"
-        android:background="@drawable/bg_panel"
-        android:paddingHorizontal="10dp"
-        android:paddingVertical="6dp"
-        android:text="@string/lock_hint"
-        android:textColor="@color/text_secondary"
-        android:textSize="@dimen/watch_meta"
-        android:visibility="gone" />
-
-    <TextView
         android:id="@+id/seasonBanner"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:layout_marginHorizontal="10dp"
+        android:layout_marginHorizontal="18dp"
         android:layout_marginBottom="52dp"
         android:background="@drawable/bg_panel"
         android:ellipsize="end"
@@ -163,19 +149,40 @@
         android:textSize="@dimen/watch_meta"
         android:visibility="gone" />
 
-    <!-- 锁定时仅显示解锁钮 -->
-    <ImageButton
-        android:id="@+id/unlockButton"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_gravity="top|end"
-        android:layout_margin="8dp"
-        android:background="@drawable/bg_control_button"
-        android:contentDescription="@string/cd_unlock"
-        android:padding="10dp"
-        android:scaleType="centerInside"
-        android:src="@drawable/ic_unlock"
-        android:visibility="gone" />
+    <!-- 圆屏避开四角：锁定时解锁钮放正中央，大触控 -->
+    <LinearLayout
+        android:id="@+id/lockOverlay"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/lockBanner"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_panel"
+            android:gravity="center"
+            android:maxWidth="160dp"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="6dp"
+            android:text="@string/lock_hint"
+            android:textColor="@color/text_secondary"
+            android:textSize="@dimen/watch_meta" />
+
+        <ImageButton
+            android:id="@+id/unlockButton"
+            android:layout_width="76dp"
+            android:layout_height="76dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/bg_quality_chip"
+            android:contentDescription="@string/cd_unlock"
+            android:padding="16dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_unlock" />
+    </LinearLayout>
 
     <LinearLayout
         android:id="@+id/controlsOverlay"
@@ -220,16 +227,6 @@
                 android:textColor="@color/text_primary"
                 android:textSize="@dimen/watch_body"
                 android:textStyle="bold" />
-
-            <ImageButton
-                android:id="@+id/lockButton"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/bg_control_button"
-                android:contentDescription="@string/cd_lock"
-                android:padding="8dp"
-                android:scaleType="centerInside"
-                android:src="@drawable/ic_lock" />
         </LinearLayout>
 
         <View
@@ -300,13 +297,26 @@
                     android:textSize="@dimen/watch_meta" />
             </LinearLayout>
 
+            <!-- 圆屏：锁放底栏正中大触控，避开四角 -->
+            <ImageButton
+                android:id="@+id/lockButton"
+                android:layout_width="52dp"
+                android:layout_height="44dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="2dp"
+                android:background="@drawable/bg_control_button"
+                android:contentDescription="@string/cd_lock"
+                android:padding="8dp"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_lock" />
+
             <LinearLayout
                 android:id="@+id/bottomButtons"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="2dp"
+                android:paddingHorizontal="8dp"
                 android:paddingTop="2dp">
 
                 <TextView

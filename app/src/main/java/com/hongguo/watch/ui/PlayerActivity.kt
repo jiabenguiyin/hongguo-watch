@@ -120,6 +120,7 @@ class PlayerActivity : AppCompatActivity() {
 
         touchSlop = ViewConfiguration.get(this).scaledTouchSlop
         binding.playerView.useController = false
+        applyRoundPlayerChrome()
         bindControls()
         bindSheets()
         bindGestures()
@@ -157,6 +158,9 @@ class PlayerActivity : AppCompatActivity() {
         binding.backButton.setOnClickListener { finish() }
         binding.lockButton.setOnClickListener { setLocked(true) }
         binding.unlockButton.setOnClickListener { setLocked(false) }
+        // 整块中央提示区都可点解锁，圆屏更好点
+        binding.lockOverlay.setOnClickListener { setLocked(false) }
+        binding.lockBanner.setOnClickListener { setLocked(false) }
         binding.prevButton.setOnClickListener {
             switchEpisode(episodeIndex - 1)
             scheduleHideControls()
@@ -228,18 +232,47 @@ class PlayerActivity : AppCompatActivity() {
         binding.controlsMidTap.setOnTouchListener(listener)
     }
 
+    /** 圆盘：加大侧栏内收；锁定解锁只用屏幕正中大钮，绝不放四角。 */
+    private fun applyRoundPlayerChrome() {
+        val side = WatchUi.sideMeterMarginPx(this)
+        (binding.brightnessMeter.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
+            lp.marginStart = side
+            binding.brightnessMeter.layoutParams = lp
+        }
+        (binding.volumeMeter.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
+            lp.marginEnd = side
+            binding.volumeMeter.layoutParams = lp
+        }
+        if (WatchUi.isRoundScreen(this)) {
+            val pad = WatchUi.dp(this, 12f)
+            binding.bottomButtons.setPadding(pad, binding.bottomButtons.paddingTop, pad, binding.bottomButtons.paddingBottom)
+            binding.seasonBanner.setPadding(
+                binding.seasonBanner.paddingLeft,
+                binding.seasonBanner.paddingTop,
+                binding.seasonBanner.paddingRight,
+                binding.seasonBanner.paddingBottom,
+            )
+            val seasonLp = binding.seasonBanner.layoutParams as? android.widget.FrameLayout.LayoutParams
+            if (seasonLp != null) {
+                val h = WatchUi.edgeInsetPx(this)
+                seasonLp.marginStart = h
+                seasonLp.marginEnd = h
+                binding.seasonBanner.layoutParams = seasonLp
+            }
+        }
+    }
+
     private fun setLocked(value: Boolean) {
         locked = value
         if (locked) {
             closeSheets()
             hideControls()
-            binding.unlockButton.visibility = View.VISIBLE
-            binding.lockBanner.visibility = View.VISIBLE
+            binding.lockOverlay.visibility = View.VISIBLE
             binding.controlsOverlay.visibility = View.GONE
+            binding.miniProgress.visibility = View.GONE
             showGestureHint(getString(R.string.lock_hint))
         } else {
-            binding.unlockButton.visibility = View.GONE
-            binding.lockBanner.visibility = View.GONE
+            binding.lockOverlay.visibility = View.GONE
             showControls(autoHide = true)
         }
     }

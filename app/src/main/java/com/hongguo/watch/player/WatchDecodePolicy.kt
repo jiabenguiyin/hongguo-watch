@@ -22,6 +22,12 @@ object WatchDecodePolicy {
     private const val WATCH_MAX_SHORT_SIDE_PX = 480
     private const val WATCH_MAX_LONG_SIDE_PX = 640
 
+    /** 脆弱 SoC / 低内存默认清晰度上限（≤480p AVC）。 */
+    const val FRAGILE_DEFAULT_MAX_QUALITY = 480
+
+    /** 低内存阈值（MB）；CD12 Max / UWS6152 实测 memClass=192。 */
+    const val LOW_MEM_CLASS_MB = 192
+
     enum class VideoCodecMode {
         /** 系统默认顺序 */
         Default,
@@ -37,7 +43,7 @@ object WatchDecodePolicy {
         if (isWatchLike(context)) return true
         if (isFragileSoc()) return true
         val mem = memoryClassMb(context)
-        return mem in 1..192
+        return mem in 1..LOW_MEM_CLASS_MB
     }
 
     /** 脆弱 SoC / 手表：首帧超时更短，尽快切到 AVC + 更强软解。 */
@@ -45,9 +51,30 @@ object WatchDecodePolicy {
         return if (shouldPreferSoftwareDecode(context)) 3_500L else 5_000L
     }
 
-    /** 脆弱设备开播即偏 AVC-only 阶梯（无 AVC 时上游会放宽）。 */
+    /** 脆弱设备开播即硬性 AVC-only（无 AVC 则失败，不再回落 bytevc1）。 */
     fun shouldForceAvcOnlyInitially(context: Context): Boolean {
         return isFragileSoc() || isWatchLike(context)
+    }
+
+    /**
+     * 脆弱 SoC + 低内存：有效清晰度上限压到 ≤480p（仍可选更低；用户设 720 也会被钳制）。
+     * 其它设备尊重用户设置。
+     */
+    fun effectiveMaxQuality(context: Context, userMaxQuality: Int): Int =
+        effectiveMaxQuality(
+            userMaxQuality = userMaxQuality,
+            fragileSoc = isFragileSoc(),
+            memClassMb = memoryClassMb(context),
+        )
+
+    fun effectiveMaxQuality(userMaxQuality: Int, fragileSoc: Boolean, memClassMb: Int): Int {
+        val user = userMaxQuality.coerceIn(240, 1080)
+        if (!fragileSoc) return user
+        return if (memClassMb in 1..LOW_MEM_CLASS_MB) {
+            minOf(user, FRAGILE_DEFAULT_MAX_QUALITY)
+        } else {
+            user
+        }
     }
 
     fun isFragileSoc(
@@ -66,6 +93,7 @@ object WatchDecodePolicy {
             "sprd",
             "w527",
             "ums",
+            "uws", // CD12 Max / UWS6152（paste kzty6）
             "sc98",
             "sc77",
             "sp7731",

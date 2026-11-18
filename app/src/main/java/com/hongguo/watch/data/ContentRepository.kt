@@ -153,7 +153,7 @@ class ContentRepository(
             WatchHistoryEntity(
                 seriesId = seriesId,
                 seriesTitle = seriesTitle,
-                cover = cover,
+                cover = CoverUrls.normalize(cover).ifBlank { cover },
                 episodeId = episodeId,
                 episodeNumber = episodeNumber,
                 positionMs = positionMs.coerceAtLeast(0L),
@@ -196,7 +196,7 @@ class ContentRepository(
                 FavoriteEntity(
                     seriesId = seriesId,
                     seriesTitle = seriesTitle,
-                    cover = cover,
+                    cover = CoverUrls.normalize(cover).ifBlank { cover },
                     source = source.name,
                     episodeCount = episodeCount,
                     updatedAt = System.currentTimeMillis(),
@@ -217,7 +217,7 @@ class ContentRepository(
             FavoriteEntity(
                 seriesId = seriesId,
                 seriesTitle = seriesTitle,
-                cover = cover,
+                cover = CoverUrls.normalize(cover).ifBlank { cover },
                 source = source.name,
                 episodeCount = episodeCount,
                 updatedAt = System.currentTimeMillis(),

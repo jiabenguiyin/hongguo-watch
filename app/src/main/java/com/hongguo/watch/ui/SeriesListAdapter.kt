@@ -8,6 +8,7 @@ import androidx.recyclerview.widget.RecyclerView
 import coil.load
 import coil.transform.RoundedCornersTransformation
 import com.hongguo.watch.R
+import com.hongguo.watch.data.CoverUrls
 import com.hongguo.watch.data.model.Series
 import com.hongguo.watch.databinding.ItemSectionHeaderBinding
 import com.hongguo.watch.databinding.ItemSeriesBinding
@@ -154,7 +155,9 @@ class SeriesListAdapter(
             binding.meta.visibility = if (meta.isBlank()) View.GONE else View.VISIBLE
 
             val radius = binding.root.resources.displayMetrics.density * 6f
-            binding.cover.load(series.cover) {
+            // 历史/收藏落盘可能仍是旧 HEIC；绑定时再归一化一次
+            val coverUrl = CoverUrls.normalize(series.cover).ifBlank { series.cover }
+            binding.cover.load(coverUrl.ifBlank { null }) {
                 size(120, 160)
                 crossfade(false)
                 transformations(RoundedCornersTransformation(radius))

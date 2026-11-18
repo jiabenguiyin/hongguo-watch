@@ -57,10 +57,12 @@ object PlayerDiagLog {
     fun markPlayStart(codec: String, quality: String, mode: String) {
         playStartedAtMs = System.currentTimeMillis()
         firstFrameMs = -1L
+        lastVideoDecoder = ""
+        lastAudioDecoder = ""
         lastCodec = codec
         lastQuality = quality
         lastVideoMode = mode
-        i("session start codec=$codec q=$quality mode=$mode")
+        i("session start codec_id=$codec q=$quality mode=$mode")
     }
 
     fun markFirstFrame() {

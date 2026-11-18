@@ -64,12 +64,16 @@ class PlayerActivity : AppCompatActivity() {
     private var progressJob: Job? = null
     private var playJob: Job? = null
     private var hideControlsJob: Job? = null
+    /** 锁定态：小解锁钮自动隐藏。 */
+    private var hideUnlockJob: Job? = null
     private var hintJob: Job? = null
     private var seasonJob: Job? = null
     private var remoteVideo: RemoteVideo? = null
     private var userSeeking = false
     private var controlsVisible = true
     private var locked = false
+    /** 锁定且解锁钮可见（可被点按；隐藏后点空白再唤出）。 */
+    private var unlockChipVisible = false
     /** 递增以作废过期的取流结果（快速切集 / 退后台）。 */
     private var playGeneration = 0
     private var playerForeground = false
@@ -190,7 +194,10 @@ class PlayerActivity : AppCompatActivity() {
     private fun bindControls() {
         binding.backButton.setOnClickListener { finish() }
         binding.lockButton.setOnClickListener { setLocked(true) }
-        binding.unlockButton.setOnClickListener { setLocked(false) }
+        binding.unlockButton.setOnClickListener {
+            // 点在解锁钮上：真正解锁（空白处只负责显隐）
+            setLocked(false)
+        }
         binding.prevButton.setOnClickListener {
             switchEpisode(episodeIndex - 1)
             scheduleHideControls()
@@ -336,22 +343,64 @@ class PlayerActivity : AppCompatActivity() {
         if (locked) {
             closeSheets()
             hideControls()
-            // 防误触：藏控件、吞手势；画面保持可见，只留小解锁钮
+            // 防误触：藏控件、吞手势；画面保持可见；小解锁钮可自动隐藏
             binding.controlsOverlay.visibility = View.GONE
             binding.miniProgress.visibility = View.GONE
             binding.brightnessMeter.visibility = View.GONE
             binding.volumeMeter.visibility = View.GONE
             binding.gestureHint.visibility = View.GONE
-            binding.unlockButton.visibility = View.VISIBLE
+            showUnlockChip(autoHide = true)
         } else {
-            binding.unlockButton.visibility = View.GONE
+            hideUnlockChip()
             showControls(autoHide = true)
+        }
+    }
+
+    /** 锁定态小解锁钮：数秒后或点空白隐藏；再点任意处唤出。非全屏遮罩。 */
+    private fun showUnlockChip(autoHide: Boolean) {
+        if (!locked) return
+        unlockChipVisible = true
+        binding.unlockButton.visibility = View.VISIBLE
+        if (autoHide) scheduleHideUnlockChip() else hideUnlockJob?.cancel()
+    }
+
+    private fun hideUnlockChip() {
+        unlockChipVisible = false
+        binding.unlockButton.visibility = View.GONE
+        hideUnlockJob?.cancel()
+        hideUnlockJob = null
+    }
+
+    private fun scheduleHideUnlockChip() {
+        hideUnlockJob?.cancel()
+        hideUnlockJob = lifecycleScope.launch {
+            delay(UNLOCK_CHIP_AUTO_HIDE_MS)
+            if (locked && unlockChipVisible) {
+                hideUnlockChip()
+            }
         }
     }
 
     private fun handleGesture(event: MotionEvent): Boolean {
         if (locked) {
-            // 吞掉亮度/音量/进度；解锁仅靠小按钮
+            // 吞掉亮度/音量/进度；点空白：有解锁钮则藏、无则唤出；真正解锁只靠小按钮
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.x
+                    downY = event.y
+                }
+                MotionEvent.ACTION_UP -> {
+                    val dx = abs(event.x - downX)
+                    val dy = abs(event.y - downY)
+                    if (dx <= touchSlop && dy <= touchSlop) {
+                        if (unlockChipVisible) {
+                            hideUnlockChip()
+                        } else {
+                            showUnlockChip(autoHide = true)
+                        }
+                    }
+                }
+            }
             return true
         }
         when (event.actionMasked) {
@@ -670,24 +719,45 @@ class PlayerActivity : AppCompatActivity() {
                 return@launch
             }
             try {
-                currentQuality = settings.maxQualityNow()
+                val userMax = settings.maxQualityNow()
+                val effectiveMax = WatchDecodePolicy.effectiveMaxQuality(this@PlayerActivity, userMax)
+                currentQuality = userMax
                 if (token != playGeneration) return@launch
                 refreshQualityUi()
+                if (effectiveMax < userMax) {
+                    PlayerDiagLog.i(
+                        "fragileSoc quality clamp user=${userMax}p → effective=${effectiveMax}p",
+                    )
+                }
                 val stream = repo.stream(
                     seriesId = requestedSeriesId,
                     episodeId = episodeId,
                     preferAvc = true,
                     avcOnly = forceAvcOnly,
+                    maxHeight = effectiveMax,
                 )
                 if (token != playGeneration) return@launch
                 if (!playerForeground) return@launch
                 if (seriesId != requestedSeriesId || episodeIndex != requestedIndex) return@launch
                 if (episodeIds.getOrNull(episodeIndex) != episodeId) return@launch
+                // avcOnly 会话：拒绝把 HEVC/bytevc1 交给播放器（选流层已硬拦，此处再防）
+                if (forceAvcOnly && CodecLabels.isHevc(stream.codec)) {
+                    PlayerDiagLog.e(
+                        "refuse start: avcOnly=true but codec=${stream.codec} q=${stream.quality}",
+                    )
+                    throw IllegalStateException(
+                        "本机仅支持 AVC，当前源为 ${stream.codec.ifBlank { "HEVC" }}",
+                    )
+                }
                 binding.playerNotice.visibility = if (stream.isPreview) View.VISIBLE else View.GONE
                 PlayerDiagLog.markPlayStart(
-                    codec = stream.codec,
+                    codec = stream.codec.ifBlank { "?" },
                     quality = stream.quality,
                     mode = "$videoCodecMode/avcOnly=$forceAvcOnly",
+                )
+                PlayerDiagLog.i(
+                    "selected codec_id=${stream.codec.ifBlank { "?" }} " +
+                        "isAvc=${CodecLabels.isAvc(stream.codec)} isHevc=${CodecLabels.isHevc(stream.codec)}",
                 )
                 playStream(stream, startPositionMs)
             } catch (e: Exception) {
@@ -850,6 +920,7 @@ class PlayerActivity : AppCompatActivity() {
 
     /**
      * 有声无画：READY 后仍无首帧 → 分段抬升解码策略。
+     * 另：视频解码器名为空（仅音频起来）时尽快拒绝并回退。
      * 硬解「成功」但不吐帧时 Media3 不会走 decoder fallback。
      */
     private fun scheduleFirstFrameWatch(token: Int, stream: StreamInfo) {
@@ -857,17 +928,46 @@ class PlayerActivity : AppCompatActivity() {
         if (firstFrameWatchJob?.isActive == true) return
         val timeout = WatchDecodePolicy.firstFrameTimeoutMs(this)
         firstFrameWatchJob = lifecycleScope.launch {
-            delay(timeout)
+            // 短窗：READY 后视频解码器仍为空 → 立即恢复（CD12 Max / bytevc1 静默无解码器）
+            delay(1_200L)
+            if (token != playGeneration || !playerForeground) return@launch
+            if (videoFrameRendered) return@launch
+            val early = player
+            if (early != null &&
+                early.playbackState == Player.STATE_READY &&
+                PlayerDiagLog.lastVideoDecoder.isBlank()
+            ) {
+                PlayerDiagLog.w(
+                    "video decoder null after prepare; codec=${stream.codec} " +
+                        "audio=${PlayerDiagLog.lastAudioDecoder.ifBlank { "-" }} " +
+                        "mode=$videoCodecMode stage=$blackScreenRecoveryStage",
+                )
+                if (tryDecodeRecovery(stream, early.currentPosition, reason = "null_video_decoder")) {
+                    return@launch
+                }
+            }
+            val remaining = (timeout - 1_200L).coerceAtLeast(0L)
+            if (remaining > 0L) delay(remaining)
             if (token != playGeneration || !playerForeground) return@launch
             if (videoFrameRendered || blackScreenRecoveryStage >= 2) return@launch
             val p = player ?: return@launch
             if (!p.playWhenReady && p.playbackState != Player.STATE_READY) return@launch
+            val decoderHint = if (PlayerDiagLog.lastVideoDecoder.isBlank()) {
+                " videoDecoder=null"
+            } else {
+                " videoDecoder=${PlayerDiagLog.lastVideoDecoder}"
+            }
             PlayerDiagLog.w(
                 "no first frame after ${timeout}ms; codec=${stream.codec} " +
-                    "mode=$videoCodecMode stage=$blackScreenRecoveryStage",
+                    "mode=$videoCodecMode stage=$blackScreenRecoveryStage$decoderHint",
             )
-            if (!tryDecodeRecovery(stream, p.currentPosition, reason = "first_frame_timeout")) {
-                uploadDiagnosticsAsync("first_frame_timeout")
+            val reason = if (PlayerDiagLog.lastVideoDecoder.isBlank()) {
+                "null_video_decoder"
+            } else {
+                "first_frame_timeout"
+            }
+            if (!tryDecodeRecovery(stream, p.currentPosition, reason = reason)) {
+                uploadDiagnosticsAsync(reason)
                 binding.retryButton.visibility = View.VISIBLE
                 Toast.makeText(
                     this@PlayerActivity,
@@ -899,9 +999,12 @@ class PlayerActivity : AppCompatActivity() {
                 forceAvcOnly = true
             }
         }
-        if (CodecLabels.isHevc(stream.codec)) forceAvcOnly = true
+        if (CodecLabels.isHevc(stream.codec) || reason == "null_video_decoder") {
+            forceAvcOnly = true
+        }
         PlayerDiagLog.w(
-            "recover[$reason] → stage=$blackScreenRecoveryStage mode=$videoCodecMode avcOnly=$forceAvcOnly",
+            "recover[$reason] → stage=$blackScreenRecoveryStage mode=$videoCodecMode " +
+                "avcOnly=$forceAvcOnly prevCodec=${stream.codec.ifBlank { "?" }}",
         )
         startPositionMs = positionMs.coerceAtLeast(0L)
         Toast.makeText(this, R.string.player_retry_compat, Toast.LENGTH_SHORT).show()
@@ -1133,6 +1236,7 @@ class PlayerActivity : AppCompatActivity() {
         playGeneration++
         playJob?.cancel()
         hideControlsJob?.cancel()
+        hideUnlockJob?.cancel()
         hintJob?.cancel()
         seasonJob?.cancel()
         releasePlayer()
@@ -1141,6 +1245,8 @@ class PlayerActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = PlayerDiagLog.TAG
+        /** 锁定后小解锁钮自动隐藏（与普通控件栏相近）。 */
+        private const val UNLOCK_CHIP_AUTO_HIDE_MS = 3_200L
 
         const val EXTRA_SERIES_ID = "series_id"
         const val EXTRA_SERIES_TITLE = "series_title"

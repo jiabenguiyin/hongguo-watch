@@ -47,6 +47,7 @@
     <string name="back">←</string>
     <string name="quality">清晰度</string>
     <string name="quality_sheet_title">清晰度（默认 480p）</string>
+    <string name="player_retry_compat">画面异常，正在切换兼容解码…</string>
     <string name="episodes">选集</string>
     <string name="related_section">相关季 / 同系列</string>
     <string name="related_empty">暂无相关季</string>

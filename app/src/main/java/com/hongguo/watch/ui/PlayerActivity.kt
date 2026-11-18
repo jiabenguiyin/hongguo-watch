@@ -7,6 +7,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -19,10 +20,10 @@ import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
@@ -36,6 +37,8 @@ import com.hongguo.watch.data.model.SeriesSource
 import com.hongguo.watch.data.model.StreamInfo
 import com.hongguo.watch.databinding.ActivityPlayerBinding
 import com.hongguo.watch.player.VideoDataSource
+import com.hongguo.watch.player.WatchDecodePolicy
+import com.hongguo.watch.upstream.CodecLabels
 import com.hongguo.watch.upstream.RemoteVideo
 import com.hongguo.watch.upstream.StreamInfo as UpstreamStreamInfo
 import kotlinx.coroutines.Dispatchers
@@ -81,6 +84,14 @@ class PlayerActivity : AppCompatActivity() {
     private var startPositionMs = 0L
     private var currentQuality = 480
     private var currentSpeed = 1.0f
+
+    /** 手表 / 脆弱 SoC 默认软解；首帧超时后可强制抬升。 */
+    private var preferSoftwareDecode = false
+    /** 黑屏回退：仅取 AVC 档。 */
+    private var forceAvcOnly = false
+    private var videoFrameRendered = false
+    private var firstFrameWatchJob: Job? = null
+    private var blackScreenRecoveryTried = false
 
     private lateinit var episodeAdapter: EpisodeAdapter
     private lateinit var audioManager: AudioManager
@@ -129,6 +140,13 @@ class PlayerActivity : AppCompatActivity() {
         binding.playerView.useController = false
         // TextureView + 保留最后一帧，减轻 OEM SurfaceView 黑屏
         binding.playerView.setKeepContentOnPlayerReset(true)
+        preferSoftwareDecode = WatchDecodePolicy.shouldPreferSoftwareDecode(this)
+        forceAvcOnly = false
+        blackScreenRecoveryTried = false
+        Log.i(
+            TAG,
+            "decode policy software=$preferSoftwareDecode fragileSoc=${WatchDecodePolicy.isFragileSoc()}",
+        )
         applyRoundPlayerChrome()
         bindControls()
         bindSheets()
@@ -191,7 +209,13 @@ class PlayerActivity : AppCompatActivity() {
             updatePlayPause()
             scheduleHideControls()
         }
-        binding.retryButton.setOnClickListener { loadCurrent() }
+        binding.retryButton.setOnClickListener {
+            // 手动重试：允许再走一遍兼容回退
+            blackScreenRecoveryTried = false
+            forceAvcOnly = false
+            preferSoftwareDecode = WatchDecodePolicy.shouldPreferSoftwareDecode(this)
+            loadCurrent()
+        }
         binding.qualityButton.setOnClickListener { openQualitySheet() }
         binding.speedButton.setOnClickListener { openSpeedSheet() }
         binding.episodesButton.setOnClickListener { openEpisodesSheet() }
@@ -605,6 +629,10 @@ class PlayerActivity : AppCompatActivity() {
         seasonPrepared = false
         nextSeasonWork = null
         binding.seasonBanner.visibility = View.GONE
+        // 切集重置黑屏回退状态，但保留设备默认软解偏好
+        forceAvcOnly = false
+        blackScreenRecoveryTried = false
+        preferSoftwareDecode = WatchDecodePolicy.shouldPreferSoftwareDecode(this)
         refreshEpisodePicker()
         loadCurrent()
     }
@@ -622,6 +650,7 @@ class PlayerActivity : AppCompatActivity() {
 
         // 取消上一次取流，避免快速切集时旧结果覆盖当前集
         playJob?.cancel()
+        firstFrameWatchJob?.cancel()
         val token = ++playGeneration
         playJob = lifecycleScope.launch {
             if (settings.wifiOnlyNow() && !isWifi()) {
@@ -635,12 +664,22 @@ class PlayerActivity : AppCompatActivity() {
                 currentQuality = settings.maxQualityNow()
                 if (token != playGeneration) return@launch
                 refreshQualityUi()
-                val stream = repo.stream(requestedSeriesId, episodeId)
+                val stream = repo.stream(
+                    seriesId = requestedSeriesId,
+                    episodeId = episodeId,
+                    preferAvc = true,
+                    avcOnly = forceAvcOnly,
+                )
                 if (token != playGeneration) return@launch
                 if (!playerForeground) return@launch
                 if (seriesId != requestedSeriesId || episodeIndex != requestedIndex) return@launch
                 if (episodeIds.getOrNull(episodeIndex) != episodeId) return@launch
                 binding.playerNotice.visibility = if (stream.isPreview) View.VISIBLE else View.GONE
+                Log.i(
+                    TAG,
+                    "stream q=${stream.quality} codec=${stream.codec} " +
+                        "software=$preferSoftwareDecode avcOnly=$forceAvcOnly",
+                )
                 playStream(stream, startPositionMs)
             } catch (e: Exception) {
                 if (token != playGeneration) return@launch
@@ -661,13 +700,13 @@ class PlayerActivity : AppCompatActivity() {
         val token = playGeneration
         if (!playerForeground || token != playGeneration) return
         releasePlayer(save = false)
+        videoFrameRendered = false
+        firstFrameWatchJob?.cancel()
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(1_500, 8_000, 1_000, 1_500)
             .build()
-        // 解码失败时回退（部分表端硬解花屏/黑屏仍有声）
-        val renderersFactory = DefaultRenderersFactory(this)
-            .setEnableDecoderFallback(true)
-            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
+        // 手表 / 脆弱 SoC：视频解码器优先软件实现；失败仍可 decoder fallback
+        val renderersFactory = WatchDecodePolicy.renderersFactory(this, preferSoftwareDecode)
 
         val key = stream.decryptionKey
         val exo = if (key != null) {
@@ -716,6 +755,9 @@ class PlayerActivity : AppCompatActivity() {
                 binding.loadingBox.visibility =
                     if (playbackState == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
                 if (playbackState == Player.STATE_READY && !locked) scheduleHideControls()
+                if (playbackState == Player.STATE_READY) {
+                    scheduleFirstFrameWatch(token, stream)
+                }
                 if (playbackState == Player.STATE_ENDED) {
                     saveProgress(force = true)
                     if (episodeIndex < episodeIds.lastIndex) {
@@ -730,13 +772,41 @@ class PlayerActivity : AppCompatActivity() {
                 updatePlayPause()
                 if (isPlaying) {
                     if (!locked) scheduleHideControls()
+                    scheduleFirstFrameWatch(token, stream)
                 } else {
                     hideControlsJob?.cancel()
                     saveProgress(force = true)
                 }
             }
 
+            override fun onRenderedFirstFrame() {
+                videoFrameRendered = true
+                firstFrameWatchJob?.cancel()
+                Log.i(TAG, "first video frame rendered")
+            }
+
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                if (videoSize.width > 0 && videoSize.height > 0) {
+                    Log.i(TAG, "video size ${videoSize.width}x${videoSize.height}")
+                }
+            }
+
             override fun onPlayerError(error: PlaybackException) {
+                Log.e(TAG, "player error code=${error.errorCode} msg=${error.message}", error)
+                // 硬解报错 → 抬升软解并同源重试一次
+                if (!preferSoftwareDecode && !blackScreenRecoveryTried) {
+                    preferSoftwareDecode = true
+                    forceAvcOnly = forceAvcOnly || CodecLabels.isHevc(stream.codec)
+                    blackScreenRecoveryTried = true
+                    startPositionMs = exo.currentPosition.coerceAtLeast(0L)
+                    Toast.makeText(
+                        this@PlayerActivity,
+                        R.string.player_retry_compat,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    loadCurrent()
+                    return
+                }
                 binding.retryButton.visibility = View.VISIBLE
                 binding.loadingBox.visibility = View.GONE
                 if (!locked) showControls(autoHide = false)
@@ -754,6 +824,33 @@ class PlayerActivity : AppCompatActivity() {
         startProgressLoop()
         updatePlayPause()
         binding.loadingBox.visibility = View.VISIBLE
+    }
+
+    /**
+     * 有声无画：READY 后仍无首帧 → 软解 + 强制 AVC 同源/重取流一次。
+     * 硬解「成功」但不吐帧时 Media3 不会走 decoder fallback。
+     */
+    private fun scheduleFirstFrameWatch(token: Int, stream: StreamInfo) {
+        if (videoFrameRendered || blackScreenRecoveryTried) return
+        if (firstFrameWatchJob?.isActive == true) return
+        firstFrameWatchJob = lifecycleScope.launch {
+            delay(FIRST_FRAME_TIMEOUT_MS)
+            if (token != playGeneration || !playerForeground) return@launch
+            if (videoFrameRendered || blackScreenRecoveryTried) return@launch
+            val p = player ?: return@launch
+            if (!p.playWhenReady && p.playbackState != Player.STATE_READY) return@launch
+            Log.w(
+                TAG,
+                "no first frame after ${FIRST_FRAME_TIMEOUT_MS}ms; " +
+                    "codec=${stream.codec} softwareWas=$preferSoftwareDecode — recovering",
+            )
+            blackScreenRecoveryTried = true
+            preferSoftwareDecode = true
+            forceAvcOnly = true
+            startPositionMs = p.currentPosition.coerceAtLeast(0L)
+            Toast.makeText(this@PlayerActivity, R.string.player_retry_compat, Toast.LENGTH_SHORT).show()
+            loadCurrent()
+        }
     }
 
     private fun updatePlayPause() {
@@ -921,6 +1018,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun releasePlayer(save: Boolean = true) {
         progressJob?.cancel()
+        firstFrameWatchJob?.cancel()
         if (save) saveProgress(force = true)
         binding.playerView.player = null
         player?.release()
@@ -960,6 +1058,9 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val TAG = "HgWatchPlayer"
+        private const val FIRST_FRAME_TIMEOUT_MS = 5_000L
+
         const val EXTRA_SERIES_ID = "series_id"
         const val EXTRA_SERIES_TITLE = "series_title"
         const val EXTRA_COVER = "cover"

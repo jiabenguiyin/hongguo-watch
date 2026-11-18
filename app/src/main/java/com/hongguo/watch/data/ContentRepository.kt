@@ -76,8 +76,20 @@ class ContentRepository(
         appSource.fetchDetail(seriesId)
     }
 
-    suspend fun stream(seriesId: String, episodeId: String): StreamInfo = withContext(Dispatchers.IO) {
-        appSource.fetchStream(seriesId, episodeId, settings.maxQualityNow())
+    suspend fun stream(
+        seriesId: String,
+        episodeId: String,
+        preferAvc: Boolean = true,
+        avcOnly: Boolean = false,
+        maxHeight: Int? = null,
+    ): StreamInfo = withContext(Dispatchers.IO) {
+        appSource.fetchStream(
+            seriesId = seriesId,
+            episodeId = episodeId,
+            maxHeight = maxHeight ?: settings.maxQualityNow(),
+            preferAvc = preferAvc,
+            avcOnly = avcOnly,
+        )
     }
 
     /**

@@ -457,7 +457,13 @@ class AppSourceClient(
         )
     }
 
-    fun fetchStream(seriesId: String, episodeId: String, maxHeight: Int): StreamInfo {
+    fun fetchStream(
+        seriesId: String,
+        episodeId: String,
+        maxHeight: Int,
+        preferAvc: Boolean = true,
+        avcOnly: Boolean = false,
+    ): StreamInfo {
         require(SERIES_ID.matches(seriesId.trim())) { "无效剧集 ID" }
         val vid = episodeId.trim()
         require(SERIES_ID.matches(vid)) { "无效分集 ID" }
@@ -469,9 +475,14 @@ class AppSourceClient(
         ) {
             MobilePlayback.ladder(vid, device, client, MobilePlayback.signer, clock())
         }
-        val selected = ladder.select(maxHeight.coerceIn(240, 1080)) {
-            // 手表优先 AVC；加密流仍可返回（Player 侧走 RemoteVideo）
+        val capped = maxHeight.coerceIn(240, 1080)
+        // 手表 / 脆弱 SoC：上限内优先 AVC；黑屏回退时可 avcOnly
+        val selected = ladder.select(capped, preferAvc = preferAvc, avcOnly = avcOnly) {
             true
+        } ?: if (avcOnly) {
+            ladder.select(capped, preferAvc = true, avcOnly = false) { true }
+        } else {
+            null
         } ?: throw IllegalStateException("没有可播放清晰度（上限 ${maxHeight}p）")
 
         val qualityLabel = if (selected.quality > 0) {
@@ -486,6 +497,7 @@ class AppSourceClient(
             referer = VIDEO_REFERER,
             userAgent = VendorConstants.PLAYER_UA,
             decryptionKey = selected.key,
+            codec = selected.codec,
         )
     }
 

@@ -74,13 +74,15 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties
 - `app/build/outputs/apk/release/app-armeabi-v7a-release.apk`
 - `app/build/outputs/apk/release/app-arm64-v8a-release.apk`
 
-未设置 `WATCH_RELEASE_STORE_*` 时 Release 使用 **debug 密钥**签名。正式分发请自备 keystore。
+**GitHub Releases 现行**：`./gradlew :app:assembleDebug`，签名固定为仓库 `signing/debug.keystore`。  
+未设置 `WATCH_RELEASE_*` / `signing/keystore.properties` 时，`assembleRelease` **同一把**证书（不是假 production 钥）。详见 [`signing/README.md`](signing/README.md)。
 
 ```bash
 ./gradlew :app:assembleDebug
 ```
 
-侧载：手表开启「未知来源」后 `adb install -r <apk>`。大量低价表优先装 **armeabi-v7a**。
+侧载：手表开启「未知来源」后 `adb install -r <apk>`。大量低价表优先装 **armeabi-v7a**。  
+0.4.4 前的旧随机签名包需先卸载一次；之后同证书可直接覆盖升级。
 
 ## 风险与合规
 

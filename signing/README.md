@@ -1,19 +1,30 @@
 # 签名说明
 
-## Debug / 测试侧载（固定证书）
+## 统一证书（当前所有已发布 APK）
 
-仓库提交了 `signing/debug.keystore`（别名 `androiddebugkey`，密码 **android/android**）。  
-`assembleDebug` 始终用这把钥匙，这样 **GitHub Releases 上的 debug APK 可以互相覆盖安装**，不必每次卸载。
+仓库提交了 **`signing/debug.keystore`**（别名 `androiddebugkey`，密码 **android/android**）。
 
-若本机曾装过「另一台机器默认 `~/.android/debug.keystore`」签出的旧包，证书不同会提示无法覆盖 → **卸载一次**后再装 0.4.4+ 即可；之后同签名升级不再需要卸载。
+| 构建任务 | 签名 |
+|----------|------|
+| `:app:assembleDebug`（**GitHub Releases 现行做法**） | 始终 `signing/debug.keystore` |
+| `:app:assembleRelease`（未配置正式密钥时） | **同一把** `signing/debug.keystore` |
+| `:app:assembleRelease`（已配置 `WATCH_RELEASE_*` / `keystore.properties`） | 正式 keystore |
 
-这把 debug 证书 **不是** 正式发布密钥，可公开；请勿把它当成 production keystore。
+这样 **Releases 上的包、本地 debug、无正式钥时的 release 包可互相覆盖安装**，不必反复卸载。
 
-## 正式签名（release）
+证书指纹（SHA-256）：
 
-**GitHub Releases 正式包** 必须使用固定 release 密钥，否则日后换钥会导致无法覆盖安装。
+`33:B2:1E:34:D8:19:88:2B:C0:77:D9:0F:FF:82:5D:0A:59:F7:D7:C5:C2:FE:E4:2B:0F:DB:86:65:73:0D:17:60`
 
-## 配置方式（二选一）
+### 从旧包升级
+
+若设备上仍是 **0.4.4 之前**用本机默认 `~/.android/debug.keystore`（或其他随机钥）签出的包，证书不同无法覆盖 → **卸载一次**后再装 **0.4.4+**；之后同仓库证书升级不再需要卸载。
+
+这把 debug 证书 **不是** 正式发布密钥，可公开；**请勿另造假 production keystore**。真要上正式钥时再配下一节。
+
+## 正式签名（可选，有 production 密钥时）
+
+配置后 `assembleRelease` 改用正式钥；与当前侧载 debug 证书 **不同**，用户需卸载再装一次。密钥丢失 = 无法以同包名升级，请离线备份。
 
 ### 1. 环境变量（CI / Cloud Agent 推荐）
 
@@ -32,9 +43,9 @@ cp signing/keystore.properties.example signing/keystore.properties
 ./gradlew :app:assembleRelease
 ```
 
-`signing/keystore.properties` 与 `*.jks` / `*.keystore` 已在 `.gitignore`。
+`signing/keystore.properties` 与 `*.jks` / `*.keystore` 已在 `.gitignore`（例外：`signing/debug.keystore`）。
 
-## 生成密钥（仅首次）
+### 生成正式密钥（仅首次）
 
 ```bash
 keytool -genkeypair -v \
@@ -43,8 +54,6 @@ keytool -genkeypair -v \
   -keyalg RSA -keysize 2048 -validity 10000
 ```
 
-## 注意
+## 发布说明模板
 
-- 未配置时 **`assembleRelease` 不会静默用 debug 证书**，避免假 release。
-- 若用户已安装 **debug 签名** 的 0.4.x，首次换成正式证书需卸载再装（证书不同无法覆盖）。
-- 密钥丢失 = 无法以同包名升级；请离线备份。
+发 GitHub Release 时复制 [`RELEASE_NOTES_TEMPLATE.md`](./RELEASE_NOTES_TEMPLATE.md)，填版本号并保留签名/卸载说明段落。

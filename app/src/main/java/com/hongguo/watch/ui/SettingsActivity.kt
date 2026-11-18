@@ -45,6 +45,7 @@ class SettingsActivity : AppCompatActivity() {
     private var currentKernel = PlayerKernel.AUTO
     private var currentDecode = DecodePath.AUTO
     private var roundSwitchReady = false
+    private var screenOffSwitchReady = false
     private var updateChecking = false
     private var downloadJob: Job? = null
     private val downloadCancel = AtomicBoolean(false)
@@ -62,6 +63,9 @@ class SettingsActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             binding.wifiOnlySwitch.isChecked = container.settings.wifiOnly.first()
+            binding.screenOffContinueSwitch.isChecked =
+                container.settings.screenOffContinue.first()
+            screenOffSwitchReady = true
             currentQuality = container.settings.maxQuality.first()
             currentKernel = container.settings.playerKernel.first()
             currentDecode = container.settings.decodePath.first()
@@ -76,6 +80,10 @@ class SettingsActivity : AppCompatActivity() {
 
         binding.wifiOnlySwitch.setOnCheckedChangeListener { _, checked ->
             lifecycleScope.launch { container.settings.setWifiOnly(checked) }
+        }
+        binding.screenOffContinueSwitch.setOnCheckedChangeListener { _, checked ->
+            if (!screenOffSwitchReady) return@setOnCheckedChangeListener
+            lifecycleScope.launch { container.settings.setScreenOffContinue(checked) }
         }
         binding.roundAdaptSwitch.setOnCheckedChangeListener { _, checked ->
             if (!roundSwitchReady) return@setOnCheckedChangeListener

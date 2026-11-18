@@ -132,6 +132,21 @@ class StreamLadderTest {
     }
 
     @Test
+    fun noPermanentHevcBanByPolicyFlag() {
+        // 0.4.6：不再因 Unisoc/手表 alone 永久 avcOnly；IJK 与 Media3 初始均不硬禁 HEVC
+        assertFalse(
+            com.hongguo.watch.player.WatchDecodePolicy.shouldForceAvcOnlyInitially(
+                kernel = com.hongguo.watch.player.PlayerKernel.IJK,
+            ),
+        )
+        assertFalse(
+            com.hongguo.watch.player.WatchDecodePolicy.shouldForceAvcOnlyInitially(
+                kernel = com.hongguo.watch.player.PlayerKernel.MEDIA3,
+            ),
+        )
+    }
+
+    @Test
     fun fragileSocClampsQualityTo480() {
         val clamped = com.hongguo.watch.player.WatchDecodePolicy.effectiveMaxQuality(
             userMaxQuality = 720,

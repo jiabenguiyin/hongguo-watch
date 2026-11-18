@@ -1,0 +1,3 @@
+-keep class tv.danmaku.ijk.media.player.** { *; }
+-keep class tv.danmaku.ijk.media.player.misc.** { *; }
+-dontwarn tv.danmaku.ijk.media.player.**

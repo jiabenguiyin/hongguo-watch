@@ -33,12 +33,17 @@ data class Rendition(
     fun toStreamInfo() = StreamInfo(url, key, if (quality > 0) "${quality}P" else "自动")
 }
 
-class StreamLadder(val renditions: List<Rendition>) {
+class StreamLadder(
+    val renditions: List<Rendition>,
+    val diag: List<LadderEntryDiag> = emptyList(),
+) {
     private companion object {
         /** 同池内：清晰度优先，其次 AVC 优于 HEVC/其它。 */
         val byQualityThenAvc =
             compareBy<Rendition> { it.quality }.thenBy { if (it.isAvc) 1 else 0 }
     }
+
+    fun parseResult(): LadderParseResult = LadderParseResult(renditions, diag)
 
     /**
      * @param preferAvc 默认 true：上限内只要有 AVC 就选 AVC（手表 SoC 上 HEVC 硬解常有声无画）。

@@ -192,6 +192,119 @@
                     android:textSize="@dimen/watch_body" />
 
                 <Button
+                    android:id="@+id/decodeTestButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginBottom="6dp"
+                    android:backgroundTint="@color/episode_normal"
+                    android:minHeight="0dp"
+                    android:text="@string/decode_test_entry"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_body" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="4dp"
+                    android:text="@string/player_kernel_label"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/watch_meta" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="6dp"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/kernelAuto"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_marginEnd="2dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_quality_chip"
+                        android:gravity="center"
+                        android:text="@string/player_kernel_auto"
+                        android:textColor="@color/text_primary"
+                        android:textSize="@dimen/watch_meta" />
+
+                    <TextView
+                        android:id="@+id/kernelMedia3"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_marginHorizontal="2dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_quality_chip"
+                        android:gravity="center"
+                        android:text="@string/player_kernel_media3"
+                        android:textColor="@color/text_primary"
+                        android:textSize="@dimen/watch_meta" />
+
+                    <TextView
+                        android:id="@+id/kernelIjk"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_marginStart="2dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_quality_chip"
+                        android:gravity="center"
+                        android:text="@string/player_kernel_ijk"
+                        android:textColor="@color/text_primary"
+                        android:textSize="@dimen/watch_meta" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="4dp"
+                    android:text="@string/decode_path_label"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/watch_meta" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="6dp"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/decodeAuto"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_marginEnd="2dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_quality_chip"
+                        android:gravity="center"
+                        android:text="@string/decode_path_auto"
+                        android:textColor="@color/text_primary"
+                        android:textSize="@dimen/watch_meta" />
+
+                    <TextView
+                        android:id="@+id/decodeHw"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_marginHorizontal="2dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_quality_chip"
+                        android:gravity="center"
+                        android:text="@string/decode_path_hw"
+                        android:textColor="@color/text_primary"
+                        android:textSize="@dimen/watch_meta" />
+
+                    <TextView
+                        android:id="@+id/decodeSw"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_marginStart="2dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_quality_chip"
+                        android:gravity="center"
+                        android:text="@string/decode_path_sw"
+                        android:textColor="@color/text_primary"
+                        android:textSize="@dimen/watch_meta" />
+                </LinearLayout>
+
+                <Button
                     android:id="@+id/clearHistoryButton"
                     android:layout_width="match_parent"
                     android:layout_height="44dp"

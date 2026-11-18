@@ -22,7 +22,9 @@ import com.hongguo.watch.data.SettingsStore
 import com.hongguo.watch.data.UpdateApkInstaller
 import com.hongguo.watch.data.UpdateChecker
 import com.hongguo.watch.databinding.ActivitySettingsBinding
+import com.hongguo.watch.player.DecodePath
 import com.hongguo.watch.player.PlayerDiagLog
+import com.hongguo.watch.player.PlayerKernel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
@@ -36,6 +38,8 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySettingsBinding
     private val container get() = (application as HongguoWatchApp).container
     private var currentQuality = 480
+    private var currentKernel = PlayerKernel.AUTO
+    private var currentDecode = DecodePath.AUTO
     private var roundSwitchReady = false
     private var updateChecking = false
     private var downloadJob: Job? = null
@@ -54,7 +58,11 @@ class SettingsActivity : AppCompatActivity() {
         lifecycleScope.launch {
             binding.wifiOnlySwitch.isChecked = container.settings.wifiOnly.first()
             currentQuality = container.settings.maxQuality.first()
+            currentKernel = container.settings.playerKernel.first()
+            currentDecode = container.settings.decodePath.first()
             refreshQualityChips()
+            refreshKernelChips()
+            refreshDecodeChips()
             // 开关展示当前生效状态；AUTO 时跟 isRoundScreen
             binding.roundAdaptSwitch.isChecked = WatchUi.useRoundLayout(this@SettingsActivity)
             roundSwitchReady = true
@@ -75,9 +83,18 @@ class SettingsActivity : AppCompatActivity() {
         binding.quality480.setOnClickListener { pickQuality(480) }
         binding.quality720.setOnClickListener { pickQuality(720) }
         binding.quality1080.setOnClickListener { pickQuality(1080) }
+        binding.kernelAuto.setOnClickListener { pickKernel(PlayerKernel.AUTO) }
+        binding.kernelMedia3.setOnClickListener { pickKernel(PlayerKernel.MEDIA3) }
+        binding.kernelIjk.setOnClickListener { pickKernel(PlayerKernel.IJK) }
+        binding.decodeAuto.setOnClickListener { pickDecode(DecodePath.AUTO) }
+        binding.decodeHw.setOnClickListener { pickDecode(DecodePath.HARDWARE) }
+        binding.decodeSw.setOnClickListener { pickDecode(DecodePath.SOFTWARE) }
 
         binding.checkUpdateButton.setOnClickListener { checkForUpdate() }
         binding.uploadDiagButton.setOnClickListener { uploadDiagnostics() }
+        binding.decodeTestButton.setOnClickListener {
+            startActivity(Intent(this, DecodeTestActivity::class.java))
+        }
 
         binding.clearHistoryButton.setOnClickListener {
             lifecycleScope.launch {
@@ -341,9 +358,37 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    private fun pickKernel(kernel: PlayerKernel) {
+        lifecycleScope.launch {
+            container.settings.setPlayerKernel(kernel)
+            currentKernel = kernel
+            refreshKernelChips()
+        }
+    }
+
+    private fun pickDecode(path: DecodePath) {
+        lifecycleScope.launch {
+            container.settings.setDecodePath(path)
+            currentDecode = path
+            refreshDecodeChips()
+        }
+    }
+
     private fun refreshQualityChips() {
         binding.quality480.isSelected = currentQuality == 480
         binding.quality720.isSelected = currentQuality == 720
         binding.quality1080.isSelected = currentQuality == 1080
+    }
+
+    private fun refreshKernelChips() {
+        binding.kernelAuto.isSelected = currentKernel == PlayerKernel.AUTO
+        binding.kernelMedia3.isSelected = currentKernel == PlayerKernel.MEDIA3
+        binding.kernelIjk.isSelected = currentKernel == PlayerKernel.IJK
+    }
+
+    private fun refreshDecodeChips() {
+        binding.decodeAuto.isSelected = currentDecode == DecodePath.AUTO
+        binding.decodeHw.isSelected = currentDecode == DecodePath.HARDWARE
+        binding.decodeSw.isSelected = currentDecode == DecodePath.SOFTWARE
     }
 }

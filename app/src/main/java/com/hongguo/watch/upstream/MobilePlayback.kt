@@ -77,9 +77,11 @@ internal object MobilePlayback {
             val entries = data.optJSONObject("1004") ?: data
             val model = PlaybackModels.objectValue(entries.optJSONObject(id)?.opt("video_model"))
                 ?: throw PlaybackSourceException(PlaybackSourceException.Reason.NO_PLAYABLE_SOURCE)
-            val rows = PlaybackModels.renditions(model)
-            if (rows.isEmpty()) throw PlaybackSourceException(PlaybackSourceException.Reason.NO_PLAYABLE_SOURCE)
-            StreamLadder(rows)
+            val parsed = PlaybackModels.parseLadder(model)
+            if (parsed.accepted.isEmpty()) {
+                throw PlaybackSourceException(PlaybackSourceException.Reason.NO_PLAYABLE_SOURCE)
+            }
+            StreamLadder(parsed.accepted, parsed.diag)
         }
     }
 }

@@ -1,6 +1,9 @@
 package com.hongguo.watch.ui
 
+import android.annotation.SuppressLint
+import android.view.GestureDetector
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -17,13 +20,17 @@ import com.hongguo.watch.databinding.ItemDiscoveryStripBinding
 import com.hongguo.watch.databinding.ItemHotSearchBinding
 import com.hongguo.watch.databinding.ItemSectionHeaderBinding
 import com.hongguo.watch.databinding.ItemSeriesBinding
+import kotlin.math.abs
 
 sealed class HomeRow {
     data class Banner(
-        val series: Series,
+        val items: List<Series>,
         val pageIndex: Int = 0,
-        val pageCount: Int = 1,
-    ) : HomeRow()
+    ) : HomeRow() {
+        init {
+            require(items.isNotEmpty()) { "Banner needs at least one series" }
+        }
+    }
 
     data class Header(
         val title: String,
@@ -133,21 +140,95 @@ class SeriesListAdapter(
     private inner class BannerHolder(
         private val binding: ItemBannerBinding,
     ) : RecyclerView.ViewHolder(binding.root) {
+        private var items: List<Series> = emptyList()
+        private var pageIndex: Int = 0
+        private var downX = 0f
+        private var downY = 0f
+        private var trackingHorizontal = false
+        private val gesture = GestureDetector(
+            binding.root.context,
+            object : GestureDetector.SimpleOnGestureListener() {
+                override fun onDown(e: MotionEvent): Boolean = true
+
+                override fun onSingleTapUp(e: MotionEvent): Boolean {
+                    items.getOrNull(pageIndex)?.let(onClick)
+                    return true
+                }
+
+                override fun onFling(
+                    e1: MotionEvent?,
+                    e2: MotionEvent,
+                    velocityX: Float,
+                    velocityY: Float,
+                ): Boolean {
+                    if (items.size <= 1) return false
+                    if (abs(velocityX) < abs(velocityY) || abs(velocityX) < 400f) return false
+                    if (velocityX < 0) showPage(pageIndex + 1) else showPage(pageIndex - 1)
+                    return true
+                }
+            },
+        )
+
+        @SuppressLint("ClickableViewAccessibility")
         fun bind(row: HomeRow.Banner) {
-            val series = row.series
+            items = row.items
+            pageIndex = row.pageIndex.coerceIn(0, items.lastIndex)
+            renderCurrent()
+            binding.root.setOnClickListener(null)
+            binding.root.setOnTouchListener { v, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = event.x
+                        downY = event.y
+                        trackingHorizontal = false
+                        v.parent?.requestDisallowInterceptTouchEvent(true)
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = abs(event.x - downX)
+                        val dy = abs(event.y - downY)
+                        if (!trackingHorizontal && (dx > 12f || dy > 12f)) {
+                            trackingHorizontal = dx >= dy
+                            v.parent?.requestDisallowInterceptTouchEvent(trackingHorizontal)
+                        }
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        if (!trackingHorizontal && items.size > 1) {
+                            val dx = event.x - downX
+                            if (abs(dx) > 48f && abs(dx) > abs(event.y - downY)) {
+                                if (dx < 0) showPage(pageIndex + 1) else showPage(pageIndex - 1)
+                                v.parent?.requestDisallowInterceptTouchEvent(false)
+                                return@setOnTouchListener true
+                            }
+                        }
+                        v.parent?.requestDisallowInterceptTouchEvent(false)
+                    }
+                }
+                gesture.onTouchEvent(event)
+            }
+        }
+
+        private fun showPage(target: Int) {
+            if (items.isEmpty()) return
+            val next = ((target % items.size) + items.size) % items.size
+            if (next == pageIndex) return
+            pageIndex = next
+            renderCurrent()
+        }
+
+        private fun renderCurrent() {
+            val series = items.getOrNull(pageIndex) ?: return
             binding.bannerTitle.text = series.title
             binding.bannerMeta.text = seriesMetaLine(binding.root.context, series)
             val radius = binding.root.resources.displayMetrics.density * 10f
             val coverUrl = CoverUrls.normalize(series.cover).ifBlank { series.cover }
             binding.bannerCover.load(coverUrl.ifBlank { null }) {
                 size(640, 360)
-                crossfade(false)
+                crossfade(true)
                 transformations(RoundedCornersTransformation(radius))
                 placeholder(R.drawable.bg_banner)
                 error(R.drawable.bg_banner)
             }
-            renderDots(binding.bannerDots, row.pageIndex, row.pageCount)
-            binding.root.setOnClickListener { onClick(series) }
+            renderDots(binding.bannerDots, pageIndex, items.size)
         }
 
         private fun renderDots(row: LinearLayout, index: Int, count: Int) {

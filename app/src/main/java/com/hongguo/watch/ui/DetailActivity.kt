@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import coil.load
 import coil.transform.RoundedCornersTransformation
@@ -38,6 +39,9 @@ class DetailActivity : AppCompatActivity() {
     private var resumePositionMs: Long = 0L
     private var favorited = false
     private var ascending = true
+    private var episodesExpanded = false
+    private var selectedRangeIndex = 0
+    private var episodeRanges: List<IntRange> = emptyList()
     private var incomingTags: List<String> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,12 +78,14 @@ class DetailActivity : AppCompatActivity() {
             )
             submitEpisodes()
         }
+        binding.expandToggle.setOnClickListener { toggleEpisodeExpand() }
 
         adapter = EpisodeAdapter { openPlayer(it, resume = false) }
         binding.episodeGrid.layoutManager =
             LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         binding.episodeGrid.adapter = adapter
         binding.episodeGrid.itemAnimator = null
+        binding.episodeGrid.isNestedScrollingEnabled = false
 
         relatedAdapter = SeriesListAdapter { series ->
             startActivity(
@@ -149,9 +155,19 @@ class DetailActivity : AppCompatActivity() {
                     binding.continueButton.text =
                         getString(R.string.continue_watch) + " · ${history.episodeNumber}"
                 }
+                episodeRanges = EpisodeExpandPolicy.ranges(episodes.size)
+                selectedRangeIndex = EpisodeExpandPolicy.rangeIndexForEpisode(
+                    history?.episodeNumber ?: 1,
+                    episodes.size,
+                )
+                binding.expandToggle.visibility =
+                    if (EpisodeExpandPolicy.shouldShowExpand(episodes.size)) View.VISIBLE else View.GONE
+                if (!EpisodeExpandPolicy.shouldShowExpand(episodes.size)) {
+                    episodesExpanded = false
+                }
+                applyEpisodeLayout()
                 submitEpisodes()
-                val index = episodes.indexOfFirst { it.id == history?.episodeId }.coerceAtLeast(0)
-                binding.episodeGrid.post { binding.episodeGrid.scrollToPosition(index) }
+                scrollEpisodesToResume()
                 refreshFavoriteUi()
                 if (favorited) {
                     val total = ContentRepository.episodeTotal(episodeCount, episodes.size)
@@ -176,9 +192,88 @@ class DetailActivity : AppCompatActivity() {
         }
     }
 
+    private fun toggleEpisodeExpand() {
+        episodesExpanded = !episodesExpanded
+        applyEpisodeLayout()
+        submitEpisodes()
+        if (!episodesExpanded) {
+            scrollEpisodesToResume()
+        }
+    }
+
+    private fun applyEpisodeLayout() {
+        val canExpand = EpisodeExpandPolicy.shouldShowExpand(episodes.size)
+        binding.expandToggle.visibility = if (canExpand) View.VISIBLE else View.GONE
+        binding.expandToggle.text = getString(
+            if (episodesExpanded) R.string.episode_collapse else R.string.episode_expand,
+        )
+        if (episodesExpanded && canExpand) {
+            val widthDp = (resources.displayMetrics.widthPixels / resources.displayMetrics.density).toInt()
+            val span = EpisodeExpandPolicy.spanCount(widthDp)
+            binding.episodeGrid.layoutManager = GridLayoutManager(this, span)
+            binding.episodeRangeScroll.visibility = View.VISIBLE
+            renderEpisodeRanges()
+        } else {
+            binding.episodeGrid.layoutManager =
+                LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+            binding.episodeRangeScroll.visibility = View.GONE
+        }
+    }
+
+    private fun renderEpisodeRanges() {
+        binding.episodeRangeRow.removeAllViews()
+        if (episodeRanges.isEmpty()) return
+        selectedRangeIndex = selectedRangeIndex.coerceIn(0, episodeRanges.lastIndex)
+        val padH = WatchUi.dp(this, 8f)
+        val padV = WatchUi.dp(this, 4f)
+        val gap = WatchUi.dp(this, 4f)
+        episodeRanges.forEachIndexed { index, range ->
+            val chip = TextView(this).apply {
+                text = getString(R.string.episode_range, range.first, range.last)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                includeFontPadding = false
+                setPadding(padH, padV, padH, padV)
+                setTextColor(
+                    ContextCompat.getColor(
+                        this@DetailActivity,
+                        if (index == selectedRangeIndex) R.color.text_primary else R.color.text_secondary,
+                    ),
+                )
+                background = ContextCompat.getDrawable(
+                    this@DetailActivity,
+                    if (index == selectedRangeIndex) R.drawable.bg_top_tab_active else R.drawable.bg_top_tab_idle,
+                )
+                setOnClickListener {
+                    selectedRangeIndex = index
+                    renderEpisodeRanges()
+                    submitEpisodes()
+                }
+            }
+            val lp = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            if (index > 0) lp.marginStart = gap
+            binding.episodeRangeRow.addView(chip, lp)
+        }
+    }
+
     private fun submitEpisodes() {
         val ordered = if (ascending) episodes else episodes.asReversed()
-        adapter.submit(ordered, resumeEpisodeId)
+        val visible = if (episodesExpanded && episodeRanges.isNotEmpty()) {
+            val range = episodeRanges[selectedRangeIndex.coerceIn(0, episodeRanges.lastIndex)]
+            EpisodeExpandPolicy.sliceForRange(ordered, range)
+        } else {
+            ordered
+        }
+        adapter.submit(visible, resumeEpisodeId, gridMode = episodesExpanded)
+    }
+
+    private fun scrollEpisodesToResume() {
+        if (episodesExpanded) return
+        val ordered = if (ascending) episodes else episodes.asReversed()
+        val index = ordered.indexOfFirst { it.id == resumeEpisodeId }.coerceAtLeast(0)
+        binding.episodeGrid.post { binding.episodeGrid.scrollToPosition(index) }
     }
 
     private fun bindCover(url: String) {

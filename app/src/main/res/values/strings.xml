@@ -2,9 +2,13 @@
 <resources>
     <string name="app_name">红果终端</string>
     <string name="tab_home">首页</string>
+    <string name="tab_library">库</string>
     <string name="tab_history">历史</string>
     <string name="tab_favorites">收藏</string>
     <string name="tab_settings">设置</string>
+    <string name="episode_expand">展开</string>
+    <string name="episode_collapse">收起</string>
+    <string name="episode_range">%1$d–%2$d</string>
     <string name="nav_recommend">推荐</string>
     <string name="nav_rank">榜单</string>
     <string name="nav_category">分类</string>

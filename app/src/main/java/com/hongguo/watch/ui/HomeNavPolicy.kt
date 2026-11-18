@@ -12,9 +12,10 @@ enum class HomeNav {
 
 /**
  * 首页顶栏与二级芯片可见性、默认选中分类。
- * 底栏仍保留历史 / 收藏 / 设置入口。
+ * 底栏：首页 / 库（收藏·历史分段）/ 设置。
  */
 object HomeNavPolicy {
+    const val BANNER_PAGE_COUNT = 3
     fun showSearchRow(nav: HomeNav): Boolean = nav == HomeNav.SEARCH
 
     fun showSubChips(nav: HomeNav): Boolean =
@@ -54,10 +55,18 @@ object HomeNavPolicy {
         }
     }
 
-    /** 推荐流：首条作 Banner，其余进「为你推荐」。 */
-    fun bannerSeries(items: List<com.hongguo.watch.data.model.Series>) =
-        items.firstOrNull()
+    /** 推荐流：前几条作可滑动 Banner，其余进「为你推荐」。 */
+    fun bannerSeriesList(
+        items: List<com.hongguo.watch.data.model.Series>,
+        max: Int = BANNER_PAGE_COUNT,
+    ): List<com.hongguo.watch.data.model.Series> =
+        items.take(max.coerceAtLeast(0))
 
-    fun listSeriesAfterBanner(items: List<com.hongguo.watch.data.model.Series>) =
-        if (items.size <= 1) emptyList() else items.drop(1)
+    fun listSeriesAfterBanner(
+        items: List<com.hongguo.watch.data.model.Series>,
+        bannerCount: Int = BANNER_PAGE_COUNT,
+    ): List<com.hongguo.watch.data.model.Series> {
+        val drop = bannerCount.coerceAtLeast(0).coerceAtMost(items.size)
+        return if (drop >= items.size) emptyList() else items.drop(drop)
+    }
 }

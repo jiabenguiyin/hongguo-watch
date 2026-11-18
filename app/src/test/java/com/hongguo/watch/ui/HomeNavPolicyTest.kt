@@ -54,13 +54,16 @@ class HomeNavPolicyTest {
     }
 
     @Test
-    fun bannerTakesFirstItem() {
+    fun bannerTakesLeadingItemsForCarousel() {
         val items = listOf(
             Series(id = "1", title = "A"),
             Series(id = "2", title = "B"),
+            Series(id = "3", title = "C"),
+            Series(id = "4", title = "D"),
         )
-        assertEquals("1", HomeNavPolicy.bannerSeries(items)?.id)
-        assertEquals(listOf("2"), HomeNavPolicy.listSeriesAfterBanner(items).map { it.id })
+        assertEquals(listOf("1", "2", "3"), HomeNavPolicy.bannerSeriesList(items).map { it.id })
+        assertEquals(listOf("4"), HomeNavPolicy.listSeriesAfterBanner(items).map { it.id })
+        assertEquals(listOf("1"), HomeNavPolicy.bannerSeriesList(listOf(items.first())).map { it.id })
         assertTrue(HomeNavPolicy.listSeriesAfterBanner(listOf(items.first())).isEmpty())
     }
 }

@@ -165,7 +165,7 @@
                     android:gravity="center"
                     android:minWidth="56dp"
                     android:paddingHorizontal="10dp"
-                    android:text="@string/cache_action"
+                    android:text="@string/download_action"
                     android:textColor="@color/text_primary"
                     android:textSize="@dimen/watch_body" />
 
@@ -182,6 +182,64 @@
                     android:textColor="@color/text_primary"
                     android:textSize="@dimen/watch_body" />
             </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/downloadBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/downloadSeasonButton"
+                    android:layout_width="0dp"
+                    android:layout_height="40dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_play_now"
+                    android:gravity="center"
+                    android:text="@string/download_season"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_meta"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/downloadSelectedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="40dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_quality_chip"
+                    android:gravity="center"
+                    android:text="@string/download_selected"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_meta"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/downloadCancelButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_control_button"
+                    android:gravity="center"
+                    android:minWidth="48dp"
+                    android:paddingHorizontal="10dp"
+                    android:text="@string/download_cancel"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/watch_meta" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/downloadHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/download_hint"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/watch_meta"
+                android:visibility="gone" />
 
             <LinearLayout
                 android:layout_width="match_parent"

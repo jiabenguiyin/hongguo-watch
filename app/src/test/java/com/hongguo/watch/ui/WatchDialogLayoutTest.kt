@@ -1,5 +1,6 @@
 package com.hongguo.watch.ui
 
+import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -30,8 +31,8 @@ class WatchDialogLayoutTest {
             reservedPx = 220,
             minHeightPx = 72,
         )
-        // 502 - 220 = 282，但上限 42%≈210
-        assertEquals((cd12H * 0.42f).toInt(), max)
+        // 502 - 220 = 282，上限与实现一致：round(502×0.42)=211
+        assertEquals((cd12H * 0.42f).roundToInt(), max)
         assertTrue(max + 220 <= cd12H + 40) // 说明 + 预留仍塞进屏高附近
     }
 

@@ -1,77 +1,65 @@
-# 红果短剧手表版 · hongguo-watch
+<div align="center">
 
-[![Latest release](https://img.shields.io/github/v/release/jiabenguiyin/hongguo-watch?label=Release)](https://github.com/jiabenguiyin/hongguo-watch/releases/latest)
+# 红果短剧手表版
+
+**hongguo-watch · 为小屏而生的安卓短剧客户端**
+
+[![Release](https://img.shields.io/github/v/release/jiabenguiyin/hongguo-watch?label=Release&color=E85D4C)](https://github.com/jiabenguiyin/hongguo-watch/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/jiabenguiyin/hongguo-watch/total?label=Downloads)](https://github.com/jiabenguiyin/hongguo-watch/releases)
 [![Android](https://img.shields.io/badge/Android-7.0%2B-3DDC84)](#设备要求)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue)](LICENSE)
 
-**为安卓手表、小屏安卓设备及低配机设计的非官方短剧、漫剧客户端。**
+适配安卓手表、小屏 Android 设备及低配设备的非官方短剧、漫剧客户端。  
+Lightweight short-drama player for Android watches and small-screen devices.
 
-Lightweight short-drama client for Android watches and small-screen devices, with IJK/FFmpeg software decoding and Media3 playback.
+**[下载最新版 APK](https://github.com/jiabenguiyin/hongguo-watch/releases/latest)** · [安装指南](docs/install.md) · [更新记录](https://github.com/jiabenguiyin/hongguo-watch/releases) · [问题反馈](https://github.com/jiabenguiyin/hongguo-watch/issues/new/choose)
 
-[下载最新版 APK](https://github.com/jiabenguiyin/hongguo-watch/releases/latest) · [更新记录](https://github.com/jiabenguiyin/hongguo-watch/releases) · [问题反馈](https://github.com/jiabenguiyin/hongguo-watch/issues/new/choose)
+</div>
 
-> 本项目为独立开源项目，与红果短剧官方无隶属或授权关系。请遵守内容权利人的授权及平台条款。
+---
+
+## 功能亮点
+
+| 小屏追剧 | 播放体验 |
+| --- | --- |
+| 推荐、榜单、分类、搜索 | Media3 / IJK + FFmpeg 双内核 |
+| 分集选择、自动下一集 | 软解 / 硬解选择、解码自检 |
+| 收藏、观看历史、断点续播 | 等比显示、横竖屏、防误触锁定 |
+| 条件满足时自动接续下一季 | 0.75–2 倍速、进度、亮度与音量手势 |
+| 圆屏与大圆角方屏适配 | 应用内检查更新、诊断反馈 |
 
 ## 下载与安装
 
-从 [GitHub Releases 最新版本](https://github.com/jiabenguiyin/hongguo-watch/releases/latest) 下载对应 ABI 的 APK。两个安装包不需要同时安装。
+打开 [最新正式发布页](https://github.com/jiabenguiyin/hongguo-watch/releases/latest)，在 Assets 中选择与你设备系统 ABI 对应的安装包。
 
-| 安装包后缀 | 适用设备 |
+| 安装包 | 适用系统 |
 | --- | --- |
-| `arm64-v8a.apk` | 64 位 ARM Android 系统 |
-| `armeabi-v7a.apk` | 32 位 ARM Android 系统 |
+| `arm64-v8a.apk` | 64 位 ARM Android |
+| `armeabi-v7a.apk` | 32 位 ARM Android |
 
-开启手表的未知来源安装权限，将 APK 传到设备安装，或使用 ADB：
+开启未知来源安装权限后安装 APK；两种架构只需选择其一。支持 ADB 安装与应用内检查更新。
 
-```sh
-adb shell getprop ro.product.cpu.abilist
-adb install -r <APK 文件路径>
-```
-
-如显示签名冲突，请先确认是否为本仓库旧版本或不同签名的安装包。0.4.4 前的随机 debug 签名包可能需要卸载后再安装；**卸载会清除本地历史、收藏与设置**。0.4.4 起已发布同证书安装包通常可覆盖升级。也可在应用设置中检查更新。
-
-**安全提示：** 当前测试发行包使用公开的 debug 签名私钥，证书相同不能证明 APK 来自维护者。只从本仓库官方 Releases 下载，不要安装第三方修改包。正式签名迁移见 [签名说明](signing/README.md)。
-
-## 功能
-
-| 模块 | 功能 |
-| --- | --- |
-| 内容发现 | 首页推荐、榜单、分类、搜索、滚动分页 |
-| 追剧 | 分集选择、收藏、观看历史、断点续播 |
-| 播放 | 自动下一集、条件满足时自动接续下一季 |
-| 播放控制 | 亮度、音量、横向进度手势；0.75–2 倍速；防误触锁定 |
-| 小屏适配 | 圆屏安全区域、大圆角方屏安全边距、小屏触控布局 |
-| 横竖屏 | 旋转切换、等比例 FIT，避免拉伸变形 |
-| 系统兼容 | Media3 / IJK 双内核、硬软解选择、内置解码自检 |
-| 设置 | 仅 Wi-Fi、清晰度上限、清理历史与缓存、检查更新、诊断 |
+0.4.4 起的同证书安装包通常可覆盖升级。遇到签名冲突先查看 [安装指南](docs/install.md)，卸载会清除本地数据。当前测试发行签名的私钥公开，请只从本仓库 Releases 下载；详见 [安全说明](SECURITY.md)。
 
 ## 设备要求
 
-- Android 7.0（API 24）或以上；ARM32 / ARM64。
-- 针对可侧载 APK 的安卓手表及小屏设备，非独立 Wear OS 专用应用；不支持所有封闭式手表系统。
-- 自动播放内核：手表 / 脆弱 SoC 优先 IJK + FFmpeg；其他设备默认 Media3。
-- 默认清晰度上限 480p，可手动选择 720p / 1080p；脆弱 SoC 且应用内存等级较低时会进一步限制有效清晰度。实际档位取决于可用片源及选流策略。
-- 不是所有 HEVC/bytevc1 媒体或设备都保证兼容。
+- Android 7.0（API 24）或以上，支持 ARM32 / ARM64。
+- 面向可以侧载 APK 的安卓手表及小屏设备；非独立 Wear OS 专用应用。
+- 自动内核：手表 / 脆弱 SoC 优先 IJK + FFmpeg，其他设备默认 Media3。
+- 默认清晰度请求上限 480p；支持手动选择 720p / 1080p。低内存脆弱设备可能限制有效请求上限，实际画质取决于片源。
+- 不保证全部机型、封闭式手表系统或视频编码均可兼容。
 
-## 播放异常怎么办？
+## 帮助与反馈
 
-1. 更新到 [最新版本](https://github.com/jiabenguiyin/hongguo-watch/releases/latest)。
-2. 设置中选择「兼容软解」，解码模式选择软件解码，并先尝试默认 480p。
-3. 运行设置中的解码自检，分别检查本地 H.264 / HEVC 测试片。
-4. 如仍有声无画、卡顿或失败，记录机型、系统版本、内核、画质与首帧情况，按 [问题模板](https://github.com/jiabenguiyin/hongguo-watch/issues/new/choose) 反馈。
+有声无画、卡顿、封面异常、安装失败？先查看 [常见问题](docs/install.md#常见问题)，再按 [兼容性测试指南](docs/compatibility.md) 提交设备与播放信息。
 
-诊断可能包含设备信息与播放日志；当前版本在部分播放失败时也会尝试上传到公共粘贴服务。详细情况见 [诊断与隐私说明](docs/compatibility.md#诊断与隐私)。不要在公开 Issue 中贴 Cookie、令牌、播放地址或其他个人信息。
+当前版本部分播放失败时会尝试向公共粘贴服务上传诊断。分享诊断前请检查是否包含私人信息，详情见 [诊断与隐私](docs/compatibility.md#诊断与隐私)。
 
-## 开发与构建
+## 开发
 
-| 组件 | 技术 |
-| --- | --- |
-| UI | Kotlin、原生 View / ViewBinding、RecyclerView |
-| 播放 | Media3 ExoPlayer、IJKPlayer / FFmpeg |
-| 网络与图片 | OkHttp、Coil |
-| 本地存储 | Room、DataStore |
-| 构建 | Gradle 8.7、AGP 8.5.2、JDK 17、Android SDK 34 |
+[![Android CI](https://github.com/jiabenguiyin/hongguo-watch/actions/workflows/android-ci.yml/badge.svg?branch=main)](https://github.com/jiabenguiyin/hongguo-watch/actions/workflows/android-ci.yml)
+
+Kotlin · ViewBinding · RecyclerView · Media3 · IJKPlayer / FFmpeg · OkHttp · Coil · Room · DataStore
 
 ```sh
 git clone https://github.com/jiabenguiyin/hongguo-watch.git
@@ -79,19 +67,14 @@ cd hongguo-watch
 ./gradlew :app:testDebugUnitTest :app:assembleDebug
 ```
 
-Windows 使用 `gradlew.bat`。本地需安装 SDK platform 34、build-tools 34，并配置 Android SDK 路径（如 `ANDROID_HOME` 或 `local.properties`）。
+环境：JDK 17、Android SDK 34、Gradle 8.7（Wrapper）。Windows 使用 `gradlew.bat`。
 
-Debug 产物位于 `app/build/outputs/apk/debug/`，Release 产物位于 `app/build/outputs/apk/release/`。当前 Release 发布流程见 [签名说明](signing/README.md)，开发约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+[参与开发](CONTRIBUTING.md) · [签名与发布](signing/README.md) · [CI 构建记录](https://github.com/jiabenguiyin/hongguo-watch/actions)
 
-## 实现边界与开源归因
+## 开源与声明
 
-- 不提供后台连播或保活；切回表盘可能被系统回收。
-- 跨季连播仅在同标题、连续季号、唯一可播候选成立时自动进行；只预取相关季元数据，不预取下一季媒体。若无法可靠确定下一季则停止，不跨过待上线季。
-- 内容接口可能变化；本项目不提供内容授权，不保证片源永久可用。
-- 第三方来源见 [hongguoTV 归因](third_party/hongguoTV-NOTICE.md)、[IJKPlayer 归因](third_party/IJKPLAYER-NOTICE.md) 与 [其他上游说明](third_party/SIGNING_V5.md)。参考项目：[hongguoTV](https://github.com/N3urda/hongguoTV)、[hongguo-drama](https://github.com/jackotom/hongguo-drama)、[Media3](https://github.com/androidx/media)。
+本项目为独立开源项目，与红果短剧官方无隶属或授权关系。内容版权及商标归相应权利人所有，请遵守内容授权与平台条款。上游接口可能变化，不保证片源永久可用。
 
-本项目以 [GPL-3.0](LICENSE) 发布；第三方组件保留各自许可。内容版权及商标归相应权利人所有。
+不提供后台连播或保活；跨季连播仅在同标题、连续季号、唯一可播候选成立时执行，只预取相关季元数据而非视频流。
 
----
-
-**hongguo-watch** · Android watch / 安卓手表 / 短剧手表版 / 漫剧 / 小屏播放器
+本仓采用 [GPL-3.0](LICENSE) 许可，第三方组件保留各自许可。来源及归因：[hongguoTV](third_party/hongguoTV-NOTICE.md)、[IJKPlayer](third_party/IJKPLAYER-NOTICE.md)、[其他上游说明](third_party/SIGNING_V5.md)。另参考 [hongguo-drama](https://github.com/jackotom/hongguo-drama) 和 [Media3](https://github.com/androidx/media)。

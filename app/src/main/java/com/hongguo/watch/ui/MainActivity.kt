@@ -63,7 +63,11 @@ class MainActivity : AppCompatActivity() {
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
         applyWatchChrome()
 
-        adapter = SeriesListAdapter { openSeries(it) }
+        adapter = SeriesListAdapter(
+            onFavoriteClick = { series, currentlyFavorited ->
+                toggleHistoryFavorite(series, currentlyFavorited)
+            },
+        ) { openSeries(it) }
         binding.seriesList.layoutManager = LinearLayoutManager(this)
         binding.seriesList.adapter = adapter
         binding.seriesList.itemAnimator = null
@@ -556,6 +560,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 val history = repo.recentHistory()
                 if (token != listGeneration || mode != Mode.HISTORY) return@launch
+                val favoritedIds = repo.favorites().map { it.seriesId }.toHashSet()
                 val rows = history.map {
                     val percent = if (it.durationMs > 0) {
                         ((it.positionMs * 100) / it.durationMs).toInt().coerceIn(0, 100)
@@ -563,7 +568,7 @@ class MainActivity : AppCompatActivity() {
                         0
                     }
                     HomeRow.Item(
-                        Series(
+                        series = Series(
                             id = it.seriesId,
                             title = it.seriesTitle,
                             cover = it.cover,
@@ -572,6 +577,7 @@ class MainActivity : AppCompatActivity() {
                             source = runCatching { SeriesSource.valueOf(it.source) }
                                 .getOrDefault(SeriesSource.APP),
                         ),
+                        favorited = it.seriesId in favoritedIds,
                     )
                 }
                 adapter.submit(rows)
@@ -583,6 +589,27 @@ class MainActivity : AppCompatActivity() {
                     binding.swipeRefresh.isRefreshing = false
                 }
             }
+        }
+    }
+
+    /** 历史行 ♡：一键收藏/取消，不打断续播入口。 */
+    private fun toggleHistoryFavorite(series: Series, @Suppress("UNUSED_PARAMETER") currentlyFavorited: Boolean) {
+        if (mode != Mode.HISTORY) return
+        lifecycleScope.launch {
+            val nowFavorited = repo.toggleFavorite(
+                seriesId = series.id,
+                seriesTitle = series.title,
+                cover = series.cover,
+                source = series.source,
+                episodeCount = series.episodeCount,
+            )
+            if (mode != Mode.HISTORY) return@launch
+            adapter.setFavorited(series.id, nowFavorited)
+            Toast.makeText(
+                this@MainActivity,
+                if (nowFavorited) R.string.favorite_added else R.string.favorite_removed,
+                Toast.LENGTH_SHORT,
+            ).show()
         }
     }
 

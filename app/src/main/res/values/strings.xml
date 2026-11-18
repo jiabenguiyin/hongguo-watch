@@ -18,7 +18,7 @@
     <string name="empty_history">暂无观看历史\n看过的剧会显示在这里</string>
     <string name="empty_favorites">暂无收藏\n在详情页点♡即可加入</string>
     <string name="empty_search_result">没有搜到相关短剧</string>
-    <string name="history_subtitle">点一项即可续播</string>
+    <string name="history_subtitle">点♡收藏 · 点行续播</string>
     <string name="favorites_subtitle">已收藏的短剧</string>
     <string name="open_hint">进</string>
     <string name="resume_hint">续</string>

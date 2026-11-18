@@ -8,15 +8,8 @@ class AppContainer(context: Context) {
     private val appContext = context.applicationContext
     private val database = AppDatabase.create(appContext)
     val settings = SettingsStore(appContext)
-
-    /** 由 Application 在设置变更时刷新；默认 512MB。 */
-    @Volatile
-    var videoCacheBudgetBytes: Long = VideoCacheManager.DEFAULT_BUDGET_BYTES
-
-    val videoCache = VideoCacheManager(
-        context = appContext,
-        budgetProvider = { videoCacheBudgetBytes },
-    )
+    /** 预算按本机存储动态计算，见 [com.hongguo.watch.data.cache.VideoCacheBudget]。 */
+    val videoCache = VideoCacheManager(context = appContext)
     val repository = ContentRepository(
         appSource = AppSourceClient(appContext),
         historyDao = database.watchHistoryDao(),

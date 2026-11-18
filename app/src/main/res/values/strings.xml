@@ -57,6 +57,7 @@
     <string name="video_cache_label">视频缓存</string>
     <string name="video_cache_usage">已用 %1$s / %2$s</string>
     <string name="video_cache_budget">上限</string>
+    <string name="video_cache_budget_auto">上限按本机剩余与总容量自动计算，预留系统空间</string>
     <string name="video_cache_cleared">视频缓存已清除</string>
     <string name="clear_video_cache">清除视频缓存</string>
     <string name="library_cache_hook">离线缓存 · %1$s</string>

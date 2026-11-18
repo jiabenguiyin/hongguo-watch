@@ -56,12 +56,4 @@ class VideoCacheLruTest {
         assertEquals(40L, VideoCacheLru.totalReadyBytes(listOf(ready, pending)))
     }
 
-    @Test
-    fun normalizeBudgetMb() {
-        assertEquals(256, VideoCacheManager.normalizeBudgetMb(100))
-        assertEquals(512, VideoCacheManager.normalizeBudgetMb(512))
-        assertEquals(512, VideoCacheManager.normalizeBudgetMb(900))
-        assertEquals(1024, VideoCacheManager.normalizeBudgetMb(1024))
-        assertEquals(1024, VideoCacheManager.normalizeBudgetMb(2048))
-    }
 }

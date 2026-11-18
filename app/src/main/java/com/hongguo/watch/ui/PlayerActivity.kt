@@ -425,7 +425,7 @@ class PlayerActivity : AppCompatActivity() {
         binding.controlsMidTap.setOnTouchListener(listener)
     }
 
-    /** 圆盘：加大侧栏内收；锁定时小解锁钮保持居中，避开四角。 */
+    /** 圆盘：加大侧栏内收；锁定/解锁芯片靠左并与 midControls 左边距对齐。 */
     private fun applyRoundPlayerChrome() {
         val side = WatchUi.sideMeterMarginPx(this)
         (binding.brightnessMeter.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
@@ -478,14 +478,12 @@ class PlayerActivity : AppCompatActivity() {
             topPad,
             binding.topBar.paddingBottom,
         )
-        // 锁定/解锁芯片靠右：圆屏加大边距，避开圆弧裁切
-        val lockPad = when {
-            round -> WatchUi.edgeInsetPx(this).coerceAtLeast(WatchUi.dp(this, 16f))
-            cornerSafe -> WatchUi.dp(this, 14f)
-            else -> WatchUi.dp(this, 12f)
-        }
+        // 解锁芯片靠左：marginStart 与 midControls 左 padding 同值
+        // （二者均在 playerRoot 内边距内布局，勿再叠加 root.paddingLeft）
         (binding.unlockButton.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
-            lp.marginEnd = lockPad
+            lp.gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+            lp.marginStart = sidePad
+            lp.marginEnd = 0
             binding.unlockButton.layoutParams = lp
         }
     }

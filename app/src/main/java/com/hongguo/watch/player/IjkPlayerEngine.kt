@@ -5,6 +5,7 @@ import android.graphics.SurfaceTexture
 import android.net.Uri
 import android.view.Surface
 import android.view.TextureView
+import com.hongguo.watch.BuildConfig
 import com.hongguo.watch.data.model.StreamInfo
 import com.hongguo.watch.upstream.RemoteVideo
 import tv.danmaku.ijk.media.player.IMediaPlayer
@@ -13,6 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 轻量 IJK 会话：TextureView 出画、软/硬解开关、速度、seek。
+ * 画面用 [VideoAspectHelper] FIT（letterbox/pillarbox），禁止 stretch。
  * 不重写主播放器架构；由 PlayerActivity 在手表路径选用。
  */
 class IjkPlayerEngine(
@@ -27,7 +29,7 @@ class IjkPlayerEngine(
         fun onBuffering(buffering: Boolean)
         fun onCompletion()
         fun onError(what: Int, extra: Int, message: String?)
-        fun onVideoSize(width: Int, height: Int)
+        fun onVideoSize(width: Int, height: Int, sarNum: Int, sarDen: Int)
     }
 
     private var player: IjkMediaPlayer? = null
@@ -35,6 +37,10 @@ class IjkPlayerEngine(
     private var remote: RemoteVideo? = null
     private val released = AtomicBoolean(false)
     private var firstFrameNotified = false
+    private var videoWidth = 0
+    private var videoHeight = 0
+    private var sarNum = 1
+    private var sarDen = 1
 
     fun start(
         stream: StreamInfo,
@@ -45,6 +51,10 @@ class IjkPlayerEngine(
         releaseInternal(keepRemote = false)
         released.set(false)
         firstFrameNotified = false
+        videoWidth = 0
+        videoHeight = 0
+        sarNum = 1
+        sarDen = 1
         remote = remoteVideo
         ensureLibs()
         val ijk = IjkMediaPlayer()
@@ -75,8 +85,14 @@ class IjkPlayerEngine(
             listener.onError(what, extra, "ijk error what=$what extra=$extra")
             true
         }
-        ijk.setOnVideoSizeChangedListener { _, width, height, _, _ ->
-            if (width > 0 && height > 0) listener.onVideoSize(width, height)
+        ijk.setOnVideoSizeChangedListener { _, width, height, num, den ->
+            if (width <= 0 || height <= 0) return@setOnVideoSizeChangedListener
+            videoWidth = width
+            videoHeight = height
+            sarNum = if (num > 0) num else 1
+            sarDen = if (den > 0) den else 1
+            applyAspectFit()
+            listener.onVideoSize(width, height, sarNum, sarDen)
         }
         bindSurface(ijk)
         if (remoteVideo != null) {
@@ -91,6 +107,26 @@ class IjkPlayerEngine(
             "ijk prepare soft=$softDecode codec=${stream.codec.ifBlank { "?" }} q=${stream.quality}",
         )
         ijk.prepareAsync()
+    }
+
+    /** 旋转 / 布局变化后由 Activity 再调一次。 */
+    fun applyAspectFit() {
+        if (released.get()) return
+        if (videoWidth <= 0 || videoHeight <= 0) return
+        val apply = {
+            VideoAspectHelper.applyFitTransform(
+                textureView,
+                videoWidth,
+                videoHeight,
+                sarNum,
+                sarDen,
+            )
+        }
+        if (textureView.width > 0 && textureView.height > 0) {
+            apply()
+        } else {
+            textureView.post(apply)
+        }
     }
 
     fun play() {
@@ -138,6 +174,7 @@ class IjkPlayerEngine(
         if (st != null) {
             surface = Surface(st)
             ijk.setSurface(surface)
+            applyAspectFit()
             return
         }
         textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
@@ -146,9 +183,12 @@ class IjkPlayerEngine(
                 surface?.release()
                 surface = Surface(surfaceTexture)
                 player?.setSurface(surface)
+                applyAspectFit()
             }
 
-            override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, w: Int, h: Int) = Unit
+            override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, w: Int, h: Int) {
+                applyAspectFit()
+            }
 
             override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
                 player?.setSurface(null)
@@ -202,7 +242,7 @@ class IjkPlayerEngine(
             player.setOption(
                 IjkMediaPlayer.OPT_CATEGORY_FORMAT,
                 "user_agent",
-                "HongguoWatch/0.4.6",
+                "HongguoWatch/${BuildConfig.VERSION_NAME}",
             )
         }
 

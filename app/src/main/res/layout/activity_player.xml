@@ -220,6 +220,16 @@
                 android:textColor="@color/text_primary"
                 android:textSize="@dimen/watch_body"
                 android:textStyle="bold" />
+
+            <ImageButton
+                android:id="@+id/rotateButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/bg_control_button"
+                android:contentDescription="@string/cd_rotate"
+                android:padding="8dp"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_rotate" />
         </LinearLayout>
 
         <!-- 中区：左侧锁 · 中间点按显隐 · 右侧倍速（圆屏内收，避开四角裁切） -->

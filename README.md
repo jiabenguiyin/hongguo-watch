@@ -1,15 +1,15 @@
 <div align="center">
 
-# 红果终端
+# 红果终端 · 红果短剧手表版
 
-**hongguo-watch · 为小屏而生的安卓短剧客户端**
+**hongguo-watch · 安卓手表短剧与漫剧播放器**
 
 [![Release](https://img.shields.io/github/v/release/jiabenguiyin/hongguo-watch?label=Release&color=E85D4C)](https://github.com/jiabenguiyin/hongguo-watch/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/jiabenguiyin/hongguo-watch/total?label=Downloads)](https://github.com/jiabenguiyin/hongguo-watch/releases)
 [![Android](https://img.shields.io/badge/Android-7.0%2B-3DDC84)](#设备要求)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue)](LICENSE)
 
-适配安卓手表、小屏 Android 设备及低配设备的非官方短剧、漫剧客户端。  
+红果终端是面向安卓手表、小屏 Android 设备及低配设备的非官方短剧、漫剧客户端，支持圆屏与方屏手表追剧。  
 Lightweight short-drama player for Android watches and small-screen devices.
 
 **[下载最新版 APK](https://github.com/jiabenguiyin/hongguo-watch/releases/latest)** · [安装指南](docs/install.md) · [更新记录](https://github.com/jiabenguiyin/hongguo-watch/releases) · [问题反馈](https://github.com/jiabenguiyin/hongguo-watch/issues/new/choose)
@@ -22,13 +22,13 @@ Lightweight short-drama player for Android watches and small-screen devices.
 
 | 小屏追剧 | 播放体验 |
 | --- | --- |
-| 推荐、榜单、分类、搜索 | Media3 / IJK + FFmpeg 双内核 |
-| 分集选择、自动下一集 | 软解 / 硬解选择、解码自检 |
-| 收藏、观看历史、断点续播 | 适应/铺满/拉伸、双指缩放、横竖屏、防误触锁定 |
-| 条件满足时自动接续下一季 | 0.75–2 倍速、进度、亮度与音量手势 |
+| 推荐 Banner 轮播、榜单、分类、搜索 | Media3 / IJK + FFmpeg 双内核 |
+| 分集选择、长剧分段选集、自动下一集 | 软解 / 硬解选择、双击播停 |
+| 库（收藏 / 观看历史）、断点续播 | 适应/铺满/拉伸、双指缩放、横竖屏、防误触锁定 |
+| 条件满足时自动接续下一季 | 0.75–2 倍速、长按临时 2x、进度 / 亮度 / 音量手势 |
 | 圆屏与大圆角方屏适配 | 应用内检查更新、诊断反馈 |
 
-## 下载与安装
+## 红果终端 APK 下载与安装
 
 打开 [最新正式发布页](https://github.com/jiabenguiyin/hongguo-watch/releases/latest)，在 Assets 中选择与你设备系统 ABI 对应的安装包。
 
@@ -37,7 +37,7 @@ Lightweight short-drama player for Android watches and small-screen devices.
 | `arm64-v8a.apk` | 64 位 ARM Android |
 | `armeabi-v7a.apk` | 32 位 ARM Android |
 
-开启未知来源安装权限后安装 APK；两种架构只需选择其一。支持 ADB 安装与应用内检查更新。
+开启未知来源安装权限后安装 APK；两种架构只需选择其一。支持 ADB 安装与应用内检查更新。若找不到下载入口，请查看 [安卓手表安装教程](docs/install.md)。
 
 0.4.4 起的同证书安装包通常可覆盖升级。遇到签名冲突先查看 [安装指南](docs/install.md)，卸载会清除本地数据。当前测试发行签名的私钥公开，请只从本仓库 Releases 下载；详见 [安全说明](SECURITY.md)。
 
@@ -49,9 +49,9 @@ Lightweight short-drama player for Android watches and small-screen devices.
 - 默认清晰度请求上限 480p；支持手动选择 720p / 1080p。低内存脆弱设备可能限制有效请求上限，实际画质取决于片源。
 - 不保证全部机型、封闭式手表系统或视频编码均可兼容。
 
-## 帮助与反馈
+## 常见问题与交流
 
-有声无画、卡顿、封面异常、安装失败？先查看 [常见问题](docs/install.md#常见问题)，再按 [兼容性测试指南](docs/compatibility.md) 提交设备与播放信息。
+有声无画、卡顿、封面异常、安装失败？先查看 [常见问题](docs/install.md#常见问题)，再按 [兼容性测试指南](docs/compatibility.md) 提交设备与播放信息。也可在应用设置查看官方项目交流群（QQ群：1130845653）。
 
 当前版本部分播放失败时会尝试向公共粘贴服务上传诊断。分享诊断前请检查是否包含私人信息，详情见 [诊断与隐私](docs/compatibility.md#诊断与隐私)。
 

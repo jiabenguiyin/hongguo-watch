@@ -62,6 +62,18 @@
             android:textSize="@dimen/watch_meta" />
     </LinearLayout>
 
+    <ImageButton
+        android:id="@+id/favoriteButton"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_marginStart="2dp"
+        android:background="@drawable/bg_control_button"
+        android:contentDescription="@string/cd_favorite"
+        android:padding="8dp"
+        android:scaleType="centerInside"
+        android:src="@drawable/ic_favorite_border"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/actionHint"
         android:layout_width="wrap_content"

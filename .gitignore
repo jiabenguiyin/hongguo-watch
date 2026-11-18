@@ -43,6 +43,8 @@ signing/*.jks
 signing/*.keystore
 *.jks
 *.keystore
+# 例外：公开 debug 证书，供侧载包互相覆盖升级（密码 android/android）
+!signing/debug.keystore
 
 # OS
 .DS_Store

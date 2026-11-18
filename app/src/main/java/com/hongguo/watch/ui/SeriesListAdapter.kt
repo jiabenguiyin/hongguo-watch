@@ -18,10 +18,13 @@ sealed class HomeRow {
         val series: Series,
         /** 榜单名次；非空时显示左侧序号并隐藏「进」。 */
         val rank: Int? = null,
+        /** 非 null 时显示行内 ♡；true=已收藏。 */
+        val favorited: Boolean? = null,
     ) : HomeRow()
 }
 
 class SeriesListAdapter(
+    private val onFavoriteClick: ((Series, Boolean) -> Unit)? = null,
     private val onClick: (Series) -> Unit,
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     private val rows = mutableListOf<HomeRow>()
@@ -44,6 +47,18 @@ class SeriesListAdapter(
         val start = rows.size
         rows.addAll(items)
         notifyItemRangeInserted(start, items.size)
+    }
+
+    /** 更新某剧收藏态（历史行 ♡），找不到则忽略。 */
+    fun setFavorited(seriesId: String, favorited: Boolean) {
+        val index = rows.indexOfFirst { row ->
+            row is HomeRow.Item && row.series.id == seriesId && row.favorited != null
+        }
+        if (index < 0) return
+        val old = rows[index] as HomeRow.Item
+        if (old.favorited == favorited) return
+        rows[index] = old.copy(favorited = favorited)
+        notifyItemChanged(index)
     }
 
     fun itemCountRows(): Int = rows.size
@@ -145,6 +160,20 @@ class SeriesListAdapter(
                 transformations(RoundedCornersTransformation(radius))
                 placeholder(R.drawable.bg_cover)
                 error(R.drawable.bg_cover)
+            }
+
+            val favorited = row.favorited
+            if (favorited != null && onFavoriteClick != null) {
+                binding.favoriteButton.visibility = View.VISIBLE
+                binding.favoriteButton.setImageResource(
+                    if (favorited) R.drawable.ic_favorite else R.drawable.ic_favorite_border,
+                )
+                binding.favoriteButton.setOnClickListener {
+                    onFavoriteClick.invoke(series, favorited)
+                }
+            } else {
+                binding.favoriteButton.visibility = View.GONE
+                binding.favoriteButton.setOnClickListener(null)
             }
 
             // 榜单行省横向空间：靠序号与整行点击，不显示「进」

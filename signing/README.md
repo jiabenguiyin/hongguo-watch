@@ -1,6 +1,16 @@
-# 正式签名（release）
+# 签名说明
 
-当前 **debug / 测试侧载** 仍用 Android 默认 debug 证书。  
+## Debug / 测试侧载（固定证书）
+
+仓库提交了 `signing/debug.keystore`（别名 `androiddebugkey`，密码 **android/android**）。  
+`assembleDebug` 始终用这把钥匙，这样 **GitHub Releases 上的 debug APK 可以互相覆盖安装**，不必每次卸载。
+
+若本机曾装过「另一台机器默认 `~/.android/debug.keystore`」签出的旧包，证书不同会提示无法覆盖 → **卸载一次**后再装 0.4.4+ 即可；之后同签名升级不再需要卸载。
+
+这把 debug 证书 **不是** 正式发布密钥，可公开；请勿把它当成 production keystore。
+
+## 正式签名（release）
+
 **GitHub Releases 正式包** 必须使用固定 release 密钥，否则日后换钥会导致无法覆盖安装。
 
 ## 配置方式（二选一）

@@ -9,5 +9,51 @@
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
+        <!-- 手表强制深色弹窗，避免 DayNight 亮底 + 浅色按钮字 -->
+        <item name="alertDialogTheme">@style/Theme.HongguoWatch.AlertDialog</item>
+        <item name="materialAlertDialogTheme">@style/Theme.HongguoWatch.AlertDialog</item>
+    </style>
+
+    <style name="Theme.HongguoWatch.AlertDialog" parent="ThemeOverlay.MaterialComponents.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/bg_alert_dialog</item>
+        <item name="android:colorBackground">@color/bg_elevated</item>
+        <item name="android:background">@color/bg_elevated</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorAccent">@color/text_primary</item>
+        <item name="colorControlActivated">@color/accent</item>
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.HongguoWatch.DialogButton.Positive</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.HongguoWatch.DialogButton</item>
+        <item name="buttonBarNeutralButtonStyle">@style/Widget.HongguoWatch.DialogButton</item>
+        <item name="materialAlertDialogTitleTextStyle">@style/TextAppearance.HongguoWatch.DialogTitle</item>
+        <item name="materialAlertDialogBodyTextStyle">@style/TextAppearance.HongguoWatch.DialogBody</item>
+        <item name="dialogPreferredPadding">12dp</item>
+        <item name="android:windowMinWidthMajor">0dp</item>
+        <item name="android:windowMinWidthMinor">0dp</item>
+    </style>
+
+    <style name="TextAppearance.HongguoWatch.DialogTitle" parent="TextAppearance.MaterialComponents.Subtitle1">
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextAppearance.HongguoWatch.DialogBody" parent="TextAppearance.MaterialComponents.Body2">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <style name="Widget.HongguoWatch.DialogButton" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:minHeight">40dp</item>
+        <item name="rippleColor">@color/stroke</item>
+    </style>
+
+    <style name="Widget.HongguoWatch.DialogButton.Positive" parent="Widget.HongguoWatch.DialogButton">
+        <!-- 主操作：高对比强调色，深色底上可读 -->
+        <item name="android:textColor">@color/accent</item>
     </style>
 </resources>

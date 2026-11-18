@@ -12,13 +12,28 @@ android {
         applicationId = "com.hongguo.watch"
         minSdk = 24
         targetSdk = 34
-        versionCode = 9
-        versionName = "0.4.3"
+        versionCode = 10
+        versionName = "0.4.4"
         resourceConfigurations += listOf("zh", "en")
+        // 可选诊断上传端点（构建时注入）；空则走公开粘贴服务。切勿把密钥写进仓库。
+        val diagUrl = (System.getenv("HG_DIAG_UPLOAD_URL") ?: "")
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+        buildConfigField("String", "DIAG_UPLOAD_URL", "\"$diagUrl\"")
     }
 
     signingConfigs {
-        getByName("debug")
+        // 仓库内固定 debug 证书：GitHub 发布的 debug APK 可互相覆盖安装。
+        // 密码为公开的 android/android（仅调试用途，非正式发布密钥）。
+        getByName("debug") {
+            val debugStore = rootProject.file("signing/debug.keystore")
+            if (debugStore.isFile) {
+                storeFile = debugStore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
         // 正式签名：仅走环境变量 / 本地 signing/keystore.properties，禁止静默回退 debug，
         // 避免「看似 release、实则 debug 证书」导致日后换钥升级冲突。
         create("release") {
@@ -81,6 +96,7 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

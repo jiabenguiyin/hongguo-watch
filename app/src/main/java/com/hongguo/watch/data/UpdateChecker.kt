@@ -8,7 +8,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * 从 GitHub Releases 拉取最新版并与本地 versionName / versionCode 比较。
- * 轻量：只读 `releases/latest`，不内嵌下载器；手表上用系统 Intent 打开页或 APK 链接。
+ * 按设备 ABI 优先挑选 APK 资源，供本地下载安装。
  */
 object UpdateChecker {
     private const val LATEST_API =
@@ -23,6 +23,8 @@ object UpdateChecker {
         val body: String,
         val htmlUrl: String,
         val apkUrl: String?,
+        val apkName: String?,
+        val apkSize: Long,
         val isNewer: Boolean,
     )
 
@@ -50,28 +52,7 @@ object UpdateChecker {
             val tag = root.optString("tag_name").trim()
             if (tag.isBlank()) throw IllegalStateException("未找到发行版本")
             val versionName = normalizeVersionName(tag)
-            val assets = root.optJSONArray("assets")
-            var apkUrl: String? = null
-            var fallbackApk: String? = null
-            if (assets != null) {
-                for (i in 0 until assets.length()) {
-                    val asset = assets.optJSONObject(i) ?: continue
-                    val name = asset.optString("name")
-                    val url = asset.optString("browser_download_url")
-                    if (!name.endsWith(".apk", ignoreCase = true) || url.isBlank()) continue
-                    if (fallbackApk == null) fallbackApk = url
-                    if (preferredAbi.isNotBlank() &&
-                        name.contains(preferredAbi, ignoreCase = true)
-                    ) {
-                        apkUrl = url
-                        break
-                    }
-                    if (name.contains("universal", ignoreCase = true)) {
-                        apkUrl = url
-                    }
-                }
-            }
-            if (apkUrl == null) apkUrl = fallbackApk
+            val picked = pickApkAsset(parseApkAssets(root.optJSONArray("assets")), preferredAbi)
             val htmlUrl = root.optString("html_url").ifBlank { RELEASES_PAGE }
             val releaseName = root.optString("name").ifBlank { tag }
             val notes = root.optString("body").trim()
@@ -86,13 +67,55 @@ object UpdateChecker {
                 releaseName = releaseName,
                 body = notes,
                 htmlUrl = htmlUrl,
-                apkUrl = apkUrl,
+                apkUrl = picked?.url,
+                apkName = picked?.name,
+                apkSize = picked?.size ?: 0L,
                 isNewer = newer,
             )
         }
     }
 
     fun releasesPageUrl(): String = RELEASES_PAGE
+
+    data class ApkAsset(
+        val name: String,
+        val url: String,
+        val size: Long,
+    )
+
+    fun parseApkAssets(assets: org.json.JSONArray?): List<ApkAsset> {
+        if (assets == null) return emptyList()
+        val out = ArrayList<ApkAsset>(assets.length())
+        for (i in 0 until assets.length()) {
+            val asset = assets.optJSONObject(i) ?: continue
+            val name = asset.optString("name")
+            val url = asset.optString("browser_download_url")
+            if (!name.endsWith(".apk", ignoreCase = true) || url.isBlank()) continue
+            out.add(ApkAsset(name = name, url = url, size = asset.optLong("size", 0L)))
+        }
+        return out
+    }
+
+    /**
+     * 优先匹配设备 ABI；其次 universal；否则取第一个 .apk。
+     */
+    fun pickApkAsset(assets: List<ApkAsset>, preferredAbi: String): ApkAsset? {
+        if (assets.isEmpty()) return null
+        var abiMatch: ApkAsset? = null
+        var universal: ApkAsset? = null
+        for (candidate in assets) {
+            if (preferredAbi.isNotBlank() &&
+                candidate.name.contains(preferredAbi, ignoreCase = true)
+            ) {
+                abiMatch = candidate
+                break
+            }
+            if (candidate.name.contains("universal", ignoreCase = true) && universal == null) {
+                universal = candidate
+            }
+        }
+        return abiMatch ?: universal ?: assets.first()
+    }
 
     /** 去掉前导 v，保留主版本号段。 */
     fun normalizeVersionName(tagOrName: String): String {
@@ -138,7 +161,7 @@ object UpdateChecker {
         return 0
     }
 
-    private fun preferredAbi(): String {
+    fun preferredAbi(): String {
         val abis = android.os.Build.SUPPORTED_ABIS
         return when {
             abis.any { it.contains("arm64", ignoreCase = true) } -> "arm64-v8a"

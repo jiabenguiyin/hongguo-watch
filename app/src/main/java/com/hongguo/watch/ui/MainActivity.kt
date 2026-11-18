@@ -45,6 +45,12 @@ class MainActivity : AppCompatActivity() {
     private var feedGeneration = 0
     private var feedJob: Job? = null
     private var feedRankBase = 0
+    /**
+     * 列表内容世代：切 Tab / 搜索 / 分类时递增。
+     * 防止首页 feed 异步结果污染历史/收藏 adapter。
+     */
+    private var listGeneration = 0
+    private var listJob: Job? = null
 
     private val container get() = (application as HongguoWatchApp).container
     private val repo get() = container.repository
@@ -167,18 +173,22 @@ class MainActivity : AppCompatActivity() {
         adapter.showResumeHint = false
         binding.loading.visibility = View.VISIBLE
         binding.emptyView.visibility = View.GONE
-        lifecycleScope.launch {
+        val token = beginListLoad(clearAdapter = forceReload)
+        listJob = lifecycleScope.launch {
             try {
                 if (forceReload || !categoriesReady) {
                     categories = repo.homeCategories()
+                    if (token != listGeneration || mode != Mode.HOME) return@launch
                     categoriesReady = true
                     if (categories.none { it.id == selectedCategoryId }) {
                         selectedCategoryId = HomeCategory.ID_RECOMMEND
                     }
                     renderCategoryChips(categories)
                 }
-                loadSelectedCategory()
+                if (token != listGeneration || mode != Mode.HOME) return@launch
+                loadSelectedCategory(token)
             } catch (e: Exception) {
+                if (token != listGeneration || mode != Mode.HOME) return@launch
                 adapter.submit(emptyList())
                 binding.emptyView.visibility = View.VISIBLE
                 binding.emptyView.text = e.message ?: getString(R.string.error_network)
@@ -188,10 +198,23 @@ class MainActivity : AppCompatActivity() {
                     Toast.LENGTH_LONG,
                 ).show()
             } finally {
-                binding.loading.visibility = View.GONE
-                binding.swipeRefresh.isRefreshing = false
+                if (token == listGeneration) {
+                    binding.loading.visibility = View.GONE
+                    binding.swipeRefresh.isRefreshing = false
+                }
             }
         }
+    }
+
+    /** 切换列表内容源时调用：作废首页 feed 与进行中的列表协程。 */
+    private fun beginListLoad(clearAdapter: Boolean): Int {
+        listJob?.cancel()
+        resetFeedState()
+        val token = ++listGeneration
+        if (clearAdapter) {
+            adapter.submit(emptyList())
+        }
+        return token
     }
 
     private fun resetFeedState() {
@@ -206,39 +229,53 @@ class MainActivity : AppCompatActivity() {
         feedRankBase = 0
     }
 
-    private suspend fun loadSelectedCategory() {
+    private suspend fun loadSelectedCategory(listToken: Int = listGeneration) {
+        if (mode != Mode.HOME || listToken != listGeneration) return
         val cat = categories.firstOrNull { it.id == selectedCategoryId }
             ?: HomeCategory.recommend()
         highlightCategoryChips()
         scrollSelectedChipIntoView()
         resetFeedState()
-        val token = feedGeneration
+        val feedToken = feedGeneration
         val page = fetchFeedPage(cat, page = 1, offset = 0, sessionId = "")
-        if (token != feedGeneration) return
+        if (!canMutateHomeFeed(listToken, feedToken)) return
         applyFeedPage(cat, page, append = false)
         // 首屏若条数太少填不满可视区，用户无法上滑触发续页 → 自动连拉几页
-        fillFeedUntilScrollable(cat, token)
+        fillFeedUntilScrollable(cat, listToken, feedToken)
     }
 
     /**
      * 小屏手表首屏常见只解析出 1～3 条；列表不满时无法 scroll，
      * [maybeLoadMoreFeed] 永远不触发。自动续页直到够滑或没有更多。
      */
-    private suspend fun fillFeedUntilScrollable(cat: HomeCategory, token: Int) {
-        var guard = 0
-        while (token == feedGeneration && feedHasMore && feedItems.size < 12 && guard < 6) {
-            guard++
+    private suspend fun fillFeedUntilScrollable(
+        cat: HomeCategory,
+        listToken: Int,
+        feedToken: Int,
+    ) {
+        var pages = 0
+        while (
+            canMutateHomeFeed(listToken, feedToken) &&
+            FeedPagingPolicy.shouldContinueInitialFill(feedItems.size, feedHasMore, pages)
+        ) {
+            pages++
             val page = fetchFeedPage(
                 cat,
                 page = feedPage + 1,
                 offset = feedOffset,
                 sessionId = feedSession,
             )
-            if (token != feedGeneration) return
+            if (!canMutateHomeFeed(listToken, feedToken)) return
             val before = feedItems.size
             applyFeedPage(cat, page, append = true)
             if (feedItems.size <= before) break
         }
+    }
+
+    private fun canMutateHomeFeed(listToken: Int, feedToken: Int): Boolean {
+        return mode == Mode.HOME &&
+            listToken == listGeneration &&
+            feedToken == feedGeneration
     }
 
     private suspend fun fetchFeedPage(
@@ -267,6 +304,8 @@ class MainActivity : AppCompatActivity() {
         page: com.hongguo.watch.data.model.CatalogPage,
         append: Boolean,
     ) {
+        // 硬闸：离开首页后绝不再写共用 adapter
+        if (mode != Mode.HOME) return
         val seen = feedItems.map { it.id }.toHashSet()
         val fresh = page.items.filter { it.id !in seen }
         if (append) {
@@ -324,35 +363,37 @@ class MainActivity : AppCompatActivity() {
         if (!feedHasMore || feedLoadingMore) return
         val lm = binding.seriesList.layoutManager as? LinearLayoutManager ?: return
         val last = lm.findLastVisibleItemPosition()
-        if (last < adapter.itemCount - 4) return
+        if (!FeedPagingPolicy.shouldPrefetch(last, adapter.itemCount)) return
         loadMoreFeed()
     }
 
     private fun loadMoreFeed() {
-        if (!feedHasMore || feedLoadingMore) return
+        if (mode != Mode.HOME || !feedHasMore || feedLoadingMore) return
         val cat = categories.firstOrNull { it.id == selectedCategoryId } ?: return
         feedLoadingMore = true
-        val token = feedGeneration
+        val listToken = listGeneration
+        val feedToken = feedGeneration
         val nextPage = feedPage + 1
         val offset = feedOffset
         val session = feedSession
         feedJob = lifecycleScope.launch {
             try {
                 val page = fetchFeedPage(cat, page = nextPage, offset = offset, sessionId = session)
-                if (token != feedGeneration) return@launch
+                if (!canMutateHomeFeed(listToken, feedToken)) return@launch
                 applyFeedPage(cat, page, append = true)
             } catch (_: Exception) {
-                if (token == feedGeneration) {
+                if (canMutateHomeFeed(listToken, feedToken)) {
                     // 续页失败不清空已有列表；短暂停止自动续页，下拉可刷新
                     feedHasMore = false
                 }
             } finally {
-                if (token == feedGeneration) feedLoadingMore = false
+                if (feedToken == feedGeneration) feedLoadingMore = false
             }
         }
     }
 
     private fun selectCategory(category: HomeCategory) {
+        if (mode != Mode.HOME) return
         if (selectedCategoryId == category.id && lastQuery.isBlank()) return
         selectedCategoryId = category.id
         lastQuery = ""
@@ -361,10 +402,13 @@ class MainActivity : AppCompatActivity() {
         scrollSelectedChipIntoView()
         binding.loading.visibility = View.VISIBLE
         binding.emptyView.visibility = View.GONE
-        lifecycleScope.launch {
+        val token = beginListLoad(clearAdapter = true)
+        listJob = lifecycleScope.launch {
             try {
-                loadSelectedCategory()
+                if (token != listGeneration || mode != Mode.HOME) return@launch
+                loadSelectedCategory(token)
             } catch (e: Exception) {
+                if (token != listGeneration || mode != Mode.HOME) return@launch
                 adapter.submit(
                     listOf(
                         HomeRow.Header(
@@ -379,8 +423,10 @@ class MainActivity : AppCompatActivity() {
                     else -> e.message ?: getString(R.string.error_network)
                 }
             } finally {
-                binding.loading.visibility = View.GONE
-                binding.swipeRefresh.isRefreshing = false
+                if (token == listGeneration) {
+                    binding.loading.visibility = View.GONE
+                    binding.swipeRefresh.isRefreshing = false
+                }
             }
         }
     }
@@ -455,16 +501,17 @@ class MainActivity : AppCompatActivity() {
         mode = Mode.HOME
         highlightTabs(home = true)
         lastQuery = query
-        resetFeedState()
         binding.searchRow.visibility = View.VISIBLE
         binding.categoryScroll.visibility = View.GONE
         binding.pageSubtitle.visibility = View.GONE
         binding.loading.visibility = View.VISIBLE
         binding.emptyView.visibility = View.GONE
         adapter.showResumeHint = false
-        lifecycleScope.launch {
+        val token = beginListLoad(clearAdapter = true)
+        listJob = lifecycleScope.launch {
             try {
                 val page = repo.search(query, page = 1)
+                if (token != listGeneration || mode != Mode.HOME) return@launch
                 val rows = mutableListOf<HomeRow>()
                 rows += HomeRow.Header(getString(R.string.app_section))
                 rows += page.items.map { HomeRow.Item(it) }
@@ -473,6 +520,7 @@ class MainActivity : AppCompatActivity() {
                 binding.emptyView.text =
                     if (page.items.isEmpty()) getString(R.string.empty_search_result) else ""
             } catch (e: Exception) {
+                if (token != listGeneration || mode != Mode.HOME) return@launch
                 adapter.submit(emptyList())
                 binding.emptyView.visibility = View.VISIBLE
                 binding.emptyView.text = e.message ?: getString(R.string.error_network)
@@ -482,8 +530,10 @@ class MainActivity : AppCompatActivity() {
                     Toast.LENGTH_LONG,
                 ).show()
             } finally {
-                binding.loading.visibility = View.GONE
-                binding.swipeRefresh.isRefreshing = false
+                if (token == listGeneration) {
+                    binding.loading.visibility = View.GONE
+                    binding.swipeRefresh.isRefreshing = false
+                }
             }
         }
     }
@@ -500,9 +550,12 @@ class MainActivity : AppCompatActivity() {
         binding.loading.visibility = View.VISIBLE
         binding.emptyView.visibility = View.GONE
         adapter.showResumeHint = true
-        lifecycleScope.launch {
+        // 立刻清空 + 作废首页 feed，避免推荐残留/异步回写
+        val token = beginListLoad(clearAdapter = true)
+        listJob = lifecycleScope.launch {
             try {
                 val history = repo.recentHistory()
+                if (token != listGeneration || mode != Mode.HISTORY) return@launch
                 val rows = history.map {
                     val percent = if (it.durationMs > 0) {
                         ((it.positionMs * 100) / it.durationMs).toInt().coerceIn(0, 100)
@@ -525,8 +578,10 @@ class MainActivity : AppCompatActivity() {
                 binding.emptyView.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
                 binding.emptyView.text = getString(R.string.empty_history)
             } finally {
-                binding.loading.visibility = View.GONE
-                binding.swipeRefresh.isRefreshing = false
+                if (token == listGeneration) {
+                    binding.loading.visibility = View.GONE
+                    binding.swipeRefresh.isRefreshing = false
+                }
             }
         }
     }
@@ -543,9 +598,11 @@ class MainActivity : AppCompatActivity() {
         binding.loading.visibility = View.VISIBLE
         binding.emptyView.visibility = View.GONE
         adapter.showResumeHint = false
-        lifecycleScope.launch {
+        val token = beginListLoad(clearAdapter = true)
+        listJob = lifecycleScope.launch {
             try {
                 val favorites = repo.favorites()
+                if (token != listGeneration || mode != Mode.FAVORITES) return@launch
                 val rows = favorites.map {
                     HomeRow.Item(
                         Series(
@@ -563,8 +620,10 @@ class MainActivity : AppCompatActivity() {
                 binding.emptyView.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
                 binding.emptyView.text = getString(R.string.empty_favorites)
             } finally {
-                binding.loading.visibility = View.GONE
-                binding.swipeRefresh.isRefreshing = false
+                if (token == listGeneration) {
+                    binding.loading.visibility = View.GONE
+                    binding.swipeRefresh.isRefreshing = false
+                }
             }
         }
     }

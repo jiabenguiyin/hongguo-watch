@@ -19,7 +19,7 @@ Lightweight short-drama client for Android watches and small-screen devices, wit
 
 | 安装包后缀 | 适用设备 |
 | --- | --- |
-| `arm64-v8a.apk` | 64 位 Android 系统（CD12 Max 已有实机播放反馈） |
+| `arm64-v8a.apk` | 64 位 ARM Android 系统 |
 | `armeabi-v7a.apk` | 32 位 ARM Android 系统 |
 
 开启手表的未知来源安装权限，将 APK 传到设备安装，或使用 ADB：
@@ -53,14 +53,6 @@ adb install -r <APK 文件路径>
 - 自动播放内核：手表 / 脆弱 SoC 优先 IJK + FFmpeg；其他设备默认 Media3。
 - 默认清晰度上限 480p，可手动选择 720p / 1080p；脆弱 SoC 且应用内存等级较低时会进一步限制有效清晰度。实际档位取决于可用片源及选流策略。
 - 不是所有 HEVC/bytevc1 媒体或设备都保证兼容。
-
-### 已知实机记录
-
-| 设备 | 系统 | 屏幕 | 测试情况 |
-| --- | --- | --- | --- |
-| CD12 Max（CD_Watch_A / SPRD） | Android 9 | 408 × 502 | IJK 软件解码路径已有用户实机出画反馈；其他功能与机型仍需测试 |
-
-欢迎提交更多机型的验证结果，见 [兼容性反馈指南](docs/compatibility.md)。
 
 ## 播放异常怎么办？
 

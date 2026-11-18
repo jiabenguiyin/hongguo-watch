@@ -3,6 +3,8 @@ package com.hongguo.watch.player
 import android.content.Context
 import android.util.Log
 import com.hongguo.watch.BuildConfig
+import com.hongguo.watch.upstream.LadderEntryDiag
+import com.hongguo.watch.upstream.LadderParseResult
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -12,7 +14,7 @@ import java.util.concurrent.ConcurrentLinkedDeque
  * HgWatchPlayer 诊断环形缓冲：设备信息 + 播放路径关键日志，供失败时上传。
  */
 object PlayerDiagLog {
-    private const val CAPACITY = 240
+    private const val CAPACITY = 360
     private val lines = ConcurrentLinkedDeque<String>()
     private val timeFmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
 
@@ -82,6 +84,11 @@ object PlayerDiagLog {
         i("audio decoder=$name")
     }
 
+    fun logLadder(result: LadderParseResult, maxQuality: Int, preferAvc: Boolean, avcOnly: Boolean) {
+        i(result.summaryLine(maxQuality, preferAvc, avcOnly))
+        result.diag.forEach { entry: LadderEntryDiag -> i(entry.toLogLine()) }
+    }
+
     fun i(msg: String) = append("I", msg).also { Log.i(TAG, msg) }
 
     fun w(msg: String) = append("W", msg).also { Log.w(TAG, msg) }
@@ -93,7 +100,7 @@ object PlayerDiagLog {
 
     fun buildReport(context: Context, reason: String): String {
         val device = WatchDecodePolicy.deviceSnapshot(context)
-        val sb = StringBuilder(8_192)
+        val sb = StringBuilder(12_288)
         sb.appendLine("hongguo-watch diagnostic")
         sb.appendLine("version=${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
         sb.appendLine("reason=$reason")
@@ -107,6 +114,10 @@ object PlayerDiagLog {
         sb.appendLine("videoDecoder=$lastVideoDecoder")
         sb.appendLine("audioDecoder=$lastAudioDecoder")
         sb.appendLine("firstFrameMs=$firstFrameMs")
+        sb.appendLine("--- mediacodec avc/hevc ---")
+        runCatching { MediaCodecCaps.summaryLines() }
+            .getOrElse { listOf("decoder enum failed: ${it.message}") }
+            .forEach { sb.appendLine(it) }
         sb.appendLine("--- log ---")
         synchronized(lines) {
             lines.forEach { sb.appendLine(it) }

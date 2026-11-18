@@ -51,9 +51,43 @@ object WatchDecodePolicy {
         return if (shouldPreferSoftwareDecode(context)) 3_500L else 5_000L
     }
 
-    /** 脆弱设备开播即硬性 AVC-only（无 AVC 则失败，不再回落 bytevc1）。 */
-    fun shouldForceAvcOnlyInitially(context: Context): Boolean {
-        return isFragileSoc() || isWatchLike(context)
+    /**
+     * 0.4.6：停止因 Unisoc/手表 alone 永久禁 HEVC。
+     * 同机其它 IJK+FFmpeg 客户端可播，说明根因是内核差，不是「永远不能碰 HEVC」。
+     * 黑屏回退仍可阶段性 avcOnly；选流默认 preferAvc。
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun shouldForceAvcOnlyInitially(
+        kernel: PlayerKernel = PlayerKernel.MEDIA3,
+    ): Boolean {
+        // 保留参数便于调用点显式声明当前内核；当前策略：初始均不永久禁 HEVC
+        return false
+    }
+
+    @Deprecated("Use shouldForceAvcOnlyInitially(kernel)")
+    @Suppress("UNUSED_PARAMETER", "DEPRECATION")
+    fun shouldForceAvcOnlyInitially(context: Context): Boolean =
+        shouldForceAvcOnlyInitially(PlayerKernel.MEDIA3)
+
+    fun resolveKernel(context: Context, preference: PlayerKernel): PlayerKernel {
+        val resolved = when (preference) {
+            PlayerKernel.MEDIA3 -> PlayerKernel.MEDIA3
+            PlayerKernel.IJK -> PlayerKernel.IJK
+            PlayerKernel.AUTO ->
+                if (shouldPreferSoftwareDecode(context)) PlayerKernel.IJK else PlayerKernel.MEDIA3
+        }
+        if (resolved == PlayerKernel.IJK && !IjkPlayerEngine.isAbiSupported()) {
+            return PlayerKernel.MEDIA3
+        }
+        return resolved
+    }
+
+    fun resolveSoftDecode(context: Context, preference: DecodePath): Boolean {
+        return when (preference) {
+            DecodePath.HARDWARE -> false
+            DecodePath.SOFTWARE -> true
+            DecodePath.AUTO -> shouldPreferSoftwareDecode(context)
+        }
     }
 
     /**

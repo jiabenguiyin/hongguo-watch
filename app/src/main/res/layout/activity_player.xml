@@ -8,7 +8,7 @@
     android:background="@android:color/black"
     android:keepScreenOn="true">
 
-    <!-- TextureView + 播放器侧软解/AVC 策略：减轻 OEM SurfaceView z-order 与硬解黑帧 -->
+    <!-- Media3 默认路径（TextureView） -->
     <androidx.media3.ui.PlayerView
         android:id="@+id/playerView"
         android:layout_width="match_parent"
@@ -19,6 +19,14 @@
         app:keep_content_on_player_reset="true"
         app:use_artwork="false"
         app:shutter_background_color="@android:color/black" />
+
+    <!-- IJK/FFmpeg 兼容软解路径（手表 / 低配）；默认隐藏 -->
+    <TextureView
+        android:id="@+id/ijkTexture"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:keepScreenOn="true"
+        android:visibility="gone" />
 
     <View
         android:id="@+id/gestureLayer"

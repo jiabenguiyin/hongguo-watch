@@ -38,7 +38,10 @@ import com.hongguo.watch.data.model.RelatedWork
 import com.hongguo.watch.data.model.SeriesSource
 import com.hongguo.watch.data.model.StreamInfo
 import com.hongguo.watch.databinding.ActivityPlayerBinding
+import com.hongguo.watch.player.DecodePath
+import com.hongguo.watch.player.IjkPlayerEngine
 import com.hongguo.watch.player.PlayerDiagLog
+import com.hongguo.watch.player.PlayerKernel
 import com.hongguo.watch.player.VideoDataSource
 import com.hongguo.watch.player.WatchDecodePolicy
 import com.hongguo.watch.upstream.CodecLabels
@@ -61,6 +64,11 @@ import kotlin.math.abs
 class PlayerActivity : AppCompatActivity() {
     private lateinit var binding: ActivityPlayerBinding
     private var player: ExoPlayer? = null
+    private var ijkEngine: IjkPlayerEngine? = null
+    private var activeKernel: PlayerKernel = PlayerKernel.MEDIA3
+    private var kernelPreference: PlayerKernel = PlayerKernel.AUTO
+    private var decodePathPreference: DecodePath = DecodePath.AUTO
+    private var softDecodePreferred: Boolean = true
     private var progressJob: Job? = null
     private var playJob: Job? = null
     private var hideControlsJob: Job? = null
@@ -92,13 +100,13 @@ class PlayerActivity : AppCompatActivity() {
     private var currentQuality = 480
     private var currentSpeed = 1.0f
 
-    /** 视频解码模式：默认 → 软解优先 → 仅软解。 */
+    /** Media3 视频解码模式：默认 → 软解优先 → 仅软解。 */
     private var videoCodecMode = WatchDecodePolicy.VideoCodecMode.Default
-    /** 黑屏回退：仅取 AVC 档。 */
+    /** 黑屏回退：仅取 AVC 档（Media3 路径）；IJK 路径默认不永久禁 HEVC。 */
     private var forceAvcOnly = false
     private var videoFrameRendered = false
     private var firstFrameWatchJob: Job? = null
-    /** 0=未回退；1=软解+AVC；2=仅软解；≥2 后上传诊断。 */
+    /** 0=未回退；1=切 IJK 软解；2=Media3 仅软解/AVC；≥2 后上传诊断。 */
     private var blackScreenRecoveryStage = 0
     private var diagUploadJob: Job? = null
 
@@ -149,12 +157,6 @@ class PlayerActivity : AppCompatActivity() {
         binding.playerView.useController = false
         // TextureView + 保留最后一帧，减轻 OEM SurfaceView 黑屏
         binding.playerView.setKeepContentOnPlayerReset(true)
-        resetDecodePolicyForDevice()
-        PlayerDiagLog.clearSession()
-        PlayerDiagLog.i(
-            "decode policy mode=$videoCodecMode avcOnly=$forceAvcOnly " +
-                "fragileSoc=${WatchDecodePolicy.isFragileSoc()}",
-        )
         applyRoundPlayerChrome()
         bindControls()
         bindSheets()
@@ -163,6 +165,15 @@ class PlayerActivity : AppCompatActivity() {
         lifecycleScope.launch {
             currentQuality = settings.maxQualityNow()
             currentSpeed = settings.playbackSpeedNow()
+            kernelPreference = settings.playerKernelNow()
+            decodePathPreference = settings.decodePathNow()
+            resetDecodePolicyForDevice()
+            PlayerDiagLog.clearSession()
+            PlayerDiagLog.i(
+                "kernel=$activeKernel soft=$softDecodePreferred mode=$videoCodecMode " +
+                    "avcOnly=$forceAvcOnly fragileSoc=${WatchDecodePolicy.isFragileSoc()} " +
+                    "ijkAbi=${IjkPlayerEngine.isAbiSupported()}",
+            )
             refreshQualityUi()
             refreshSpeedUi()
             if (episodeIds.isEmpty()) {
@@ -207,12 +218,12 @@ class PlayerActivity : AppCompatActivity() {
             scheduleHideControls()
         }
         binding.playPauseButton.setOnClickListener {
-            val p = player ?: return@setOnClickListener
-            if (p.isPlaying) {
-                p.pause()
+            if (!hasActiveEngine()) return@setOnClickListener
+            if (isActivelyPlaying()) {
+                pauseActive()
                 saveProgress(force = true)
             } else {
-                p.play()
+                playActive()
             }
             updatePlayPause()
             scheduleHideControls()
@@ -233,7 +244,7 @@ class PlayerActivity : AppCompatActivity() {
         binding.seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
-                val duration = player?.duration?.takeIf { it > 0 } ?: return
+                val duration = activeDuration().takeIf { it > 0 } ?: return
                 binding.timeCurrent.text = formatTime(duration * progress / 1000)
             }
 
@@ -243,12 +254,9 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                val p = player
-                val bar = seekBar
-                if (p != null && bar != null) {
-                    val duration = p.duration.takeIf { it > 0 } ?: 0L
-                    if (duration > 0) p.seekTo(duration * bar.progress / 1000)
-                }
+                val bar = seekBar ?: return
+                val duration = activeDuration().takeIf { it > 0 } ?: 0L
+                if (duration > 0) seekActive(duration * bar.progress / 1000)
                 userSeeking = false
                 saveProgress(force = true)
                 scheduleHideControls()
@@ -412,7 +420,7 @@ class PlayerActivity : AppCompatActivity() {
                 adjustingVolume = false
                 gestureMode = GestureMode.NONE
                 gestureConsumedClick = false
-                scrubStartPos = player?.currentPosition ?: 0L
+                scrubStartPos = activePosition()
                 brightnessStart = currentBrightness()
                 volumeStart = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
                 return true
@@ -431,7 +439,7 @@ class PlayerActivity : AppCompatActivity() {
                     GestureMode.SEEK -> {
                         scrubbing = true
                         showControls(autoHide = false)
-                        val duration = player?.duration?.takeIf { it > 0 } ?: return true
+                        val duration = activeDuration().takeIf { it > 0 } ?: return true
                         val width = binding.playerRoot.width.coerceAtLeast(1)
                         val delta = ((dx / width) * duration * 0.5f).toLong()
                         val target = (scrubStartPos + delta).coerceIn(0L, duration)
@@ -471,10 +479,10 @@ class PlayerActivity : AppCompatActivity() {
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 when (gestureMode) {
                     GestureMode.SEEK -> {
-                        val duration = player?.duration?.takeIf { it > 0 }
+                        val duration = activeDuration().takeIf { it > 0 }
                         if (duration != null) {
                             val target = duration * binding.seekBar.progress / 1000
-                            player?.seekTo(target)
+                            seekActive(target)
                             saveProgress(force = true)
                         }
                         scrubbing = false
@@ -563,7 +571,7 @@ class PlayerActivity : AppCompatActivity() {
         hideControlsJob = lifecycleScope.launch {
             delay(3_200)
             if (!userSeeking && !scrubbing && !adjustingBrightness && !adjustingVolume &&
-                player?.isPlaying == true && !locked
+                isActivelyPlaying() && !locked
             ) {
                 hideControls()
             }
@@ -620,7 +628,7 @@ class PlayerActivity : AppCompatActivity() {
             currentQuality = SettingsStore.normalizeQuality(height)
             refreshQualityUi()
             closeSheets()
-            startPositionMs = player?.currentPosition ?: 0L
+            startPositionMs = activePosition()
             loadCurrent()
         }
     }
@@ -647,7 +655,7 @@ class PlayerActivity : AppCompatActivity() {
             settings.setPlaybackSpeed(speed)
             currentSpeed = SettingsStore.normalizeSpeed(speed)
             refreshSpeedUi()
-            player?.setPlaybackSpeed(currentSpeed)
+            setActiveSpeed(currentSpeed)
             closeSheets()
             scheduleHideControls()
         }
@@ -685,13 +693,16 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun resetDecodePolicyForDevice() {
+        softDecodePreferred = WatchDecodePolicy.resolveSoftDecode(this, decodePathPreference)
+        activeKernel = WatchDecodePolicy.resolveKernel(this, kernelPreference)
         videoCodecMode =
-            if (WatchDecodePolicy.shouldPreferSoftwareDecode(this)) {
+            if (softDecodePreferred) {
                 WatchDecodePolicy.VideoCodecMode.SoftwareFirst
             } else {
                 WatchDecodePolicy.VideoCodecMode.Default
             }
-        forceAvcOnly = WatchDecodePolicy.shouldForceAvcOnlyInitially(this)
+        // IJK 软解不再永久禁 HEVC；Media3 也不因 Unisoc  alone 永久禁 HEVC
+        forceAvcOnly = WatchDecodePolicy.shouldForceAvcOnlyInitially(activeKernel)
         blackScreenRecoveryStage = 0
     }
 
@@ -753,7 +764,8 @@ class PlayerActivity : AppCompatActivity() {
                 PlayerDiagLog.markPlayStart(
                     codec = stream.codec.ifBlank { "?" },
                     quality = stream.quality,
-                    mode = "$videoCodecMode/avcOnly=$forceAvcOnly",
+                    mode = "kernel=$activeKernel soft=$softDecodePreferred " +
+                        "media3=$videoCodecMode avcOnly=$forceAvcOnly",
                 )
                 PlayerDiagLog.i(
                     "selected codec_id=${stream.codec.ifBlank { "?" }} " +
@@ -763,6 +775,7 @@ class PlayerActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 if (token != playGeneration) return@launch
                 if (e is kotlinx.coroutines.CancellationException) throw e
+                PlayerDiagLog.e("fetchStream/play failed: ${e.message}", e)
                 Toast.makeText(
                     this@PlayerActivity,
                     e.message ?: getString(R.string.error_no_play_url),
@@ -770,6 +783,7 @@ class PlayerActivity : AppCompatActivity() {
                 ).show()
                 binding.retryButton.visibility = View.VISIBLE
                 binding.loadingBox.visibility = View.GONE
+                uploadDiagnosticsAsync("fetch_or_start_failed")
             }
         }
     }
@@ -781,10 +795,105 @@ class PlayerActivity : AppCompatActivity() {
         releasePlayer(save = false)
         videoFrameRendered = false
         firstFrameWatchJob?.cancel()
+        if (activeKernel == PlayerKernel.IJK) {
+            playWithIjk(stream, positionMs, token)
+        } else {
+            playWithMedia3(stream, positionMs, token)
+        }
+    }
+
+    private suspend fun playWithIjk(stream: StreamInfo, positionMs: Long, token: Int) {
+        binding.playerView.visibility = View.GONE
+        binding.playerView.player = null
+        binding.ijkTexture.visibility = View.VISIBLE
+        val key = stream.decryptionKey
+        val remote = if (key != null) {
+            withContext(Dispatchers.IO) {
+                RemoteVideo(
+                    mediaHttp,
+                    UpstreamStreamInfo(stream.url, key, stream.quality),
+                ).prepare()
+            }
+        } else {
+            null
+        }
+        if (!playerForeground || token != playGeneration) {
+            remote?.close()
+            return
+        }
+        remoteVideo = remote
+        val engine = IjkPlayerEngine(
+            context = this,
+            textureView = binding.ijkTexture,
+            softDecode = softDecodePreferred,
+            listener = object : IjkPlayerEngine.Listener {
+                override fun onPrepared() {
+                    if (token != playGeneration) return
+                    PlayerDiagLog.markVideoDecoder(
+                        if (softDecodePreferred) "ijk-ffmpeg-soft" else "ijk-mediacodec",
+                    )
+                    binding.loadingBox.visibility = View.GONE
+                    updatePlayPause()
+                    if (!locked) scheduleHideControls()
+                    scheduleFirstFrameWatch(token, stream)
+                }
+
+                override fun onFirstFrame() {
+                    if (token != playGeneration) return
+                    videoFrameRendered = true
+                    firstFrameWatchJob?.cancel()
+                    PlayerDiagLog.markFirstFrame()
+                }
+
+                override fun onBuffering(buffering: Boolean) {
+                    if (token != playGeneration) return
+                    binding.loadingBox.visibility = if (buffering) View.VISIBLE else View.GONE
+                }
+
+                override fun onCompletion() {
+                    if (token != playGeneration) return
+                    saveProgress(force = true)
+                    if (episodeIndex < episodeIds.lastIndex) {
+                        switchEpisode(episodeIndex + 1)
+                    } else {
+                        finishSeasonOrStop()
+                    }
+                }
+
+                override fun onError(what: Int, extra: Int, message: String?) {
+                    if (token != playGeneration) return
+                    PlayerDiagLog.e(message ?: "ijk error")
+                    if (tryDecodeRecovery(stream, activePosition(), reason = "ijk_error")) return
+                    binding.retryButton.visibility = View.VISIBLE
+                    binding.loadingBox.visibility = View.GONE
+                    if (!locked) showControls(autoHide = false)
+                    Toast.makeText(
+                        this@PlayerActivity,
+                        message ?: "播放失败",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    uploadDiagnosticsAsync("ijk_error")
+                }
+
+                override fun onVideoSize(width: Int, height: Int) {
+                    PlayerDiagLog.i("video size ${width}x$height")
+                }
+            },
+        )
+        ijkEngine = engine
+        engine.start(stream, remote, positionMs, currentSpeed)
+        startProgressLoop()
+        updatePlayPause()
+        binding.loadingBox.visibility = View.VISIBLE
+    }
+
+    @OptIn(UnstableApi::class)
+    private suspend fun playWithMedia3(stream: StreamInfo, positionMs: Long, token: Int) {
+        binding.ijkTexture.visibility = View.GONE
+        binding.playerView.visibility = View.VISIBLE
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(1_500, 8_000, 1_000, 1_500)
             .build()
-        // 手表 / 脆弱 SoC：视频解码器优先软件实现；二段回退仅软解
         val renderersFactory = WatchDecodePolicy.renderersFactory(this, videoCodecMode)
 
         val key = stream.decryptionKey
@@ -940,7 +1049,7 @@ class PlayerActivity : AppCompatActivity() {
                 PlayerDiagLog.w(
                     "video decoder null after prepare; codec=${stream.codec} " +
                         "audio=${PlayerDiagLog.lastAudioDecoder.ifBlank { "-" }} " +
-                        "mode=$videoCodecMode stage=$blackScreenRecoveryStage",
+                        "kernel=$activeKernel mode=$videoCodecMode stage=$blackScreenRecoveryStage",
                 )
                 if (tryDecodeRecovery(stream, early.currentPosition, reason = "null_video_decoder")) {
                     return@launch
@@ -950,8 +1059,11 @@ class PlayerActivity : AppCompatActivity() {
             if (remaining > 0L) delay(remaining)
             if (token != playGeneration || !playerForeground) return@launch
             if (videoFrameRendered || blackScreenRecoveryStage >= 2) return@launch
-            val p = player ?: return@launch
-            if (!p.playWhenReady && p.playbackState != Player.STATE_READY) return@launch
+            if (!hasActiveEngine()) return@launch
+            val exo = player
+            if (exo != null && !exo.playWhenReady && exo.playbackState != Player.STATE_READY) {
+                return@launch
+            }
             val decoderHint = if (PlayerDiagLog.lastVideoDecoder.isBlank()) {
                 " videoDecoder=null"
             } else {
@@ -959,14 +1071,15 @@ class PlayerActivity : AppCompatActivity() {
             }
             PlayerDiagLog.w(
                 "no first frame after ${timeout}ms; codec=${stream.codec} " +
-                    "mode=$videoCodecMode stage=$blackScreenRecoveryStage$decoderHint",
+                    "kernel=$activeKernel mode=$videoCodecMode " +
+                    "stage=$blackScreenRecoveryStage$decoderHint",
             )
             val reason = if (PlayerDiagLog.lastVideoDecoder.isBlank()) {
                 "null_video_decoder"
             } else {
                 "first_frame_timeout"
             }
-            if (!tryDecodeRecovery(stream, p.currentPosition, reason = reason)) {
+            if (!tryDecodeRecovery(stream, activePosition(), reason = reason)) {
                 uploadDiagnosticsAsync(reason)
                 binding.retryButton.visibility = View.VISIBLE
                 Toast.makeText(
@@ -991,20 +1104,39 @@ class PlayerActivity : AppCompatActivity() {
         blackScreenRecoveryStage = nextStage
         when (nextStage) {
             1 -> {
-                videoCodecMode = WatchDecodePolicy.VideoCodecMode.SoftwareFirst
-                forceAvcOnly = true
+                // 架构差：优先切 IJK 软解，而不是只靠 MediaCodec 重排
+                if (IjkPlayerEngine.isAbiSupported()) {
+                    activeKernel = PlayerKernel.IJK
+                    softDecodePreferred = true
+                    forceAvcOnly = false
+                } else {
+                    videoCodecMode = WatchDecodePolicy.VideoCodecMode.SoftwareFirst
+                    forceAvcOnly = CodecLabels.isHevc(stream.codec)
+                }
             }
             else -> {
-                videoCodecMode = WatchDecodePolicy.VideoCodecMode.SoftwareOnly
-                forceAvcOnly = true
+                if (activeKernel == PlayerKernel.IJK) {
+                    // IJK 已失败：回 Media3 仅软解 + 偏 AVC（仍非永久禁 HEVC）
+                    activeKernel = PlayerKernel.MEDIA3
+                    videoCodecMode = WatchDecodePolicy.VideoCodecMode.SoftwareOnly
+                    softDecodePreferred = true
+                    forceAvcOnly = true
+                } else {
+                    activeKernel = PlayerKernel.IJK
+                    softDecodePreferred = true
+                    forceAvcOnly = false
+                    if (!IjkPlayerEngine.isAbiSupported()) {
+                        videoCodecMode = WatchDecodePolicy.VideoCodecMode.SoftwareOnly
+                        forceAvcOnly = true
+                        activeKernel = PlayerKernel.MEDIA3
+                    }
+                }
             }
         }
-        if (CodecLabels.isHevc(stream.codec) || reason == "null_video_decoder") {
-            forceAvcOnly = true
-        }
         PlayerDiagLog.w(
-            "recover[$reason] → stage=$blackScreenRecoveryStage mode=$videoCodecMode " +
-                "avcOnly=$forceAvcOnly prevCodec=${stream.codec.ifBlank { "?" }}",
+            "recover[$reason] → stage=$blackScreenRecoveryStage kernel=$activeKernel " +
+                "soft=$softDecodePreferred media3=$videoCodecMode avcOnly=$forceAvcOnly " +
+                "prevCodec=${stream.codec.ifBlank { "?" }}",
         )
         startPositionMs = positionMs.coerceAtLeast(0L)
         Toast.makeText(this, R.string.player_retry_compat, Toast.LENGTH_SHORT).show()
@@ -1039,7 +1171,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun updatePlayPause() {
-        val playing = player?.isPlaying == true
+        val playing = isActivelyPlaying()
         binding.playPauseButton.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
         binding.playPauseButton.contentDescription =
             getString(if (playing) R.string.cd_pause else R.string.cd_play)
@@ -1048,6 +1180,37 @@ class PlayerActivity : AppCompatActivity() {
         binding.nextButton.isEnabled = episodeIndex < episodeIds.lastIndex || nextSeasonWork != null
         binding.prevButton.alpha = if (binding.prevButton.isEnabled) 1f else 0.35f
         binding.nextButton.alpha = if (binding.nextButton.isEnabled) 1f else 0.35f
+    }
+
+    private fun hasActiveEngine(): Boolean = player != null || ijkEngine != null
+
+    private fun isActivelyPlaying(): Boolean =
+        player?.isPlaying == true || ijkEngine?.isPlaying() == true
+
+    private fun activePosition(): Long =
+        ijkEngine?.currentPosition() ?: player?.currentPosition?.coerceAtLeast(0L) ?: 0L
+
+    private fun activeDuration(): Long =
+        ijkEngine?.duration() ?: player?.duration?.coerceAtLeast(0L) ?: 0L
+
+    private fun playActive() {
+        ijkEngine?.play()
+        player?.play()
+    }
+
+    private fun pauseActive() {
+        ijkEngine?.pause()
+        player?.pause()
+    }
+
+    private fun seekActive(positionMs: Long) {
+        ijkEngine?.seekTo(positionMs)
+        player?.seekTo(positionMs)
+    }
+
+    private fun setActiveSpeed(speed: Float) {
+        ijkEngine?.setSpeed(speed)
+        player?.setPlaybackSpeed(speed)
     }
 
     private fun startProgressLoop() {
@@ -1067,12 +1230,12 @@ class PlayerActivity : AppCompatActivity() {
 
     /** 末集过半程：只预取下一季元数据（对照 hongguoTV offerNextSeason）。 */
     private fun maybePrepareSeason() {
-        val p = player ?: return
+        if (!hasActiveEngine()) return
         if (episodeIndex != episodeIds.lastIndex) return
         if (seasonPrepared) return
-        val duration = p.duration.takeIf { it > 0 } ?: return
-        if (p.currentPosition < duration / 2) return
-        if (!p.isPlaying) return
+        val duration = activeDuration().takeIf { it > 0 } ?: return
+        if (activePosition() < duration / 2) return
+        if (!isActivelyPlaying()) return
         seasonPrepared = true
         val token = ++seasonGeneration
         seasonJob?.cancel()
@@ -1135,15 +1298,15 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun updateSeekUi() {
-        val p = player ?: return
+        if (!hasActiveEngine()) return
         if (userSeeking || scrubbing) return
-        val duration = p.duration.takeIf { it > 0 } ?: 0L
-        val position = p.currentPosition.coerceAtLeast(0L)
+        val duration = activeDuration().takeIf { it > 0 } ?: 0L
+        val position = activePosition()
         if (duration > 0) {
             val progress = ((position * 1000) / duration).toInt().coerceIn(0, 1000)
             binding.seekBar.progress = progress
             binding.miniProgress.progress = progress
-            val buffered = p.bufferedPosition.coerceAtLeast(0L)
+            val buffered = player?.bufferedPosition?.coerceAtLeast(0L) ?: position
             val secondary = ((buffered * 1000) / duration).toInt().coerceIn(0, 1000)
             binding.seekBar.secondaryProgress = secondary
             binding.miniProgress.secondaryProgress = secondary
@@ -1172,14 +1335,14 @@ class PlayerActivity : AppCompatActivity() {
     private var lastHistoryWriteMs = 0L
 
     private fun saveProgress(force: Boolean = false) {
-        val p = player ?: return
+        if (!hasActiveEngine()) return
         val episodeId = episodeIds.getOrNull(episodeIndex) ?: return
         val episodeNumber = episodeNumbers.getOrNull(episodeIndex) ?: (episodeIndex + 1)
         val now = System.currentTimeMillis()
         if (!force && now - lastHistoryWriteMs < 5_000L) return
         lastHistoryWriteMs = now
-        val position = p.currentPosition.coerceAtLeast(0L)
-        val duration = p.duration.takeIf { it > 0 } ?: 0L
+        val position = activePosition()
+        val duration = activeDuration()
         lifecycleScope.launch {
             repo.saveProgress(
                 seriesId = seriesId,
@@ -1208,8 +1371,16 @@ class PlayerActivity : AppCompatActivity() {
         binding.playerView.player = null
         player?.release()
         player = null
-        remoteVideo?.close()
-        remoteVideo = null
+        val ijk = ijkEngine
+        ijkEngine = null
+        if (ijk != null) {
+            // IJK 引擎拥有并关闭 RemoteVideo
+            ijk.release()
+            remoteVideo = null
+        } else {
+            remoteVideo?.close()
+            remoteVideo = null
+        }
     }
 
     override fun onStart() {
@@ -1223,7 +1394,7 @@ class PlayerActivity : AppCompatActivity() {
         playGeneration++
         playJob?.cancel()
         playJob = null
-        player?.pause()
+        pauseActive()
         saveProgress(force = true)
         // 退后台取消未完成跨季
         seasonGeneration++

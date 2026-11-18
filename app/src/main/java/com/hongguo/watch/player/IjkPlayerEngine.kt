@@ -64,8 +64,9 @@ class IjkPlayerEngine(
             if (released.get()) return@setOnPreparedListener
             if (positionMs > 0) ijk.seekTo(positionMs)
             ijk.setSpeed(speed.coerceIn(0.5f, 2.5f))
-            listener.onPrepared()
+            // 先 start 再回调：否则 Activity 读 isPlaying 仍为 false，播放键会卡在「播放」态
             ijk.start()
+            listener.onPrepared()
         }
         ijk.setOnInfoListener { _, what, _ ->
             when (what) {

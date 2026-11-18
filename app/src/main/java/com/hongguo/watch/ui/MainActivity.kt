@@ -579,8 +579,9 @@ class MainActivity : AppCompatActivity() {
                             id = it.seriesId,
                             title = it.seriesTitle,
                             cover = com.hongguo.watch.data.CoverUrls.normalize(it.cover),
+                            // 进度只放 description；切勿把 episodeNumber（看到第几集）写入 episodeCount
                             description = getString(R.string.progress_meta, it.episodeNumber, percent),
-                            episodeCount = it.episodeNumber,
+                            episodeCount = 0,
                             source = runCatching { SeriesSource.valueOf(it.source) }
                                 .getOrDefault(SeriesSource.APP),
                         ),
@@ -601,16 +602,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** 历史行 ♡：一键收藏/取消，不打断续播入口。 */
+    /** 历史行 ♡：一键收藏/取消，不打断续播入口。总集数走详情接口，不用进度集号。 */
     private fun toggleHistoryFavorite(series: Series, @Suppress("UNUSED_PARAMETER") currentlyFavorited: Boolean) {
         if (mode != Mode.HISTORY) return
         lifecycleScope.launch {
+            val totalEpisodes = runCatching { repo.resolveEpisodeTotal(series.id) }.getOrDefault(0)
             val nowFavorited = repo.toggleFavorite(
                 seriesId = series.id,
                 seriesTitle = series.title,
                 cover = series.cover,
                 source = series.source,
-                episodeCount = series.episodeCount,
+                episodeCount = totalEpisodes,
             )
             if (mode != Mode.HISTORY) return@launch
             adapter.setFavorited(series.id, nowFavorited)
@@ -639,7 +641,8 @@ class MainActivity : AppCompatActivity() {
         binding.seriesList.scrollToPosition(0)
         listJob = lifecycleScope.launch {
             try {
-                val favorites = repo.favorites()
+                // 用详情校正总集数，修复历史把进度集号误写入收藏的旧数据
+                val favorites = repo.favoritesWithResolvedEpisodeTotals()
                 if (token != listGeneration || mode != Mode.FAVORITES) return@launch
                 val rows = favorites.map {
                     HomeRow.Item(

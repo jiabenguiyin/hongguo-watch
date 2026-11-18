@@ -179,6 +179,30 @@ class ContentRepository(
 
     suspend fun favorites(): List<FavoriteEntity> = favoriteDao.list()
 
+    /**
+     * 收藏列表用：用详情接口校正总集数，**不**用观看进度集号。
+     * 网络失败时保留库内原值；校正后写回 favorites，不改 updatedAt 以免打乱排序。
+     */
+    suspend fun favoritesWithResolvedEpisodeTotals(): List<FavoriteEntity> =
+        withContext(Dispatchers.IO) {
+            favoriteDao.list().map { fav ->
+                val total = runCatching { resolveEpisodeTotal(fav.seriesId) }.getOrNull()
+                if (total != null && total > 0 && total != fav.episodeCount) {
+                    val fixed = fav.copy(episodeCount = total)
+                    favoriteDao.upsert(fixed)
+                    fixed
+                } else {
+                    fav
+                }
+            }
+        }
+
+    /** 详情/分集列表 → 真实总集数；与观看进度无关。 */
+    suspend fun resolveEpisodeTotal(seriesId: String): Int = withContext(Dispatchers.IO) {
+        val detail = appSource.fetchDetail(seriesId)
+        episodeTotal(detail.series.episodeCount, detail.episodes.size)
+    }
+
     suspend fun isFavorite(seriesId: String): Boolean = favoriteDao.exists(seriesId)
 
     suspend fun toggleFavorite(
@@ -198,7 +222,7 @@ class ContentRepository(
                     seriesTitle = seriesTitle,
                     cover = CoverUrls.normalize(cover).ifBlank { cover },
                     source = source.name,
-                    episodeCount = episodeCount,
+                    episodeCount = episodeCount.coerceAtLeast(0),
                     updatedAt = System.currentTimeMillis(),
                 ),
             )
@@ -219,9 +243,15 @@ class ContentRepository(
                 seriesTitle = seriesTitle,
                 cover = CoverUrls.normalize(cover).ifBlank { cover },
                 source = source.name,
-                episodeCount = episodeCount,
+                episodeCount = episodeCount.coerceAtLeast(0),
                 updatedAt = System.currentTimeMillis(),
             ),
         )
+    }
+
+    companion object {
+        /** 取 series 声明集数与分集列表长度的较大值；禁止用历史进度集号冒充。 */
+        fun episodeTotal(seriesEpisodeCount: Int, episodeListSize: Int): Int =
+            seriesEpisodeCount.coerceAtLeast(episodeListSize).coerceAtLeast(0)
     }
 }

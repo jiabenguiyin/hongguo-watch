@@ -325,24 +325,6 @@
                     android:textColor="@color/text_primary"
                     android:textSize="@dimen/watch_body" />
             </LinearLayout>
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/about_title"
-                android:textColor="@color/text_primary"
-                android:textSize="@dimen/watch_body"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:lineSpacingExtra="2dp"
-                android:text="@string/about_body"
-                android:textColor="@color/text_secondary"
-                android:textSize="@dimen/watch_meta" />
         </LinearLayout>
     </ScrollView>
 </LinearLayout>

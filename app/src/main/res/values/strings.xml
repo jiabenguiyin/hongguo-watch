@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">红果手表</string>
+    <string name="app_name">红果终端</string>
     <string name="tab_home">首页</string>
     <string name="tab_history">历史</string>
     <string name="tab_favorites">收藏</string>
@@ -123,8 +123,6 @@
     <string name="quality_480">480p（默认，省电）</string>
     <string name="quality_720">720p</string>
     <string name="quality_1080">1080p</string>
-    <string name="about_title">关于与风险</string>
-    <string name="about_body">非官方客户端。片源为开源仓 hongguoTV / hongguo-drama 已公开的 App 族通路（含签名移植）。接口随时变更，未获平台授权。GPL‑3.0。手动开启 720p/1080p 可能导致发热或卡顿，风险自负。首页推荐/热播榜/分类对照书城 tab、cell 榜与落地页；榜单按来源热度顺序，非账号个性化。相关季依赖 App plan 接口，无字段时不盲跳。</string>
     <string name="play_preview_notice">当前为预览流。</string>
     <string name="error_generic">加载失败</string>
     <string name="error_network">网络异常，请重试</string>

@@ -389,10 +389,11 @@
                     android:layout_marginHorizontal="2dp"
                     android:layout_weight="1.35"
                     android:background="@drawable/bg_quality_chip"
-                    android:contentDescription="@string/cd_pause"
+                    android:contentDescription="@string/cd_play"
                     android:padding="8dp"
                     android:scaleType="centerInside"
-                    android:src="@drawable/ic_pause" />
+                    android:src="@drawable/ic_play"
+                    android:tint="@null" />
 
                 <ImageButton
                     android:id="@+id/nextButton"

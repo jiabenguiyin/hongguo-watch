@@ -3,7 +3,7 @@
 发版时把下方 Markdown 贴到 Release 描述，替换 `x.y.z` / versionCode / 变更列表。
 
 ```markdown
-## 红果短剧手表版 vX.Y.Z
+## 红果终端 vX.Y.Z
 
 面向安卓手表 / 低配机的极简短剧客户端（Kotlin + View + Media3 / IJK）。
 

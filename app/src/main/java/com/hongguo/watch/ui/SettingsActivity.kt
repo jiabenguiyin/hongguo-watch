@@ -101,6 +101,14 @@ class SettingsActivity : AppCompatActivity() {
         binding.cacheBudget256.setOnClickListener { pickCacheBudget(256) }
         binding.cacheBudget512.setOnClickListener { pickCacheBudget(512) }
         binding.cacheBudget1024.setOnClickListener { pickCacheBudget(1024) }
+        binding.manageOfflineButton.setOnClickListener {
+            startActivity(
+                Intent(this, MainActivity::class.java).apply {
+                    putExtra(MainActivity.EXTRA_OPEN_LIBRARY_OFFLINE, true)
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                },
+            )
+        }
 
         binding.checkUpdateButton.setOnClickListener { checkForUpdate() }
         binding.uploadDiagButton.setOnClickListener { uploadDiagnostics() }
@@ -112,15 +120,29 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
         binding.clearVideoCacheButton.setOnClickListener {
-            lifecycleScope.launch {
-                withContext(Dispatchers.IO) { container.videoCache.clearAll() }
+            val used = container.videoCache.formatUsedLabel()
+            if (container.videoCache.listReady().isEmpty()) {
+                Toast.makeText(this, R.string.video_cache_cleared, Toast.LENGTH_SHORT).show()
                 refreshVideoCacheUi()
-                Toast.makeText(
-                    this@SettingsActivity,
-                    R.string.video_cache_cleared,
-                    Toast.LENGTH_SHORT,
-                ).show()
+                return@setOnClickListener
             }
+            val dialog = watchDialogBuilder()
+                .setTitle(R.string.offline_clear_confirm_title)
+                .setMessage(getString(R.string.offline_clear_confirm_body, used))
+                .setPositiveButton(R.string.clear_video_cache) { _, _ ->
+                    lifecycleScope.launch {
+                        withContext(Dispatchers.IO) { container.videoCache.clearAll() }
+                        refreshVideoCacheUi()
+                        Toast.makeText(
+                            this@SettingsActivity,
+                            R.string.video_cache_cleared,
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+                .setNegativeButton(R.string.update_cancel, null)
+                .create()
+            showWatchDialog(dialog)
         }
         binding.clearCacheButton.setOnClickListener {
             imageLoader.memoryCache?.clear()
@@ -483,11 +505,16 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun refreshVideoCacheUi() {
-        val used = VideoCacheManager.formatBytes(container.videoCache.usedBytes())
-        val budget = VideoCacheManager.formatBytes(
-            VideoCacheManager.budgetBytesForMb(currentCacheBudgetMb),
+        val summary = container.videoCache.spaceSummary()
+        binding.videoCacheUsage.text = getString(
+            R.string.video_cache_usage,
+            summary.usedLabel,
+            VideoCacheManager.formatBytes(
+                VideoCacheManager.budgetBytesForMb(currentCacheBudgetMb),
+            ),
         )
-        binding.videoCacheUsage.text = getString(R.string.video_cache_usage, used, budget)
+        binding.videoCacheFree.text = getString(R.string.offline_free_space, summary.freeLabel) +
+            " · " + getString(R.string.offline_entry_count, summary.entryCount)
         binding.cacheBudget256.isSelected = currentCacheBudgetMb == 256
         binding.cacheBudget512.isSelected = currentCacheBudgetMb == 512
         binding.cacheBudget1024.isSelected = currentCacheBudgetMb == 1024

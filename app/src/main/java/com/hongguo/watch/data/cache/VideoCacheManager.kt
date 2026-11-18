@@ -128,6 +128,20 @@ class VideoCacheManager(
         jobs[id] = job
     }
 
+    /** 删除单集缓存；不存在则 no-op。 */
+    suspend fun remove(seriesId: String, episodeId: String): Boolean = withContext(Dispatchers.IO) {
+        val id = VideoCacheEntry.cacheId(seriesId, episodeId)
+        jobs.remove(id)?.cancel()
+        indexMutex.withLock {
+            val entry = memoryIndex.firstOrNull { it.id == id } ?: return@withLock false
+            runCatching { File(rootDir, entry.fileName).delete() }
+            runCatching { File(rootDir, "${entry.fileName}.part").delete() }
+            memoryIndex.removeAll { it.id == id }
+            persistIndexUnlocked()
+            true
+        }
+    }
+
     suspend fun clearAll() = withContext(Dispatchers.IO) {
         jobs.values.forEach { it.cancel() }
         jobs.clear()
@@ -142,6 +156,19 @@ class VideoCacheManager(
                 if (child.name != INDEX_NAME) runCatching { child.deleteRecursively() }
             }
         }
+    }
+
+    /** 空间摘要，供离线列表头 / 设置页共用。 */
+    fun spaceSummary(): VideoCacheSpaceSummary {
+        val used = usedBytes()
+        val budget = budgetBytes()
+        val free = freeSpaceBytes()
+        return VideoCacheSpaceSummary(
+            usedBytes = used,
+            budgetBytes = budget,
+            freeBytes = free,
+            entryCount = listReady().size,
+        )
     }
 
     private suspend fun materialize(request: VideoCacheRequest, stream: StreamInfo) {

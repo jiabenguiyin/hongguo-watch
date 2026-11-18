@@ -12,7 +12,7 @@ android {
         applicationId = "com.hongguo.watch"
         minSdk = 24
         targetSdk = 34
-        // main tip 0.4.15/21（#21）；本 PR 播放 chrome
+        // main tip 0.4.15/21（#21）；本 PR 播放 chrome + 手势
         versionCode = 22
         versionName = "0.4.16"
         resourceConfigurations += listOf("zh", "en")

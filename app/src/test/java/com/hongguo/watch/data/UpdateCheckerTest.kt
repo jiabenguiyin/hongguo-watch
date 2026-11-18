@@ -4,9 +4,15 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
 
 class UpdateCheckerTest {
+    @get:Rule
+    val tmp: TemporaryFolder = TemporaryFolder()
+
     @Test
     fun normalizeStripsVPrefix() {
         assertEquals("0.4.2", UpdateChecker.normalizeVersionName("v0.4.2"))
@@ -63,6 +69,21 @@ class UpdateCheckerTest {
             "weird_name.apk",
             UpdateApkInstaller.sanitizeFileName("../weird name.apk"),
         )
+    }
+
+    @Test
+    fun clearUpdatesRemovesApkAndPartSafeWhenMissing() {
+        assertEquals(0, UpdateApkInstaller.clearUpdatesDirectory(File("/no/such/updates-dir")))
+
+        val dir = tmp.newFolder("updates")
+        File(dir, "hongguo-watch-0.4.27.apk").writeText("apk")
+        File(dir, "hongguo-watch-0.4.28.apk.part").writeText("part")
+        File(dir, "keep-notes.txt").writeText("notes")
+        assertEquals(2, UpdateApkInstaller.clearUpdatesDirectory(dir))
+        assertFalse(File(dir, "hongguo-watch-0.4.27.apk").exists())
+        assertFalse(File(dir, "hongguo-watch-0.4.28.apk.part").exists())
+        assertTrue(File(dir, "keep-notes.txt").exists())
+        assertEquals(0, UpdateApkInstaller.clearUpdatesDirectory(dir))
     }
 
     private fun apk(name: String, url: String, size: Long): UpdateChecker.ApkAsset {

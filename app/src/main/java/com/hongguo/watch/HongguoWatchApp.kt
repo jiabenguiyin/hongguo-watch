@@ -7,6 +7,7 @@ import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import coil.request.CachePolicy
 import com.hongguo.watch.data.AppContainer
+import com.hongguo.watch.data.UpdateApkInstaller
 import com.hongguo.watch.ui.WatchUi
 import com.hongguo.watch.upstream.VendorConstants
 import kotlinx.coroutines.CoroutineScope
@@ -24,6 +25,10 @@ class HongguoWatchApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        // 覆盖安装后冷启动：清掉上次下载的更新包（已不存在则无操作）
+        appScope.launch(Dispatchers.IO) {
+            runCatching { UpdateApkInstaller.clearDownloadedUpdates(this@HongguoWatchApp) }
+        }
         appScope.launch {
             WatchUi.setRoundAdaptOverride(container.settings.roundAdaptOverrideNow())
         }

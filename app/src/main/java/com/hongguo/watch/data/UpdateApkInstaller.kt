@@ -35,6 +35,31 @@ object UpdateApkInstaller {
         return dir
     }
 
+    /**
+     * 删除 [updatesDir] 内残留安装包（含 `.part`）。
+     * 文件已不存在或目录为空时安全返回 0。
+     */
+    fun clearDownloadedUpdates(context: Context): Int =
+        clearUpdatesDirectory(updatesDir(context))
+
+    /** 纯文件逻辑，便于单测；只删本目录下的 apk / part，不递归。 */
+    fun clearUpdatesDirectory(dir: File): Int {
+        if (!dir.exists() || !dir.isDirectory) return 0
+        var removed = 0
+        val children = dir.listFiles() ?: return 0
+        for (file in children) {
+            if (!file.isFile) continue
+            val name = file.name
+            val isApkOrPart = name.endsWith(".apk", ignoreCase = true) ||
+                name.endsWith(".part", ignoreCase = true)
+            if (!isApkOrPart) continue
+            if (file.delete() || !file.exists()) {
+                removed++
+            }
+        }
+        return removed
+    }
+
     fun resolveLocalFile(context: Context, apkName: String?, versionName: String): File {
         val safe = sanitizeFileName(
             apkName?.takeIf { it.endsWith(".apk", ignoreCase = true) }

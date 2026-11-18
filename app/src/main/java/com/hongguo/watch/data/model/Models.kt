@@ -76,6 +76,8 @@ data class StreamInfo(
     val userAgent: String? = null,
     /** App 族 spade_a 派生密钥；非空时播放走 RemoteVideo / MediaCrypto。 */
     val decryptionKey: ByteArray? = null,
+    /** 上游 codec_type 归一化标签（如 h264 / bytevc1）。 */
+    val codec: String = "",
 )
 
 data class SearchPage(

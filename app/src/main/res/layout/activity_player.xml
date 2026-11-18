@@ -8,13 +8,15 @@
     android:background="@android:color/black"
     android:keepScreenOn="true">
 
-    <!-- TextureView：华强北 W527 等机型 SurfaceView 常见有声无画 / z-order 黑屏 -->
+    <!-- TextureView + 播放器侧软解/AVC 策略：减轻 OEM SurfaceView z-order 与硬解黑帧 -->
     <androidx.media3.ui.PlayerView
         android:id="@+id/playerView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:keepScreenOn="true"
         app:surface_type="texture_view"
+        app:resize_mode="fit"
+        app:keep_content_on_player_reset="true"
         app:use_artwork="false"
         app:shutter_background_color="@android:color/black" />
 

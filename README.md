@@ -8,7 +8,7 @@
 
 - 首页：横向可滑**分类 Tab**（推荐 + 热榜/真人/漫剧/AI 四榜 + 类型/题材）+ 列表；支持搜索
 - 详情：App `multi_video_detail/preload` 分集；**收藏**；下方**相关季 / 同系列**
-- 播放：Media3 ExoPlayer（硬解优先）；加密档走开源 `RemoteVideo`/`MediaCrypto`
+- 播放：Media3 ExoPlayer（手表 / 低配 SoC 优先软件解码 + AVC 清晰度；TextureView）；加密档走开源 `RemoteVideo`/`MediaCrypto`
   - **锁定**在画面中区左侧；**倍速**在对侧（仪表图标 + `1.0x`，可选 0.75/1/1.25/1.5/2）；解锁仍用中央大钮（圆盘避开四角）
   - **左侧竖直亮度 / 右侧竖直音量 / 横向进度**（圆屏侧条内收）
   - 暂停/播放、上/下集为**图标按钮**

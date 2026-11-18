@@ -1,7 +1,5 @@
 package com.hongguo.watch.player
 
-import kotlin.math.abs
-
 /**
  * 播放器亮度 / 音量 / 进度手势分区。
  *
@@ -25,21 +23,18 @@ object PlayerGestureZones {
     ): Mode {
         val width = contentWidth.coerceAtLeast(1).toFloat()
         val x = startXInContent.coerceIn(0f, width)
-        val vertical = abs(dy) > abs(dx) * 1.15f
-        return if (landscape) {
-            when {
-                vertical && x < width / 2f -> Mode.BRIGHTNESS
-                vertical -> Mode.VOLUME
-                else -> Mode.SEEK
-            }
-        } else {
-            when {
-                vertical && x < width / 3f -> Mode.BRIGHTNESS
-                vertical && x > width * 2f / 3f -> Mode.VOLUME
-                abs(dx) > abs(dy) * 1.05f -> Mode.SEEK
-                vertical && x < width / 2f -> Mode.BRIGHTNESS
-                vertical -> Mode.VOLUME
-                else -> Mode.SEEK
+        // 主轴互斥：与 [PlayerGestureArbiter.dominantAxis] 一致，避免对角同时像 seek 又像音量
+        return when (PlayerGestureArbiter.dominantAxis(dx, dy)) {
+            PlayerGestureArbiter.Axis.HORIZONTAL -> Mode.SEEK
+            PlayerGestureArbiter.Axis.VERTICAL -> if (landscape) {
+                if (x < width / 2f) Mode.BRIGHTNESS else Mode.VOLUME
+            } else {
+                when {
+                    x < width / 3f -> Mode.BRIGHTNESS
+                    x > width * 2f / 3f -> Mode.VOLUME
+                    x < width / 2f -> Mode.BRIGHTNESS
+                    else -> Mode.VOLUME
+                }
             }
         }
     }

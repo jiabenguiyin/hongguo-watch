@@ -4,8 +4,8 @@
     <dimen name="watch_pad">6dp</dimen>
     <dimen name="watch_pad_tight">4dp</dimen>
     <dimen name="watch_control_h">44dp</dimen>
-    <dimen name="watch_play_h">48dp</dimen>
-    <dimen name="watch_seek_h">28dp</dimen>
+    <dimen name="watch_play_h">52dp</dimen>
+    <dimen name="watch_seek_h">22dp</dimen>
     <dimen name="watch_top_h">36dp</dimen>
     <dimen name="watch_title">15sp</dimen>
     <dimen name="watch_body">13sp</dimen>

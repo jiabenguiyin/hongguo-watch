@@ -164,15 +164,16 @@
         android:textSize="@dimen/watch_meta"
         android:visibility="gone" />
 
-    <!-- 锁定：仅小解锁钮，不盖画面；手势由代码吞掉 -->
+    <!-- 锁定：右侧小解锁钮，不盖画面；手势由代码吞掉 -->
     <ImageButton
         android:id="@+id/unlockButton"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
-        android:layout_gravity="center"
-        android:background="@drawable/bg_side_chip"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="end|center_vertical"
+        android:layout_marginEnd="14dp"
+        android:background="@drawable/bg_lock_chip"
         android:contentDescription="@string/cd_unlock"
-        android:padding="10dp"
+        android:padding="11dp"
         android:scaleType="centerInside"
         android:src="@drawable/ic_unlock"
         android:visibility="gone" />
@@ -218,31 +219,44 @@
                 android:marqueeRepeatLimit="marquee_forever"
                 android:singleLine="true"
                 android:textColor="@color/text_primary"
-                android:textSize="@dimen/watch_body"
+                android:textSize="@dimen/watch_meta"
                 android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/qualityButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_player_pill"
+                android:gravity="center"
+                android:minWidth="44dp"
+                android:paddingHorizontal="8dp"
+                android:text="480p"
+                android:textColor="@color/text_primary"
+                android:textSize="@dimen/watch_meta" />
 
             <ImageButton
                 android:id="@+id/aspectButton"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="2dp"
                 android:background="@drawable/bg_control_button"
                 android:contentDescription="@string/cd_aspect"
-                android:padding="8dp"
+                android:padding="7dp"
                 android:scaleType="centerInside"
                 android:src="@drawable/ic_aspect" />
 
             <ImageButton
                 android:id="@+id/rotateButton"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
                 android:background="@drawable/bg_control_button"
                 android:contentDescription="@string/cd_rotate"
-                android:padding="8dp"
+                android:padding="7dp"
                 android:scaleType="centerInside"
                 android:src="@drawable/ic_rotate" />
         </LinearLayout>
 
-        <!-- 中区：左侧锁 · 中间点按显隐 · 右侧倍速（圆屏内收，避开四角裁切） -->
+        <!-- 中区：点按显隐 · 右侧锁定（稿面靠右） -->
         <LinearLayout
             android:id="@+id/midControls"
             android:layout_width="match_parent"
@@ -251,16 +265,6 @@
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingHorizontal="10dp">
-
-            <ImageButton
-                android:id="@+id/lockButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="@drawable/bg_side_chip"
-                android:contentDescription="@string/cd_lock"
-                android:padding="11dp"
-                android:scaleType="centerInside"
-                android:src="@drawable/ic_lock" />
 
             <View
                 android:id="@+id/controlsMidTap"
@@ -271,33 +275,15 @@
                 android:clickable="true"
                 android:focusable="true" />
 
-            <LinearLayout
-                android:id="@+id/speedButton"
-                android:layout_width="wrap_content"
+            <ImageButton
+                android:id="@+id/lockButton"
+                android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:background="@drawable/bg_side_chip"
-                android:contentDescription="@string/cd_speed"
-                android:gravity="center_vertical"
-                android:minWidth="56dp"
-                android:orientation="horizontal"
-                android:paddingHorizontal="10dp">
-
-                <ImageView
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
-                    android:contentDescription="@null"
-                    android:src="@drawable/ic_speed" />
-
-                <TextView
-                    android:id="@+id/speedLabel"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:text="1.0x"
-                    android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_meta"
-                    android:textStyle="bold" />
-            </LinearLayout>
+                android:background="@drawable/bg_lock_chip"
+                android:contentDescription="@string/cd_lock"
+                android:padding="11dp"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_lock" />
         </LinearLayout>
 
         <LinearLayout
@@ -306,7 +292,7 @@
             android:layout_height="wrap_content"
             android:background="@drawable/bg_control_bar_bottom"
             android:orientation="vertical"
-            android:paddingTop="10dp"
+            android:paddingTop="8dp"
             android:paddingBottom="4dp">
 
             <TextView
@@ -319,46 +305,46 @@
                 android:textSize="@dimen/watch_meta"
                 android:visibility="gone" />
 
+            <SeekBar
+                android:id="@+id/seekBar"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/watch_seek_h"
+                android:max="1000"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:progressDrawable="@drawable/seek_progress"
+                android:splitTrack="false"
+                android:thumb="@drawable/seek_thumb"
+                android:thumbOffset="7dp" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="4dp">
+                android:paddingHorizontal="10dp"
+                android:paddingTop="2dp">
 
                 <TextView
                     android:id="@+id/timeCurrent"
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:minWidth="34dp"
+                    android:layout_weight="1"
                     android:text="0:00"
                     android:textColor="@color/text_primary"
                     android:textSize="@dimen/watch_meta" />
-
-                <SeekBar
-                    android:id="@+id/seekBar"
-                    android:layout_width="0dp"
-                    android:layout_height="@dimen/watch_seek_h"
-                    android:layout_weight="1"
-                    android:max="1000"
-                    android:paddingStart="6dp"
-                    android:paddingEnd="6dp"
-                    android:progressDrawable="@drawable/seek_progress"
-                    android:splitTrack="false"
-                    android:thumb="@drawable/seek_thumb"
-                    android:thumbOffset="9dp" />
 
                 <TextView
                     android:id="@+id/timeTotal"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:gravity="end"
-                    android:minWidth="34dp"
                     android:text="0:00"
                     android:textColor="@color/text_secondary"
                     android:textSize="@dimen/watch_meta" />
             </LinearLayout>
 
+            <!-- 稿面：选集 · 上集 · 红圆播放 · 下集 · 倍速 -->
             <LinearLayout
                 android:id="@+id/bottomButtons"
                 android:layout_width="match_parent"
@@ -366,17 +352,17 @@
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
                 android:paddingHorizontal="8dp"
-                android:paddingTop="2dp">
+                android:paddingTop="4dp">
 
                 <TextView
-                    android:id="@+id/qualityButton"
-                    android:layout_width="0dp"
-                    android:layout_height="@dimen/watch_control_h"
-                    android:layout_marginHorizontal="2dp"
-                    android:layout_weight="0.85"
-                    android:background="@drawable/bg_control_button"
+                    android:id="@+id/episodesButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:background="@drawable/bg_player_pill"
                     android:gravity="center"
-                    android:text="480p"
+                    android:minWidth="52dp"
+                    android:paddingHorizontal="10dp"
+                    android:text="@string/episodes"
                     android:textColor="@color/text_primary"
                     android:textSize="@dimen/watch_meta" />
 
@@ -384,9 +370,9 @@
                     android:id="@+id/prevButton"
                     android:layout_width="0dp"
                     android:layout_height="@dimen/watch_control_h"
-                    android:layout_marginHorizontal="2dp"
+                    android:layout_marginStart="4dp"
                     android:layout_weight="1"
-                    android:background="@drawable/bg_control_button"
+                    android:background="@android:color/transparent"
                     android:contentDescription="@string/cd_prev"
                     android:padding="8dp"
                     android:scaleType="centerInside"
@@ -394,13 +380,12 @@
 
                 <ImageButton
                     android:id="@+id/playPauseButton"
-                    android:layout_width="0dp"
+                    android:layout_width="@dimen/watch_play_h"
                     android:layout_height="@dimen/watch_play_h"
-                    android:layout_marginHorizontal="2dp"
-                    android:layout_weight="1.35"
-                    android:background="@drawable/bg_quality_chip"
+                    android:layout_marginHorizontal="4dp"
+                    android:background="@drawable/bg_play_accent"
                     android:contentDescription="@string/cd_play"
-                    android:padding="8dp"
+                    android:padding="14dp"
                     android:scaleType="centerInside"
                     android:src="@drawable/ic_play"
                     android:tint="@null" />
@@ -409,25 +394,34 @@
                     android:id="@+id/nextButton"
                     android:layout_width="0dp"
                     android:layout_height="@dimen/watch_control_h"
-                    android:layout_marginHorizontal="2dp"
+                    android:layout_marginEnd="4dp"
                     android:layout_weight="1"
-                    android:background="@drawable/bg_control_button"
+                    android:background="@android:color/transparent"
                     android:contentDescription="@string/cd_next"
                     android:padding="8dp"
                     android:scaleType="centerInside"
                     android:src="@drawable/ic_next" />
 
                 <TextView
-                    android:id="@+id/episodesButton"
-                    android:layout_width="0dp"
-                    android:layout_height="@dimen/watch_control_h"
-                    android:layout_marginHorizontal="2dp"
-                    android:layout_weight="0.85"
-                    android:background="@drawable/bg_control_button"
+                    android:id="@+id/speedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:background="@drawable/bg_player_pill"
+                    android:contentDescription="@string/cd_speed"
                     android:gravity="center"
-                    android:text="@string/episodes"
+                    android:minWidth="48dp"
+                    android:paddingHorizontal="10dp"
+                    android:text="1.0x"
                     android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_meta" />
+                    android:textSize="@dimen/watch_meta"
+                    android:textStyle="bold" />
+
+                <!-- 兼容旧绑定：隐藏 speedLabel -->
+                <TextView
+                    android:id="@+id/speedLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <TextView

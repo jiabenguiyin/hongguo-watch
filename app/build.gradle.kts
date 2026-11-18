@@ -23,19 +23,21 @@ android {
     }
 
     signingConfigs {
-        // 仓库内固定 debug 证书：GitHub 发布的 debug APK 可互相覆盖安装。
-        // 密码为公开的 android/android（仅调试用途，非正式发布密钥）。
+        // 统一侧载证书：仓库内 signing/debug.keystore（密码 android/android）。
+        // GitHub Releases 的 assembleDebug、以及未配置正式密钥时的 assembleRelease
+        // 都用同一把，避免安装包互相冲突。这不是 production keystore，勿伪造正式钥。
         getByName("debug") {
             val debugStore = rootProject.file("signing/debug.keystore")
-            if (debugStore.isFile) {
-                storeFile = debugStore
-                storePassword = "android"
-                keyAlias = "androiddebugkey"
-                keyPassword = "android"
+            require(debugStore.isFile) {
+                "Missing signing/debug.keystore — required for unified published APK signing"
             }
+            storeFile = debugStore
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
         }
-        // 正式签名：仅走环境变量 / 本地 signing/keystore.properties，禁止静默回退 debug，
-        // 避免「看似 release、实则 debug 证书」导致日后换钥升级冲突。
+        // 正式签名（可选）：仅环境变量 / 本地 signing/keystore.properties。
+        // 未配置时 release buildType 显式复用上方 debug 配置（同一证书），见 signing/README.md。
         create("release") {
             val propsFile = rootProject.file("signing/keystore.properties")
             val props = mutableMapOf<String, String>()
@@ -78,15 +80,17 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             val releaseSigning = signingConfigs.getByName("release")
+            val sharedDebugSigning = signingConfigs.getByName("debug")
             if (releaseSigning.storeFile != null) {
                 signingConfig = releaseSigning
             } else {
-                // 未配置正式密钥时不产出「假 release」；assembleRelease 会因缺 signingConfig 失败。
-                // 侧载验证请用 assembleDebug。配置步骤见 signing/README.md。
+                // 无正式密钥时与 assembleDebug / GitHub Releases 共用同一证书，保证可覆盖升级。
+                // 明确使用仓库 debug.keystore，不是另造的「假 production」钥。
+                signingConfig = sharedDebugSigning
                 logger.warn(
-                    "hongguo-watch: release signing not configured " +
-                        "(WATCH_RELEASE_* or signing/keystore.properties). " +
-                        "assembleRelease requires a real keystore — see signing/README.md",
+                    "hongguo-watch: no WATCH_RELEASE_* / signing/keystore.properties — " +
+                        "assembleRelease signs with signing/debug.keystore " +
+                        "(same cert as assembleDebug). See signing/README.md",
                 )
             }
             proguardFiles(

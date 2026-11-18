@@ -210,6 +210,7 @@ class MainActivity : AppCompatActivity() {
             HomeNav.SEARCH -> {
                 adapter.showResumeHint = false
                 binding.librarySegmentRow.visibility = View.GONE
+                binding.libraryCacheHook.visibility = View.GONE
                 binding.searchInput.requestFocus()
                 showSearchDiscovery()
             }
@@ -367,6 +368,7 @@ class MainActivity : AppCompatActivity() {
             if (HomeNavPolicy.showHomeNavChrome(home)) View.VISIBLE else View.GONE
         binding.brandRow.visibility = View.VISIBLE
         binding.librarySegmentRow.visibility = View.GONE
+        binding.libraryCacheHook.visibility = View.GONE
         binding.searchRow.visibility =
             if (home && HomeNavPolicy.showSearchRow(homeNav)) View.VISIBLE else View.GONE
         binding.categoryScroll.visibility =
@@ -934,11 +936,24 @@ class MainActivity : AppCompatActivity() {
         binding.categoryScroll.visibility = View.GONE
         binding.pageSubtitle.visibility = View.GONE
         binding.librarySegmentRow.visibility = View.VISIBLE
+        binding.libraryCacheHook.visibility = View.VISIBLE
+        refreshLibraryCacheHook()
         highlightLibrarySegment(librarySegment)
         binding.brandTitle.text = getString(R.string.tab_library)
         when (librarySegment) {
             LibrarySegment.HISTORY -> loadHistoryList(fromSwipe)
             LibrarySegment.FAVORITES -> loadFavoritesList(fromSwipe)
+        }
+    }
+
+    /** T-57 钩子：展示占用；点按提示完整离线列表尚未落地。 */
+    private fun refreshLibraryCacheHook() {
+        val used = com.hongguo.watch.data.cache.VideoCacheManager.formatBytes(
+            container.videoCache.usedBytes(),
+        )
+        binding.libraryCacheHook.text = getString(R.string.library_cache_hook, used)
+        binding.libraryCacheHook.setOnClickListener {
+            Toast.makeText(this, R.string.library_cache_hook_hint, Toast.LENGTH_LONG).show()
         }
     }
 

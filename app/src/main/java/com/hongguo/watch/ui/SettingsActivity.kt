@@ -25,6 +25,7 @@ import com.hongguo.watch.data.DiagUploader
 import com.hongguo.watch.data.SettingsStore
 import com.hongguo.watch.data.UpdateApkInstaller
 import com.hongguo.watch.data.UpdateChecker
+import com.hongguo.watch.data.cache.VideoCacheManager
 import com.hongguo.watch.databinding.ActivitySettingsBinding
 import com.hongguo.watch.player.DecodePath
 import com.hongguo.watch.player.PlayerDiagLog
@@ -44,6 +45,7 @@ class SettingsActivity : AppCompatActivity() {
     private var currentQuality = 480
     private var currentKernel = PlayerKernel.AUTO
     private var currentDecode = DecodePath.AUTO
+    private var currentCacheBudgetMb = 512
     private var roundSwitchReady = false
     private var updateChecking = false
     private var downloadJob: Job? = null
@@ -65,9 +67,11 @@ class SettingsActivity : AppCompatActivity() {
             currentQuality = container.settings.maxQuality.first()
             currentKernel = container.settings.playerKernel.first()
             currentDecode = container.settings.decodePath.first()
+            currentCacheBudgetMb = container.settings.videoCacheBudgetMb.first()
             refreshQualityChips()
             refreshKernelChips()
             refreshDecodeChips()
+            refreshVideoCacheUi()
             // 开关展示当前生效状态；AUTO 时跟 isRoundScreen
             binding.roundAdaptSwitch.isChecked = WatchUi.useRoundLayout(this@SettingsActivity)
             roundSwitchReady = true
@@ -94,6 +98,9 @@ class SettingsActivity : AppCompatActivity() {
         binding.decodeAuto.setOnClickListener { pickDecode(DecodePath.AUTO) }
         binding.decodeHw.setOnClickListener { pickDecode(DecodePath.HARDWARE) }
         binding.decodeSw.setOnClickListener { pickDecode(DecodePath.SOFTWARE) }
+        binding.cacheBudget256.setOnClickListener { pickCacheBudget(256) }
+        binding.cacheBudget512.setOnClickListener { pickCacheBudget(512) }
+        binding.cacheBudget1024.setOnClickListener { pickCacheBudget(1024) }
 
         binding.checkUpdateButton.setOnClickListener { checkForUpdate() }
         binding.uploadDiagButton.setOnClickListener { uploadDiagnostics() }
@@ -104,11 +111,23 @@ class SettingsActivity : AppCompatActivity() {
                 Toast.makeText(this@SettingsActivity, R.string.history_cleared, Toast.LENGTH_SHORT).show()
             }
         }
+        binding.clearVideoCacheButton.setOnClickListener {
+            lifecycleScope.launch {
+                withContext(Dispatchers.IO) { container.videoCache.clearAll() }
+                refreshVideoCacheUi()
+                Toast.makeText(
+                    this@SettingsActivity,
+                    R.string.video_cache_cleared,
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
         binding.clearCacheButton.setOnClickListener {
             imageLoader.memoryCache?.clear()
             lifecycleScope.launch {
                 @Suppress("OPT_IN_USAGE")
                 imageLoader.diskCache?.clear()
+                // 仅清应用 cacheDir（封面等）；视频缓存在 filesDir/video_cache，由上方单独清除
                 cacheDir.listFiles()?.forEach { child ->
                     if (child.name != "hongguo_watch.db" && !child.name.startsWith("hongguo_watch.db")) {
                         child.deleteRecursively()
@@ -139,6 +158,7 @@ class SettingsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
+        refreshVideoCacheUi()
     }
 
     override fun onDestroy() {
@@ -450,6 +470,27 @@ class SettingsActivity : AppCompatActivity() {
             currentDecode = path
             refreshDecodeChips()
         }
+    }
+
+    private fun pickCacheBudget(mb: Int) {
+        lifecycleScope.launch {
+            container.settings.setVideoCacheBudgetMb(mb)
+            currentCacheBudgetMb = VideoCacheManager.normalizeBudgetMb(mb)
+            container.videoCacheBudgetBytes =
+                VideoCacheManager.budgetBytesForMb(currentCacheBudgetMb)
+            refreshVideoCacheUi()
+        }
+    }
+
+    private fun refreshVideoCacheUi() {
+        val used = VideoCacheManager.formatBytes(container.videoCache.usedBytes())
+        val budget = VideoCacheManager.formatBytes(
+            VideoCacheManager.budgetBytesForMb(currentCacheBudgetMb),
+        )
+        binding.videoCacheUsage.text = getString(R.string.video_cache_usage, used, budget)
+        binding.cacheBudget256.isSelected = currentCacheBudgetMb == 256
+        binding.cacheBudget512.isSelected = currentCacheBudgetMb == 512
+        binding.cacheBudget1024.isSelected = currentCacheBudgetMb == 1024
     }
 
     private fun refreshQualityChips() {

@@ -1,6 +1,9 @@
 package com.hongguo.watch.ui
 
+import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.View
@@ -17,9 +20,13 @@ import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
 import com.hongguo.watch.data.ContentRepository
 import com.hongguo.watch.data.CoverUrls
+import com.hongguo.watch.data.cache.VideoCacheManager
+import com.hongguo.watch.data.cache.VideoCachePriority
+import com.hongguo.watch.data.cache.VideoCacheRequest
 import com.hongguo.watch.data.model.Episode
 import com.hongguo.watch.data.model.SeriesSource
 import com.hongguo.watch.databinding.ActivityDetailBinding
+import com.hongguo.watch.player.WatchDecodePolicy
 import kotlinx.coroutines.launch
 
 class DetailActivity : AppCompatActivity() {
@@ -27,7 +34,9 @@ class DetailActivity : AppCompatActivity() {
     private lateinit var adapter: EpisodeAdapter
     private lateinit var relatedAdapter: SeriesListAdapter
 
-    private val repo get() = (application as HongguoWatchApp).container.repository
+    private val container get() = (application as HongguoWatchApp).container
+    private val repo get() = container.repository
+    private val videoCache get() = container.videoCache
 
     private var seriesId: String = ""
     private var seriesTitle: String = ""
@@ -69,6 +78,7 @@ class DetailActivity : AppCompatActivity() {
         binding.backButton.setOnClickListener { finish() }
         binding.favoriteAction.setOnClickListener { toggleFavorite() }
         binding.favoriteButton.setOnClickListener { toggleFavorite() }
+        binding.cacheAction.setOnClickListener { cachePrimary() }
         binding.playNowButton.setOnClickListener { playPrimary() }
         binding.continueButton.setOnClickListener { playPrimary(resumePreferred = true) }
         binding.orderToggle.setOnClickListener {
@@ -114,7 +124,10 @@ class DetailActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
-        lifecycleScope.launch { refreshFavoriteUi() }
+        lifecycleScope.launch {
+            refreshFavoriteUi()
+            refreshCacheActionUi()
+        }
     }
 
     private fun loadDetail() {
@@ -403,6 +416,88 @@ class DetailActivity : AppCompatActivity() {
         } else {
             Toast.makeText(this, R.string.error_generic, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /** 缓存续播集（或第 1 集）；完整离线列表见 T-57。 */
+    private fun cachePrimary() {
+        val target = episodes.firstOrNull { it.id == resumeEpisodeId } ?: episodes.firstOrNull()
+        if (target == null) {
+            Toast.makeText(this, R.string.error_generic, Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (videoCache.isReady(seriesId, target.id)) {
+            binding.cacheAction.text = getString(R.string.cache_ready)
+            Toast.makeText(this, R.string.cache_already, Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (videoCache.isCaching(seriesId, target.id)) {
+            binding.cacheAction.text = getString(R.string.cache_caching)
+            Toast.makeText(this, R.string.cache_caching, Toast.LENGTH_SHORT).show()
+            return
+        }
+        lifecycleScope.launch {
+            val settings = container.settings
+            if (settings.wifiOnlyNow() && !isWifi()) {
+                Toast.makeText(this@DetailActivity, R.string.error_wifi_only, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            binding.cacheAction.text = getString(R.string.cache_caching)
+            try {
+                val userMax = settings.maxQualityNow()
+                val effectiveMax = WatchDecodePolicy.effectiveMaxQuality(this@DetailActivity, userMax)
+                val stream = repo.stream(
+                    seriesId = seriesId,
+                    episodeId = target.id,
+                    preferAvc = true,
+                    maxHeight = effectiveMax,
+                )
+                val free = videoCache.freeSpaceBytes()
+                if (free < VideoCacheManager.STORAGE_HEADROOM_BYTES) {
+                    Toast.makeText(this@DetailActivity, R.string.cache_low_storage, Toast.LENGTH_LONG).show()
+                    refreshCacheActionUi(target)
+                    return@launch
+                }
+                videoCache.enqueue(
+                    request = VideoCacheRequest(
+                        seriesId = seriesId,
+                        episodeId = target.id,
+                        seriesTitle = seriesTitle,
+                        episodeNumber = target.number,
+                    ),
+                    stream = stream,
+                    priority = VideoCachePriority.CURRENT,
+                )
+                Toast.makeText(this@DetailActivity, R.string.cache_started, Toast.LENGTH_SHORT).show()
+            } catch (err: Exception) {
+                if (err is kotlinx.coroutines.CancellationException) throw err
+                val msg = if (VideoCacheManager.isNoSpace(err)) {
+                    getString(R.string.cache_low_storage)
+                } else {
+                    getString(R.string.cache_failed, err.message ?: "")
+                }
+                Toast.makeText(this@DetailActivity, msg, Toast.LENGTH_LONG).show()
+            }
+            refreshCacheActionUi(target)
+        }
+    }
+
+    private fun refreshCacheActionUi(episode: Episode? = null) {
+        val target = episode
+            ?: episodes.firstOrNull { it.id == resumeEpisodeId }
+            ?: episodes.firstOrNull()
+            ?: return
+        binding.cacheAction.text = when {
+            videoCache.isReady(seriesId, target.id) -> getString(R.string.cache_ready)
+            videoCache.isCaching(seriesId, target.id) -> getString(R.string.cache_caching)
+            else -> getString(R.string.cache_action)
+        }
+    }
+
+    private fun isWifi(): Boolean {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
     }
 
     private fun openPlayer(episode: Episode, resume: Boolean) {

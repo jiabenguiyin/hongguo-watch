@@ -465,6 +465,88 @@
                     </LinearLayout>
                 </LinearLayout>
 
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="8dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="6dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/video_cache_label"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_body" />
+
+                        <TextView
+                            android:id="@+id/videoCacheUsage"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="@dimen/watch_meta" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/video_cache_budget"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="@dimen/watch_meta" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/cacheBudget256"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginEnd="2dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_quality_chip"
+                            android:gravity="center"
+                            android:text="256MB"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_meta" />
+
+                        <TextView
+                            android:id="@+id/cacheBudget512"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginHorizontal="2dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_quality_chip"
+                            android:gravity="center"
+                            android:text="512MB"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_meta" />
+
+                        <TextView
+                            android:id="@+id/cacheBudget1024"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginStart="2dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_quality_chip"
+                            android:gravity="center"
+                            android:text="1GB"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_meta" />
+                    </LinearLayout>
+                </LinearLayout>
+
                 <Button
                     android:id="@+id/clearHistoryButton"
                     android:layout_width="match_parent"
@@ -473,6 +555,18 @@
                     android:backgroundTint="@color/episode_normal"
                     android:minHeight="0dp"
                     android:text="@string/clear_history"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_body" />
+
+                <Button
+                    android:id="@+id/clearVideoCacheButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginHorizontal="8dp"
+                    android:layout_marginTop="6dp"
+                    android:backgroundTint="@color/episode_normal"
+                    android:minHeight="0dp"
+                    android:text="@string/clear_video_cache"
                     android:textColor="@color/text_primary"
                     android:textSize="@dimen/watch_body" />
 

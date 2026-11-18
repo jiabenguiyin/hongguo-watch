@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.hongguo.watch.data.cache.VideoCacheManager
 import com.hongguo.watch.player.DecodePath
 import com.hongguo.watch.player.PlayerKernel
 import kotlinx.coroutines.flow.Flow
@@ -23,6 +24,8 @@ class SettingsStore(private val context: Context) {
     private val roundAdaptModeKey = intPreferencesKey("round_adapt_mode")
     private val playerKernelKey = stringPreferencesKey("player_kernel")
     private val decodePathKey = stringPreferencesKey("decode_path")
+    /** 视频缓存预算 MB：256 / 512 / 1024。 */
+    private val videoCacheBudgetMbKey = intPreferencesKey("video_cache_budget_mb")
 
     val wifiOnly: Flow<Boolean> = context.dataStore.data.map { it[wifiOnlyKey] ?: false }
     /** 默认 480；可选 720 / 1080（手动高清，低配表可能发热/卡顿）。 */
@@ -44,6 +47,10 @@ class SettingsStore(private val context: Context) {
     /** 解码路径：AUTO / HARDWARE / SOFTWARE。 */
     val decodePath: Flow<DecodePath> = context.dataStore.data.map {
         DecodePath.fromStorage(it[decodePathKey])
+    }
+    /** 视频缓存磁盘预算（MB）。 */
+    val videoCacheBudgetMb: Flow<Int> = context.dataStore.data.map {
+        VideoCacheManager.normalizeBudgetMb(it[videoCacheBudgetMbKey] ?: 512)
     }
 
     suspend fun setWifiOnly(enabled: Boolean) {
@@ -75,12 +82,21 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[decodePathKey] = path.name }
     }
 
+    suspend fun setVideoCacheBudgetMb(mb: Int) {
+        context.dataStore.edit {
+            it[videoCacheBudgetMbKey] = VideoCacheManager.normalizeBudgetMb(mb)
+        }
+    }
+
     suspend fun wifiOnlyNow(): Boolean = wifiOnly.first()
     suspend fun maxQualityNow(): Int = maxQuality.first()
     suspend fun playbackSpeedNow(): Float = playbackSpeed.first()
     suspend fun roundAdaptModeNow(): Int = roundAdaptMode.first()
     suspend fun playerKernelNow(): PlayerKernel = playerKernel.first()
     suspend fun decodePathNow(): DecodePath = decodePath.first()
+    suspend fun videoCacheBudgetMbNow(): Int = videoCacheBudgetMb.first()
+    suspend fun videoCacheBudgetBytesNow(): Long =
+        VideoCacheManager.budgetBytesForMb(videoCacheBudgetMbNow())
 
     /** 供 WatchUi 缓存：AUTO→null，ON→true，OFF→false。 */
     suspend fun roundAdaptOverrideNow(): Boolean? = when (roundAdaptModeNow()) {

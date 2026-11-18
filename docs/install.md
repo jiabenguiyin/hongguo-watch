@@ -9,7 +9,7 @@
 | arm64-v8a.apk | 支持 arm64-v8a 的 Android 系统 |
 | armeabi-v7a.apk | 支持 armeabi-v7a 的 Android 系统 |
 
-只需安装一个包；以 Android 系统报告的 ABI 为准，不以 CPU 广告参数为准。使用 ADB 查询：
+只需安装一个包；以 Android 系统报告的 ABI 为准，不以 CPU 广告参数为准。发行包已按 ABI 拆分，并压缩原生库以减小下载体积；**仍包含兼容软解所需的 IJK/FFmpeg**，勿改装 universal 或裁掉软解库。使用 ADB 查询：
 
 ```sh
 adb shell getprop ro.product.cpu.abilist

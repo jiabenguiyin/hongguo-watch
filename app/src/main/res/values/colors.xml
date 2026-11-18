@@ -17,4 +17,6 @@
     <color name="rank_bronze">#C47A4A</color>
     <color name="banner_scrim_start">#00000000</color>
     <color name="banner_scrim_end">#CC000000</color>
+    <color name="rating_good">#34C759</color>
+    <color name="heat">#FF6B4A</color>
 </resources>

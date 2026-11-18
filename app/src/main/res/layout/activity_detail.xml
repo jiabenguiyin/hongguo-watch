@@ -26,67 +26,17 @@
             android:textSize="16sp" />
 
         <TextView
-            android:id="@+id/seriesTitle"
+            android:id="@+id/pageTitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginStart="6dp"
             android:layout_weight="1"
             android:ellipsize="end"
-            android:maxLines="2"
+            android:maxLines="1"
+            android:text="@string/detail_title"
             android:textColor="@color/text_primary"
             android:textSize="@dimen/watch_title"
             android:textStyle="bold" />
-
-        <ImageButton
-            android:id="@+id/favoriteButton"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:background="@drawable/bg_control_button"
-            android:contentDescription="@string/cd_favorite"
-            android:padding="10dp"
-            android:scaleType="centerInside"
-            android:src="@drawable/ic_favorite_border" />
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/seriesIntro"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:ellipsize="end"
-        android:maxLines="2"
-        android:textColor="@color/text_secondary"
-        android:textSize="@dimen/watch_meta" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <TextView
-            android:id="@+id/episodesLabel"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/episodes"
-            android:textColor="@color/text_secondary"
-            android:textSize="@dimen/watch_meta" />
-
-        <TextView
-            android:id="@+id/continueButton"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:background="@drawable/bg_quality_chip"
-            android:gravity="center"
-            android:minWidth="72dp"
-            android:paddingHorizontal="12dp"
-            android:text="@string/continue_watch"
-            android:textColor="@color/text_primary"
-            android:textSize="@dimen/watch_body"
-            android:textStyle="bold"
-            android:visibility="gone" />
     </LinearLayout>
 
     <androidx.core.widget.NestedScrollView
@@ -102,16 +52,178 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="top"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:id="@+id/cover"
+                    android:layout_width="72dp"
+                    android:layout_height="96dp"
+                    android:background="@drawable/bg_cover"
+                    android:contentDescription="@null"
+                    android:scaleType="centerCrop" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/seriesTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:maxLines="2"
+                        android:textColor="@color/text_primary"
+                        android:textSize="@dimen/watch_title"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:id="@+id/tagRow"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal" />
+
+                    <TextView
+                        android:id="@+id/episodesMeta"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="@dimen/watch_meta" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/ratingText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/rating_good"
+                            android:textSize="@dimen/watch_meta"
+                            android:textStyle="bold"
+                            android:visibility="gone" />
+
+                        <TextView
+                            android:id="@+id/heatText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:textColor="@color/heat"
+                            android:textSize="@dimen/watch_meta"
+                            android:visibility="gone" />
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/seriesIntro"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:ellipsize="end"
+                android:maxLines="3"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/watch_meta" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/playNowButton"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_play_now"
+                    android:gravity="center"
+                    android:text="@string/play_now"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_body"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/favoriteAction"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/bg_favorite_action"
+                    android:gravity="center"
+                    android:minWidth="72dp"
+                    android:paddingHorizontal="12dp"
+                    android:text="@string/favorite"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_body" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/episodesLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/episodes"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_body"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/orderToggle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:background="@drawable/bg_control_button"
+                    android:gravity="center"
+                    android:paddingHorizontal="10dp"
+                    android:text="@string/episode_order_asc"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/watch_meta" />
+
+                <TextView
+                    android:id="@+id/continueButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_quality_chip"
+                    android:gravity="center"
+                    android:minWidth="56dp"
+                    android:paddingHorizontal="10dp"
+                    android:text="@string/continue_watch"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_meta"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+            </LinearLayout>
+
             <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:minHeight="120dp">
+                android:layout_marginTop="6dp"
+                android:minHeight="48dp">
 
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/episodeGrid"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:nestedScrollingEnabled="false"
                     android:overScrollMode="never"
                     android:paddingBottom="4dp" />
 
@@ -155,4 +267,12 @@
                 android:visibility="gone" />
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
+
+    <!-- 兼容旧绑定：隐藏收藏图标按钮 -->
+    <ImageButton
+        android:id="@+id/favoriteButton"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        android:contentDescription="@string/cd_favorite" />
 </LinearLayout>

@@ -21,7 +21,7 @@
             android:layout_width="18dp"
             android:layout_height="18dp"
             android:contentDescription="@null"
-            android:src="@drawable/ic_brand_mark" />
+            android:src="@mipmap/ic_launcher" />
 
         <TextView
             android:id="@+id/brandTitle"
@@ -35,6 +35,40 @@
             android:textColor="@color/text_primary"
             android:textSize="@dimen/watch_title"
             android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/librarySegmentRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/bg_panel"
+        android:orientation="horizontal"
+        android:padding="2dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/segmentFavorites"
+            android:layout_width="0dp"
+            android:layout_height="32dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_top_tab_active"
+            android:gravity="center"
+            android:text="@string/segment_favorites"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/segmentHistory"
+            android:layout_width="0dp"
+            android:layout_height="32dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_top_tab_idle"
+            android:gravity="center"
+            android:text="@string/segment_history"
+            android:textColor="@color/text_secondary"
+            android:textSize="@dimen/watch_meta" />
     </LinearLayout>
 
     <HorizontalScrollView

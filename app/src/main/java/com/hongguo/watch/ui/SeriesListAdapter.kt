@@ -4,6 +4,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import android.widget.LinearLayout
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
@@ -12,6 +13,8 @@ import com.hongguo.watch.R
 import com.hongguo.watch.data.CoverUrls
 import com.hongguo.watch.data.model.Series
 import com.hongguo.watch.databinding.ItemBannerBinding
+import com.hongguo.watch.databinding.ItemDiscoveryStripBinding
+import com.hongguo.watch.databinding.ItemHotSearchBinding
 import com.hongguo.watch.databinding.ItemSectionHeaderBinding
 import com.hongguo.watch.databinding.ItemSeriesBinding
 
@@ -26,6 +29,8 @@ sealed class HomeRow {
         val title: String,
         val subtitle: String = "",
         val showMore: Boolean = false,
+        val actionLabel: String = "",
+        val onAction: (() -> Unit)? = null,
     ) : HomeRow()
 
     data class Item(
@@ -34,11 +39,28 @@ sealed class HomeRow {
         val rank: Int? = null,
         /** 非 null 时显示行内 ♡；true=已收藏。 */
         val favorited: Boolean? = null,
+        /** 0–100；非 null 时显示行内细进度条。 */
+        val progressPercent: Int? = null,
+        val watchedEpisode: Int? = null,
+        val totalEpisodes: Int? = null,
+    ) : HomeRow()
+
+    data class SearchHotWord(
+        val rank: Int,
+        val title: String,
+        val series: Series,
+    ) : HomeRow()
+
+    data class SearchDiscoveryStrip(
+        val items: List<Series>,
     ) : HomeRow()
 }
 
 class SeriesListAdapter(
     private val onFavoriteClick: ((Series, Boolean) -> Unit)? = null,
+    private val onHotWordClick: ((Series) -> Unit)? = null,
+    private val onDiscoveryClick: ((Series) -> Unit)? = null,
+    private val onHeaderAction: (() -> Unit)? = null,
     private val onClick: (Series) -> Unit,
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     private val rows = mutableListOf<HomeRow>()
@@ -81,6 +103,8 @@ class SeriesListAdapter(
         is HomeRow.Banner -> 0
         is HomeRow.Header -> 1
         is HomeRow.Item -> 2
+        is HomeRow.SearchHotWord -> 3
+        is HomeRow.SearchDiscoveryStrip -> 4
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
@@ -88,6 +112,8 @@ class SeriesListAdapter(
         return when (viewType) {
             0 -> BannerHolder(ItemBannerBinding.inflate(inflater, parent, false))
             1 -> HeaderHolder(ItemSectionHeaderBinding.inflate(inflater, parent, false))
+            3 -> HotWordHolder(ItemHotSearchBinding.inflate(inflater, parent, false))
+            4 -> DiscoveryStripHolder(ItemDiscoveryStripBinding.inflate(inflater, parent, false))
             else -> ItemHolder(ItemSeriesBinding.inflate(inflater, parent, false))
         }
     }
@@ -99,6 +125,8 @@ class SeriesListAdapter(
             is HomeRow.Banner -> (holder as BannerHolder).bind(row)
             is HomeRow.Header -> (holder as HeaderHolder).bind(row)
             is HomeRow.Item -> (holder as ItemHolder).bind(row)
+            is HomeRow.SearchHotWord -> (holder as HotWordHolder).bind(row)
+            is HomeRow.SearchDiscoveryStrip -> (holder as DiscoveryStripHolder).bind(row)
         }
     }
 
@@ -122,7 +150,7 @@ class SeriesListAdapter(
             binding.root.setOnClickListener { onClick(series) }
         }
 
-        private fun renderDots(row: android.widget.LinearLayout, index: Int, count: Int) {
+        private fun renderDots(row: LinearLayout, index: Int, count: Int) {
             row.removeAllViews()
             val pages = count.coerceAtLeast(1).coerceAtMost(5)
             val selected = index.coerceIn(0, pages - 1)
@@ -132,7 +160,7 @@ class SeriesListAdapter(
                 val dot = ImageView(row.context).apply {
                     setImageResource(R.drawable.bg_banner_dot)
                     isSelected = i == selected
-                    layoutParams = android.widget.LinearLayout.LayoutParams(size, size).apply {
+                    layoutParams = LinearLayout.LayoutParams(size, size).apply {
                         if (i > 0) marginStart = gap
                     }
                 }
@@ -141,7 +169,7 @@ class SeriesListAdapter(
         }
     }
 
-    private class HeaderHolder(
+    private inner class HeaderHolder(
         private val binding: ItemSectionHeaderBinding,
     ) : RecyclerView.ViewHolder(binding.root) {
         fun bind(row: HomeRow.Header) {
@@ -153,7 +181,67 @@ class SeriesListAdapter(
                 binding.sectionSubtitle.visibility = View.VISIBLE
                 binding.sectionSubtitle.text = row.subtitle
             }
-            binding.sectionMore.visibility = if (row.showMore) View.VISIBLE else View.GONE
+            val action = row.actionLabel.ifBlank {
+                if (row.showMore) binding.root.context.getString(R.string.section_more) else ""
+            }
+            if (action.isNotBlank()) {
+                binding.sectionMore.visibility = View.VISIBLE
+                binding.sectionMore.text = action
+                binding.sectionMore.setOnClickListener {
+                    row.onAction?.invoke() ?: onHeaderAction?.invoke()
+                }
+            } else {
+                binding.sectionMore.visibility = View.GONE
+                binding.sectionMore.setOnClickListener(null)
+            }
+        }
+    }
+
+    private inner class HotWordHolder(
+        private val binding: ItemHotSearchBinding,
+    ) : RecyclerView.ViewHolder(binding.root) {
+        fun bind(row: HomeRow.SearchHotWord) {
+            binding.hotRank.text = row.rank.toString()
+            binding.hotTitle.text = row.title
+            val colorRes = when (row.rank) {
+                1 -> R.color.rank_gold
+                2 -> R.color.rank_silver
+                3 -> R.color.rank_bronze
+                else -> R.color.text_secondary
+            }
+            binding.hotRank.setTextColor(
+                ContextCompat.getColor(binding.root.context, colorRes),
+            )
+            binding.root.setOnClickListener {
+                (onHotWordClick ?: onClick).invoke(row.series)
+            }
+        }
+    }
+
+    private inner class DiscoveryStripHolder(
+        private val binding: ItemDiscoveryStripBinding,
+    ) : RecyclerView.ViewHolder(binding.root) {
+        fun bind(row: HomeRow.SearchDiscoveryStrip) {
+            val container = binding.discoveryRow
+            container.removeAllViews()
+            val inflater = LayoutInflater.from(binding.root.context)
+            val radius = binding.root.resources.displayMetrics.density * 6f
+            row.items.forEach { series ->
+                val poster = inflater.inflate(R.layout.item_discovery_poster, container, false)
+                val image = poster.findViewById<ImageView>(R.id.poster)
+                val coverUrl = CoverUrls.normalize(series.cover).ifBlank { series.cover }
+                image.load(coverUrl.ifBlank { null }) {
+                    size(216, 288)
+                    crossfade(false)
+                    transformations(RoundedCornersTransformation(radius))
+                    placeholder(R.drawable.bg_cover)
+                    error(R.drawable.bg_cover)
+                }
+                poster.setOnClickListener {
+                    (onDiscoveryClick ?: onClick).invoke(series)
+                }
+                container.addView(poster)
+            }
         }
     }
 
@@ -192,7 +280,9 @@ class SeriesListAdapter(
             val heat = series.tags.firstOrNull(::isHeatTag)
             val genre = series.tags.firstOrNull { !isHeatTag(it) }
             val ranked = rankValue != null
+            val progressMeta = progressMetaLine(binding.root.context, row)
             val meta = when {
+                progressMeta != null -> progressMeta
                 showResumeHint && series.description.isNotBlank() -> series.description
                 ranked && series.episodeCount > 0 && !heat.isNullOrBlank() ->
                     binding.root.context.getString(R.string.rank_meta, series.episodeCount, heat)
@@ -203,6 +293,14 @@ class SeriesListAdapter(
             }
             binding.meta.text = meta
             binding.meta.visibility = if (meta.isBlank()) View.GONE else View.VISIBLE
+
+            val percent = row.progressPercent
+            if (percent != null) {
+                binding.watchProgress.visibility = View.VISIBLE
+                binding.watchProgress.progress = percent.coerceIn(0, 100)
+            } else {
+                binding.watchProgress.visibility = View.GONE
+            }
 
             val radius = binding.root.resources.displayMetrics.density * 6f
             val coverUrl = CoverUrls.normalize(series.cover).ifBlank { series.cover }
@@ -228,7 +326,6 @@ class SeriesListAdapter(
                 binding.favoriteButton.setOnClickListener(null)
             }
 
-            // 推荐/分类：圆形播放；历史续播：文案「续」；榜单：靠整行点击
             when {
                 ranked -> {
                     binding.playButton.visibility = View.GONE
@@ -269,6 +366,21 @@ class SeriesListAdapter(
                 genres.isNotEmpty() -> genres.joinToString(" · ")
                 series.description.isNotBlank() -> series.description
                 else -> ""
+            }
+        }
+
+        fun progressMetaLine(context: android.content.Context, row: HomeRow.Item): String? {
+            val watched = row.watchedEpisode
+            val total = row.totalEpisodes
+            val percent = row.progressPercent
+            return when {
+                watched != null && total != null && total > 0 && percent != null ->
+                    context.getString(R.string.progress_watched, watched, total, percent)
+                watched != null && percent != null ->
+                    context.getString(R.string.progress_meta, watched, percent)
+                watched != null ->
+                    context.getString(R.string.progress_watched_ep, watched)
+                else -> null
             }
         }
     }

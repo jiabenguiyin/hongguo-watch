@@ -15,17 +15,31 @@ enum class SeriesSource {
     OFFICIAL,
 }
 
-/** 首页分类 Tab：推荐流 / 落地页筛选（对照 hongguoTV DiscoverySelection）。 */
+/**
+ * 首页分类 Tab：推荐流 / App 热播榜 / 落地页筛选。
+ * 榜单对照 jackotom/hongguo-drama `hongguo-app-catalog.js` RANKS。
+ */
 data class HomeCategory(
     val id: String,
     val label: String,
     val filters: Map<String, String> = emptyMap(),
+    /** 非空时为 App 热播榜 slug（如 hot-drama）。 */
+    val rankKey: String? = null,
 ) {
     val isRecommend: Boolean get() = id == ID_RECOMMEND
+    val isRank: Boolean get() = !rankKey.isNullOrBlank()
 
     companion object {
         const val ID_RECOMMEND = "recommend"
         fun recommend(): HomeCategory = HomeCategory(ID_RECOMMEND, "推荐")
+
+        /** 手表首屏短标签；对应 App 四类热播榜。无独立「飙升」App 榜。 */
+        fun ranks(): List<HomeCategory> = listOf(
+            HomeCategory(id = "rank:hot-drama", label = "热榜", rankKey = "hot-drama"),
+            HomeCategory(id = "rank:hot-real-drama", label = "真人榜", rankKey = "hot-real-drama"),
+            HomeCategory(id = "rank:hot-comic-drama", label = "漫剧榜", rankKey = "hot-comic-drama"),
+            HomeCategory(id = "rank:hot-ai-drama", label = "AI榜", rankKey = "hot-ai-drama"),
+        )
     }
 }
 

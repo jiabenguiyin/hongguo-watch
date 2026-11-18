@@ -4,18 +4,35 @@
     android:layout_height="wrap_content"
     android:background="@drawable/bg_row"
     android:gravity="center_vertical"
-    android:minHeight="60dp"
+    android:minHeight="56dp"
     android:orientation="horizontal"
-    android:paddingHorizontal="4dp"
-    android:paddingVertical="5dp">
+    android:paddingHorizontal="2dp"
+    android:paddingVertical="4dp">
 
-    <ImageView
-        android:id="@+id/cover"
-        android:layout_width="@dimen/watch_cover_w"
-        android:layout_height="@dimen/watch_cover_h"
-        android:background="@drawable/bg_cover"
-        android:contentDescription="@null"
-        android:scaleType="centerCrop" />
+    <TextView
+        android:id="@+id/rankBadge"
+        android:layout_width="@dimen/watch_rank_w"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:includeFontPadding="false"
+        android:textColor="@color/text_secondary"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <FrameLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="2dp">
+
+        <ImageView
+            android:id="@+id/cover"
+            android:layout_width="@dimen/watch_cover_w"
+            android:layout_height="@dimen/watch_cover_h"
+            android:background="@drawable/bg_cover"
+            android:contentDescription="@null"
+            android:scaleType="centerCrop" />
+    </FrameLayout>
 
     <LinearLayout
         android:layout_width="0dp"

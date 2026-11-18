@@ -26,7 +26,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: SeriesListAdapter
     private var mode = Mode.HOME
     private var lastQuery: String = ""
-    private var categories: List<HomeCategory> = listOf(HomeCategory.recommend())
+    private var categories: List<HomeCategory> =
+        listOf(HomeCategory.recommend()) + HomeCategory.ranks()
+    private var categoriesReady: Boolean = false
     private var selectedCategoryId: String = HomeCategory.ID_RECOMMEND
     private var categoryChipViews: List<TextView> = emptyList()
 
@@ -38,6 +40,16 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         WatchUi.applySafePadding(binding.mainRoot, extraBottom = 0)
+        // 圆屏列表底部多留一点，避免末行贴底栏/圆弧
+        val listBottom = if (WatchUi.useRoundLayout(this)) WatchUi.dp(this, 14f) else WatchUi.dp(this, 6f)
+        binding.seriesList.setPadding(
+            binding.seriesList.paddingLeft,
+            binding.seriesList.paddingTop,
+            binding.seriesList.paddingRight,
+            listBottom,
+        )
+        val emptyPad = if (WatchUi.useRoundLayout(this)) WatchUi.dp(this, 28f) else WatchUi.dp(this, 20f)
+        binding.emptyView.setPadding(emptyPad, binding.emptyView.paddingTop, emptyPad, binding.emptyView.paddingBottom)
 
         adapter = SeriesListAdapter { openSeries(it) }
         binding.seriesList.layoutManager = LinearLayoutManager(this)
@@ -94,8 +106,9 @@ class MainActivity : AppCompatActivity() {
         binding.emptyView.visibility = View.GONE
         lifecycleScope.launch {
             try {
-                if (forceReload || categories.size <= 1) {
+                if (forceReload || !categoriesReady) {
                     categories = repo.homeCategories()
+                    categoriesReady = true
                     if (categories.none { it.id == selectedCategoryId }) {
                         selectedCategoryId = HomeCategory.ID_RECOMMEND
                     }
@@ -122,18 +135,30 @@ class MainActivity : AppCompatActivity() {
         val cat = categories.firstOrNull { it.id == selectedCategoryId }
             ?: HomeCategory.recommend()
         highlightCategoryChips()
-        val page = if (cat.isRecommend) {
-            repo.recommend(page = 1)
-        } else {
-            repo.category(filters = cat.filters, withSelector = false)
+        scrollSelectedChipIntoView()
+        val page = when {
+            cat.isRecommend -> repo.recommend(page = 1)
+            cat.isRank -> repo.rank(rankKey = cat.rankKey.orEmpty(), page = 1)
+            else -> repo.category(filters = cat.filters, withSelector = false)
         }
         val rows = mutableListOf<HomeRow>()
-        rows += HomeRow.Header(cat.label)
-        rows += page.items.map { HomeRow.Item(it) }
+        rows += HomeRow.Header(
+            title = cat.label,
+            subtitle = if (cat.isRank) getString(R.string.rank_header_hint) else "",
+        )
+        rows += if (cat.isRank) {
+            page.items.mapIndexed { index, series -> HomeRow.Item(series, rank = index + 1) }
+        } else {
+            page.items.map { HomeRow.Item(it) }
+        }
         adapter.submit(rows)
-        binding.emptyView.visibility = if (page.items.isEmpty()) View.VISIBLE else View.GONE
-        binding.emptyView.text =
-            if (page.items.isEmpty()) getString(R.string.empty_category) else ""
+        val empty = page.items.isEmpty()
+        binding.emptyView.visibility = if (empty) View.VISIBLE else View.GONE
+        binding.emptyView.text = when {
+            !empty -> ""
+            cat.isRank -> getString(R.string.empty_rank)
+            else -> getString(R.string.empty_category)
+        }
     }
 
     private fun selectCategory(category: HomeCategory) {
@@ -142,15 +167,26 @@ class MainActivity : AppCompatActivity() {
         lastQuery = ""
         binding.searchInput.setText("")
         highlightCategoryChips()
+        scrollSelectedChipIntoView()
         binding.loading.visibility = View.VISIBLE
         binding.emptyView.visibility = View.GONE
         lifecycleScope.launch {
             try {
                 loadSelectedCategory()
             } catch (e: Exception) {
-                adapter.submit(listOf(HomeRow.Header(category.label)))
+                adapter.submit(
+                    listOf(
+                        HomeRow.Header(
+                            title = category.label,
+                            subtitle = if (category.isRank) getString(R.string.rank_header_hint) else "",
+                        ),
+                    ),
+                )
                 binding.emptyView.visibility = View.VISIBLE
-                binding.emptyView.text = e.message ?: getString(R.string.error_network)
+                binding.emptyView.text = when {
+                    category.isRank -> e.message ?: getString(R.string.empty_rank)
+                    else -> e.message ?: getString(R.string.error_network)
+                }
             } finally {
                 binding.loading.visibility = View.GONE
                 binding.swipeRefresh.isRefreshing = false
@@ -160,17 +196,25 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderCategoryChips(items: List<HomeCategory>) {
         binding.categoryRow.removeAllViews()
-        val padH = dp(10f)
-        val padV = dp(6f)
-        val gap = dp(4f)
+        val compact = WatchUi.isCompactWatch(this)
+        val round = WatchUi.useRoundLayout(this)
+        // 圆屏分类条两端留白，避免首尾芯片贴圆弧被裁
+        val endPad = if (round) WatchUi.dp(this, 10f) else WatchUi.dp(this, 2f)
+        binding.categoryScroll.setPadding(endPad, 0, endPad, 0)
+        val padH = if (compact) WatchUi.dp(this, 7f) else resources.getDimensionPixelSize(R.dimen.watch_chip_pad_h)
+        val padV = if (compact) WatchUi.dp(this, 4f) else resources.getDimensionPixelSize(R.dimen.watch_chip_pad_v)
+        val gap = WatchUi.dp(this, if (compact) 3f else 4f)
+        val textSp = if (compact) 10f else 11f
         categoryChipViews = items.map { cat ->
             TextView(this).apply {
                 text = cat.label
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, textSp)
                 setPadding(padH, padV, padH, padV)
                 setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
                 background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_quality_chip)
                 isSelected = cat.id == selectedCategoryId
+                // 榜单芯片略加强视觉区分：短标签本身已够；选中态靠背景
+                minHeight = WatchUi.dp(this@MainActivity, 28f)
                 setOnClickListener { selectCategory(cat) }
                 val lp = android.widget.LinearLayout.LayoutParams(
                     android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -180,12 +224,30 @@ class MainActivity : AppCompatActivity() {
                 binding.categoryRow.addView(this, lp)
             }
         }
+        binding.categoryScroll.post { scrollSelectedChipIntoView() }
     }
 
     private fun highlightCategoryChips() {
         categoryChipViews.forEachIndexed { index, view ->
             val cat = categories.getOrNull(index) ?: return@forEachIndexed
             view.isSelected = cat.id == selectedCategoryId
+        }
+    }
+
+    private fun scrollSelectedChipIntoView() {
+        val index = categories.indexOfFirst { it.id == selectedCategoryId }
+        if (index < 0) return
+        val child = binding.categoryRow.getChildAt(index) ?: return
+        binding.categoryScroll.post {
+            val scroll = binding.categoryScroll
+            val left = child.left - scroll.paddingLeft
+            val right = child.right + scroll.paddingRight
+            val visibleLeft = scroll.scrollX
+            val visibleRight = visibleLeft + scroll.width
+            when {
+                left < visibleLeft -> scroll.smoothScrollTo(left, 0)
+                right > visibleRight -> scroll.smoothScrollTo(right - scroll.width, 0)
+            }
         }
     }
 
@@ -371,9 +433,6 @@ class MainActivity : AppCompatActivity() {
         imm.hideSoftInputFromWindow(binding.searchInput.windowToken, 0)
         binding.searchInput.clearFocus()
     }
-
-    private fun dp(value: Float): Int =
-        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, resources.displayMetrics).toInt()
 
     private enum class Mode { HOME, HISTORY, FAVORITES }
 }

@@ -46,11 +46,12 @@
 |------|------|
 | App 族搜索 `reading/bookapi/search/tab/v` + 开源 Signer | **默认** |
 | App 书城推荐 `reading/bookapi/bookmall/tab/v1/`（`tab_type=16`） | **默认** |
+| App 热播榜 `reading/bookapi/bookmall/cell/change/v`（综合/真人/漫剧/AI；对照 drama `hongguo-app-catalog`） | **默认** |
 | App 分类落地页 `reading/distribution/category/landpage/v/`（类型/题材 selector） | **默认** |
 | App 分集 `novel/player/multi_video_detail/preload/v1` | **默认** |
 | App 播放模型 `novel/player/multi_video_model/player/v1`（对照 hongguoTV `MobilePlayback`） | **默认** |
 | App 相关作品 `reading/bookapi/plan/v:version/`（`detail_page_more_related`） | **默认** |
-| 书城 cell 无限续刷 / 官网榜单 | **未接**（手表首屏分页边界） |
+| 书城 cell 无限续刷 / 榜单续页 / 官网榜单 HTML | **未接**（手表首屏分页边界；片源仅 App 族） |
 | 本地 Node 桥 / 官网源入口 | **不**使用 |
 
 上游归因见 [`third_party/hongguoTV-NOTICE.md`](third_party/hongguoTV-NOTICE.md)、[`third_party/SIGNING_V5.md`](third_party/SIGNING_V5.md)。

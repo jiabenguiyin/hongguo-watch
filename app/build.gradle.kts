@@ -12,14 +12,21 @@ android {
         applicationId = "com.hongguo.watch"
         minSdk = 24
         targetSdk = 34
-        versionCode = 14
-        versionName = "0.4.8"
+        versionCode = 16
+        versionName = "0.4.10"
         resourceConfigurations += listOf("zh", "en")
         // 可选诊断上传端点（构建时注入）；空则走公开粘贴服务。切勿把密钥写进仓库。
         val diagUrl = (System.getenv("HG_DIAG_UPLOAD_URL") ?: "")
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
         buildConfigField("String", "DIAG_UPLOAD_URL", "\"$diagUrl\"")
+        // APK 下载镜像基址（逗号分隔）。默认社区前缀代理；可用 HG_APK_MIRROR_BASES 覆盖/清空。
+        // 条目约定见 UpdateChecker.parseMirrorBases；勿写入密钥。
+        fun escapeBuildConfig(raw: String): String =
+            raw.replace("\\", "\\\\").replace("\"", "\\\"")
+        val defaultMirrors = "https://ghproxy.net/,https://ghfast.top/"
+        val mirrorBases = System.getenv("HG_APK_MIRROR_BASES") ?: defaultMirrors
+        buildConfigField("String", "APK_MIRROR_BASES", "\"${escapeBuildConfig(mirrorBases)}\"")
     }
 
     signingConfigs {

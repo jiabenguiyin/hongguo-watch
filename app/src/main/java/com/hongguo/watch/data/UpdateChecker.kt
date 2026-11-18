@@ -9,6 +9,7 @@ import java.util.concurrent.TimeUnit
 /**
  * 从 GitHub Releases 拉取最新版并与本地 versionName / versionCode 比较。
  * 按设备 ABI 优先挑选 APK 资源，供本地下载安装。
+ * 下载时优先尝试可配置镜像，再回落到 GitHub 原始链接。
  */
 object UpdateChecker {
     private const val LATEST_API =
@@ -115,6 +116,78 @@ object UpdateChecker {
             }
         }
         return abiMatch ?: universal ?: assets.first()
+    }
+
+    /**
+     * 解析 BuildConfig / 自定义镜像列表。
+     * - `https://ghproxy.net/`：前缀代理，拼 `base + 原始 GitHub URL`
+     * - `file:https://cdn.example.com/apk/`：按文件名，拼 `base + apkName`
+     * - 含 `{url}` / `{file}`：占位符替换
+     */
+    fun parseMirrorBases(raw: String = BuildConfig.APK_MIRROR_BASES): List<String> {
+        if (raw.isBlank()) return emptyList()
+        return raw.split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+    }
+
+    /**
+     * 生成下载候选：镜像优先，最后 GitHub 原始链接。去重保序。
+     */
+    fun candidateDownloadUrls(
+        githubApkUrl: String,
+        apkName: String? = null,
+        mirrorBases: List<String> = parseMirrorBases(),
+    ): List<String> {
+        val original = githubApkUrl.trim()
+        if (original.isBlank()) return emptyList()
+        val fileName = apkName?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+            ?: original.substringAfterLast('/').substringBefore('?')
+        val out = ArrayList<String>(mirrorBases.size + 1)
+        for (base in mirrorBases) {
+            val mirrored = rewriteViaMirror(base, original, fileName) ?: continue
+            if (mirrored.isNotBlank() && mirrored !in out) out.add(mirrored)
+        }
+        if (original !in out) out.add(original)
+        return out
+    }
+
+    /**
+     * 将单个镜像基址与 GitHub Release 资源 URL / 文件名组合。
+     * 返回 null 表示该基址无效或无法改写。
+     */
+    fun rewriteViaMirror(mirrorBase: String, githubUrl: String, apkName: String): String? {
+        val base = mirrorBase.trim()
+        if (base.isEmpty() || githubUrl.isBlank()) return null
+        when {
+            base.contains("{url}") -> return base.replace("{url}", githubUrl)
+            base.contains("{file}") -> {
+                if (apkName.isBlank()) return null
+                return base.replace("{file}", apkName)
+            }
+        }
+        val fileMode = base.startsWith("file:", ignoreCase = true)
+        val bare = if (fileMode) base.substring(5).trim() else base
+        if (bare.isBlank()) return null
+        if (fileMode) {
+            if (apkName.isBlank()) return null
+            return joinBaseAndPath(bare, apkName)
+        }
+        // 默认：前缀代理（社区 ghproxy 系）
+        return joinBaseAndPath(bare, githubUrl)
+    }
+
+    private fun joinBaseAndPath(base: String, pathOrUrl: String): String {
+        val trimmedBase = base.trimEnd('/')
+        val trimmedPath = pathOrUrl.trimStart('/')
+        // 前缀代理需要保留完整 https://github.com/...，不能剥掉协议
+        return if (pathOrUrl.startsWith("https://", ignoreCase = true) ||
+            pathOrUrl.startsWith("http://", ignoreCase = true)
+        ) {
+            "$trimmedBase/$pathOrUrl"
+        } else {
+            "$trimmedBase/$trimmedPath"
+        }
     }
 
     /** 去掉前导 v，保留主版本号段。 */

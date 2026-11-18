@@ -4,6 +4,15 @@
 
 从 [GitHub Releases 最新版](https://github.com/jiabenguiyin/hongguo-watch/releases/latest) 下载 APK。网页中的 Source code 压缩包不是安装包。
 
+国内网络访问 GitHub Release 资源常需加速。可把 Assets 中的原始下载链接加前缀后用浏览器下载，例如：
+
+```text
+https://ghproxy.net/https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/hongguo-watch-0.4.10-arm64-v8a.apk
+https://ghfast.top/https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/hongguo-watch-0.4.10-arm64-v8a.apk
+```
+
+将 `v0.4.10` 与文件名换成发布页实际版本。社区镜像可能变更或限速；失败时换前缀或直连 GitHub。应用内「检查更新」会优先尝试构建时配置的镜像，再回落 GitHub。自建同步与配置说明见 [APK 下载镜像](apk-download-mirrors.md)。
+
 | APK 后缀 | 适用系统 |
 | --- | --- |
 | arm64-v8a.apk | 支持 arm64-v8a 的 Android 系统 |
@@ -26,6 +35,7 @@ adb install -r <APK文件路径>
 
 | 现象 | 建议 |
 | --- | --- |
+| 打不开 / 下不动 GitHub APK | 使用上方镜像前缀，或应用内检查更新（会自动试镜像）；镜像失效时换前缀或开代理 |
 | 下载后无法安装 | 检查 Android 7.0+、APK 是否完整、系统 ABI 与安装权限 |
 | 提示签名不一致 | 核实原包来源和签名；保留旧数据，确认风险后再决定是否卸载 |
 | 有声音但没有画面 | 设置中选择兼容软解与软件解码，先试默认 480p，再运行本地解码自检 |

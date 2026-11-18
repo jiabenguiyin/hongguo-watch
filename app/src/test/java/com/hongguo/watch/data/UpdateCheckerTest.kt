@@ -65,6 +65,94 @@ class UpdateCheckerTest {
         )
     }
 
+    @Test
+    fun parseMirrorBasesSplitsAndTrims() {
+        assertEquals(
+            listOf("https://ghproxy.net/", "https://ghfast.top/"),
+            UpdateChecker.parseMirrorBases("https://ghproxy.net/, https://ghfast.top/"),
+        )
+        assertTrue(UpdateChecker.parseMirrorBases("").isEmpty())
+        assertTrue(UpdateChecker.parseMirrorBases("  , , ").isEmpty())
+    }
+
+    @Test
+    fun rewritePrefixMirrorKeepsFullGithubUrl() {
+        val github =
+            "https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/hongguo-watch-0.4.10-arm64-v8a.apk"
+        assertEquals(
+            "https://ghproxy.net/https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/hongguo-watch-0.4.10-arm64-v8a.apk",
+            UpdateChecker.rewriteViaMirror("https://ghproxy.net/", github, "hongguo-watch-0.4.10-arm64-v8a.apk"),
+        )
+    }
+
+    @Test
+    fun rewriteFileMirrorUsesApkName() {
+        val github =
+            "https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/hongguo-watch-0.4.10-arm64-v8a.apk"
+        assertEquals(
+            "https://cdn.example.com/apk/hongguo-watch-0.4.10-arm64-v8a.apk",
+            UpdateChecker.rewriteViaMirror(
+                "file:https://cdn.example.com/apk/",
+                github,
+                "hongguo-watch-0.4.10-arm64-v8a.apk",
+            ),
+        )
+    }
+
+    @Test
+    fun rewritePlaceholders() {
+        val github =
+            "https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/a.apk"
+        assertEquals(
+            "https://proxy.example/p/https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/a.apk",
+            UpdateChecker.rewriteViaMirror(
+                "https://proxy.example/p/{url}",
+                github,
+                "a.apk",
+            ),
+        )
+        assertEquals(
+            "https://cdn.example.com/hongguo/a.apk",
+            UpdateChecker.rewriteViaMirror(
+                "https://cdn.example.com/hongguo/{file}",
+                github,
+                "a.apk",
+            ),
+        )
+    }
+
+    @Test
+    fun candidateUrlsPreferMirrorsThenGithub() {
+        val github =
+            "https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/hongguo-watch-0.4.10-arm64-v8a.apk"
+        val urls = UpdateChecker.candidateDownloadUrls(
+            githubApkUrl = github,
+            apkName = "hongguo-watch-0.4.10-arm64-v8a.apk",
+            mirrorBases = listOf(
+                "https://ghproxy.net/",
+                "file:https://cdn.example.com/apk/",
+            ),
+        )
+        assertEquals(
+            listOf(
+                "https://ghproxy.net/https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/hongguo-watch-0.4.10-arm64-v8a.apk",
+                "https://cdn.example.com/apk/hongguo-watch-0.4.10-arm64-v8a.apk",
+                github,
+            ),
+            urls,
+        )
+    }
+
+    @Test
+    fun candidateUrlsWithoutMirrorsOnlyGithub() {
+        val github =
+            "https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/x.apk"
+        assertEquals(
+            listOf(github),
+            UpdateChecker.candidateDownloadUrls(github, "x.apk", mirrorBases = emptyList()),
+        )
+    }
+
     private fun apk(name: String, url: String, size: Long): UpdateChecker.ApkAsset {
         return UpdateChecker.ApkAsset(name = name, url = url, size = size)
     }

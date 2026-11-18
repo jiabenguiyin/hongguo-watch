@@ -114,7 +114,7 @@
     <string name="update_downloading_title">正在下载</string>
     <string name="update_downloading_body">已下载 %1$d%%</string>
     <string name="update_download_done">下载完成，可安装</string>
-    <string name="update_download_failed">下载失败：%1$s</string>
+    <string name="update_download_failed">下载失败：%1$s（已尝试镜像与 GitHub；可改用发布页镜像链接）</string>
     <string name="update_no_apk">未找到匹配的安装包，请打开发布页手动下载</string>
     <string name="update_install_permission">请允许安装未知应用后再试</string>
     <string name="update_install_failed">无法启动安装：%1$s</string>

@@ -10,8 +10,9 @@
     <dimen name="watch_title">15sp</dimen>
     <dimen name="watch_body">13sp</dimen>
     <dimen name="watch_meta">11sp</dimen>
-    <dimen name="watch_cover_w">42dp</dimen>
-    <dimen name="watch_cover_h">56dp</dimen>
+    <dimen name="watch_cover_w">44dp</dimen>
+    <dimen name="watch_cover_h">58dp</dimen>
+    <dimen name="watch_banner_h">112dp</dimen>
     <dimen name="watch_rank_w">22dp</dimen>
     <dimen name="watch_chip_pad_h">9dp</dimen>
     <dimen name="watch_chip_pad_v">6dp</dimen>

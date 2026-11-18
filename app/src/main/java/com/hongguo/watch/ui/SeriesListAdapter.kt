@@ -3,6 +3,7 @@ package com.hongguo.watch.ui
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
@@ -10,14 +11,26 @@ import coil.transform.RoundedCornersTransformation
 import com.hongguo.watch.R
 import com.hongguo.watch.data.CoverUrls
 import com.hongguo.watch.data.model.Series
+import com.hongguo.watch.databinding.ItemBannerBinding
 import com.hongguo.watch.databinding.ItemSectionHeaderBinding
 import com.hongguo.watch.databinding.ItemSeriesBinding
 
 sealed class HomeRow {
-    data class Header(val title: String, val subtitle: String = "") : HomeRow()
+    data class Banner(
+        val series: Series,
+        val pageIndex: Int = 0,
+        val pageCount: Int = 1,
+    ) : HomeRow()
+
+    data class Header(
+        val title: String,
+        val subtitle: String = "",
+        val showMore: Boolean = false,
+    ) : HomeRow()
+
     data class Item(
         val series: Series,
-        /** 榜单名次；非空时显示左侧序号并隐藏「进」。 */
+        /** 榜单名次；非空时显示左侧序号并隐藏圆形播放。 */
         val rank: Int? = null,
         /** 非 null 时显示行内 ♡；true=已收藏。 */
         val favorited: Boolean? = null,
@@ -65,16 +78,17 @@ class SeriesListAdapter(
     fun itemCountRows(): Int = rows.size
 
     override fun getItemViewType(position: Int): Int = when (rows[position]) {
-        is HomeRow.Header -> 0
-        is HomeRow.Item -> 1
+        is HomeRow.Banner -> 0
+        is HomeRow.Header -> 1
+        is HomeRow.Item -> 2
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         val inflater = LayoutInflater.from(parent.context)
-        return if (viewType == 0) {
-            HeaderHolder(ItemSectionHeaderBinding.inflate(inflater, parent, false))
-        } else {
-            ItemHolder(ItemSeriesBinding.inflate(inflater, parent, false))
+        return when (viewType) {
+            0 -> BannerHolder(ItemBannerBinding.inflate(inflater, parent, false))
+            1 -> HeaderHolder(ItemSectionHeaderBinding.inflate(inflater, parent, false))
+            else -> ItemHolder(ItemSeriesBinding.inflate(inflater, parent, false))
         }
     }
 
@@ -82,8 +96,48 @@ class SeriesListAdapter(
 
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
         when (val row = rows[position]) {
+            is HomeRow.Banner -> (holder as BannerHolder).bind(row)
             is HomeRow.Header -> (holder as HeaderHolder).bind(row)
             is HomeRow.Item -> (holder as ItemHolder).bind(row)
+        }
+    }
+
+    private inner class BannerHolder(
+        private val binding: ItemBannerBinding,
+    ) : RecyclerView.ViewHolder(binding.root) {
+        fun bind(row: HomeRow.Banner) {
+            val series = row.series
+            binding.bannerTitle.text = series.title
+            binding.bannerMeta.text = seriesMetaLine(binding.root.context, series)
+            val radius = binding.root.resources.displayMetrics.density * 10f
+            val coverUrl = CoverUrls.normalize(series.cover).ifBlank { series.cover }
+            binding.bannerCover.load(coverUrl.ifBlank { null }) {
+                size(640, 360)
+                crossfade(false)
+                transformations(RoundedCornersTransformation(radius))
+                placeholder(R.drawable.bg_banner)
+                error(R.drawable.bg_banner)
+            }
+            renderDots(binding.bannerDots, row.pageIndex, row.pageCount)
+            binding.root.setOnClickListener { onClick(series) }
+        }
+
+        private fun renderDots(row: android.widget.LinearLayout, index: Int, count: Int) {
+            row.removeAllViews()
+            val pages = count.coerceAtLeast(1).coerceAtMost(5)
+            val selected = index.coerceIn(0, pages - 1)
+            val gap = (row.resources.displayMetrics.density * 4f).toInt()
+            val size = (row.resources.displayMetrics.density * 5f).toInt()
+            repeat(pages) { i ->
+                val dot = ImageView(row.context).apply {
+                    setImageResource(R.drawable.bg_banner_dot)
+                    isSelected = i == selected
+                    layoutParams = android.widget.LinearLayout.LayoutParams(size, size).apply {
+                        if (i > 0) marginStart = gap
+                    }
+                }
+                row.addView(dot)
+            }
         }
     }
 
@@ -99,6 +153,7 @@ class SeriesListAdapter(
                 binding.sectionSubtitle.visibility = View.VISIBLE
                 binding.sectionSubtitle.text = row.subtitle
             }
+            binding.sectionMore.visibility = if (row.showMore) View.VISIBLE else View.GONE
         }
     }
 
@@ -144,18 +199,12 @@ class SeriesListAdapter(
                 ranked && series.episodeCount > 0 && !genre.isNullOrBlank() ->
                     binding.root.context.getString(R.string.rank_meta, series.episodeCount, genre)
                 ranked && !heat.isNullOrBlank() -> heat
-                series.episodeCount > 0 && series.tags.isNotEmpty() ->
-                    "全${series.episodeCount}集 · ${series.tags.take(2).joinToString(" ")}"
-                series.episodeCount > 0 -> "全${series.episodeCount}集"
-                series.tags.isNotEmpty() -> series.tags.take(2).joinToString(" ")
-                series.description.isNotBlank() -> series.description
-                else -> ""
+                else -> seriesMetaLine(binding.root.context, series)
             }
             binding.meta.text = meta
             binding.meta.visibility = if (meta.isBlank()) View.GONE else View.VISIBLE
 
             val radius = binding.root.resources.displayMetrics.density * 6f
-            // 历史/收藏落盘可能仍是旧 HEIC；绑定时再归一化一次
             val coverUrl = CoverUrls.normalize(series.cover).ifBlank { series.cover }
             binding.cover.load(coverUrl.ifBlank { null }) {
                 size(120, 160)
@@ -179,16 +228,48 @@ class SeriesListAdapter(
                 binding.favoriteButton.setOnClickListener(null)
             }
 
-            // 榜单行省横向空间：靠序号与整行点击，不显示「进」
-            if (ranked) {
-                binding.actionHint.visibility = View.GONE
-            } else {
-                binding.actionHint.visibility = View.VISIBLE
-                binding.actionHint.text = binding.root.context.getString(
-                    if (showResumeHint) R.string.resume_hint else R.string.open_hint,
-                )
+            // 推荐/分类：圆形播放；历史续播：文案「续」；榜单：靠整行点击
+            when {
+                ranked -> {
+                    binding.playButton.visibility = View.GONE
+                    binding.actionHint.visibility = View.GONE
+                }
+                showResumeHint -> {
+                    binding.playButton.visibility = View.GONE
+                    binding.actionHint.visibility = View.VISIBLE
+                    binding.actionHint.text = binding.root.context.getString(R.string.resume_hint)
+                }
+                else -> {
+                    binding.actionHint.visibility = View.GONE
+                    binding.playButton.visibility = View.VISIBLE
+                    binding.playButton.setOnClickListener { onClick(series) }
+                }
             }
             binding.root.setOnClickListener { onClick(series) }
+        }
+    }
+
+    companion object {
+        fun seriesMetaLine(context: android.content.Context, series: Series): String {
+            fun isHeatTag(value: String): Boolean =
+                value.contains("万") ||
+                    value.contains("收藏") ||
+                    value.contains("点赞") ||
+                    value.contains("评分") ||
+                    value.contains("播放")
+            val genres = series.tags.filterNot(::isHeatTag).take(2)
+            return when {
+                genres.isNotEmpty() && series.episodeCount > 0 ->
+                    context.getString(
+                        R.string.series_meta_tags,
+                        genres.joinToString(" · "),
+                        series.episodeCount,
+                    )
+                series.episodeCount > 0 -> "全${series.episodeCount}集"
+                genres.isNotEmpty() -> genres.joinToString(" · ")
+                series.description.isNotBlank() -> series.description
+                else -> ""
+            }
         }
     }
 }

@@ -7,7 +7,7 @@
     android:minHeight="56dp"
     android:orientation="horizontal"
     android:paddingHorizontal="2dp"
-    android:paddingVertical="4dp">
+    android:paddingVertical="5dp">
 
     <TextView
         android:id="@+id/rankBadge"
@@ -72,6 +72,18 @@
         android:padding="8dp"
         android:scaleType="centerInside"
         android:src="@drawable/ic_favorite_border"
+        android:visibility="gone" />
+
+    <ImageButton
+        android:id="@+id/playButton"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:layout_marginStart="4dp"
+        android:background="@drawable/bg_play_circle"
+        android:contentDescription="@string/cd_play"
+        android:padding="9dp"
+        android:scaleType="centerInside"
+        android:src="@drawable/ic_play"
         android:visibility="gone" />
 
     <TextView

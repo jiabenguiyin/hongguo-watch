@@ -1,15 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg">#101418</color>
-    <color name="bg_elevated">#1A2128</color>
-    <color name="accent">#E85D4C</color>
-    <color name="accent_dim">#B3473A</color>
-    <color name="text_primary">#F2F4F7</color>
-    <color name="text_secondary">#A8B0BA</color>
-    <color name="stroke">#2A333C</color>
-    <color name="episode_selected">#E85D4C</color>
-    <color name="episode_normal">#24303A</color>
+    <!-- 稿面：深黑底 + 白字 + 红/粉强调 -->
+    <color name="bg">#000000</color>
+    <color name="bg_elevated">#141414</color>
+    <color name="bg_chip">#1C1C1E</color>
+    <color name="accent">#FF3B5C</color>
+    <color name="accent_dim">#C92D48</color>
+    <color name="accent_soft">#33FF3B5C</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#9A9A9A</color>
+    <color name="stroke">#2A2A2A</color>
+    <color name="episode_selected">#FF3B5C</color>
+    <color name="episode_normal">#1C1C1E</color>
     <color name="rank_gold">#E8B84A</color>
     <color name="rank_silver">#C0C8D0</color>
     <color name="rank_bronze">#C47A4A</color>
+    <color name="banner_scrim_start">#00000000</color>
+    <color name="banner_scrim_end">#CC000000</color>
 </resources>

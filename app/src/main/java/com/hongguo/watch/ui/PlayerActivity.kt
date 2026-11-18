@@ -16,7 +16,6 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
-import android.view.WindowManager
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.annotation.OptIn
@@ -49,10 +48,12 @@ import com.hongguo.watch.data.model.StreamInfo
 import com.hongguo.watch.databinding.ActivityPlayerBinding
 import com.hongguo.watch.player.DecodePath
 import com.hongguo.watch.player.IjkPlayerEngine
+import com.hongguo.watch.player.PlaybackPowerController
 import com.hongguo.watch.player.PlayerDiagLog
 import com.hongguo.watch.player.PlayerGestureArbiter
 import com.hongguo.watch.player.PlayerGestureZones
 import com.hongguo.watch.player.PlayerKernel
+import com.hongguo.watch.player.ScreenOffPlaybackPolicy
 import com.hongguo.watch.player.VideoAspectHelper
 import com.hongguo.watch.player.VideoDataSource
 import com.hongguo.watch.player.VideoResizeMode
@@ -110,6 +111,9 @@ class PlayerActivity : AppCompatActivity() {
     /** 递增以作废过期的取流结果（快速切集 / 退后台）。 */
     private var playGeneration = 0
     private var playerForeground = false
+    /** 设置「息屏续听」；默认关。 */
+    private var screenOffContinue = ScreenOffPlaybackPolicy.DEFAULT_CONTINUE_ENABLED
+    private lateinit var powerController: PlaybackPowerController
 
     private val repo get() = (application as HongguoWatchApp).container.repository
     private val settings get() = (application as HongguoWatchApp).container.settings
@@ -205,6 +209,17 @@ class PlayerActivity : AppCompatActivity() {
         WatchUi.applyImmersive(this)
         WatchUi.applySafePadding(binding.playerRoot)
 
+        powerController = PlaybackPowerController(
+            activity = this,
+            onAudioFocusLost = {
+                // 其他应用抢焦点：暂停并落盘，避免无声耗电
+                if (isActivelyPlaying()) {
+                    pauseActive()
+                    updatePlayPause()
+                    saveProgress(force = true)
+                }
+            },
+        )
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         seriesId = intent.getStringExtra(EXTRA_SERIES_ID).orEmpty()
         seriesTitle = intent.getStringExtra(EXTRA_SERIES_TITLE).orEmpty()
@@ -276,12 +291,14 @@ class PlayerActivity : AppCompatActivity() {
             currentSpeed = settings.playbackSpeedNow()
             kernelPreference = settings.playerKernelNow()
             decodePathPreference = settings.decodePathNow()
+            screenOffContinue = settings.screenOffContinueNow()
+            powerController.setContinueEnabled(screenOffContinue)
             resetDecodePolicyForDevice()
             PlayerDiagLog.clearSession()
             PlayerDiagLog.i(
                 "kernel=$activeKernel soft=$softDecodePreferred mode=$videoCodecMode " +
                     "avcOnly=$forceAvcOnly fragileSoc=${WatchDecodePolicy.isFragileSoc()} " +
-                    "ijkAbi=${IjkPlayerEngine.isAbiSupported()}",
+                    "ijkAbi=${IjkPlayerEngine.isAbiSupported()} screenOffContinue=$screenOffContinue",
             )
             refreshQualityUi()
             refreshSpeedUi()
@@ -829,7 +846,8 @@ class PlayerActivity : AppCompatActivity() {
         val lp = window.attributes
         lp.screenBrightness = value
         window.attributes = lp
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // 亮屏策略交给 PlaybackPowerController（前台在播才 KEEP_SCREEN_ON）
+        syncPlaybackPower()
     }
 
     private fun toggleControls() {
@@ -1561,6 +1579,7 @@ class PlayerActivity : AppCompatActivity() {
                     )
                     setLoadingIndicator(visible = false, immediate = true)
                     updatePlayPause()
+                    syncPlaybackPower()
                     if (!locked) scheduleHideControls()
                     scheduleFirstFrameWatch(token, stream)
                 }
@@ -1731,6 +1750,7 @@ class PlayerActivity : AppCompatActivity() {
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 updatePlayPause()
+                syncPlaybackPower()
                 if (isPlaying) {
                     if (!locked) scheduleHideControls()
                     scheduleFirstFrameWatch(token, stream)
@@ -2074,11 +2094,22 @@ class PlayerActivity : AppCompatActivity() {
     private fun playActive() {
         ijkEngine?.play()
         player?.play()
+        syncPlaybackPower()
     }
 
     private fun pauseActive() {
         ijkEngine?.pause()
         player?.pause()
+        syncPlaybackPower()
+    }
+
+    /** 同步 KEEP_SCREEN_ON / 息屏续听唤醒锁 / 音频焦点。 */
+    private fun syncPlaybackPower() {
+        if (!::powerController.isInitialized) return
+        powerController.sync(
+            foreground = playerForeground,
+            playing = isActivelyPlaying(),
+        )
     }
 
     private fun seekActive(positionMs: Long) {
@@ -2271,20 +2302,39 @@ class PlayerActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         playerForeground = true
+        lifecycleScope.launch {
+            screenOffContinue = settings.screenOffContinueNow()
+            powerController.setContinueEnabled(screenOffContinue)
+            syncPlaybackPower()
+        }
+        syncPlaybackPower()
     }
 
     override fun onStop() {
+        val continuePlay = ScreenOffPlaybackPolicy.shouldContinueWhenStopping(
+            continueEnabled = screenOffContinue,
+            isFinishing = isFinishing,
+            isActivelyPlaying = isActivelyPlaying(),
+        )
         playerForeground = false
-        // 作废进行中的取流，避免退后台后仍 prepare/play
-        playGeneration++
-        playJob?.cancel()
-        playJob = null
         endSpeedBoost()
-        pauseActive()
-        saveProgress(force = true)
-        // 退后台取消未完成跨季
-        seasonGeneration++
-        seasonJob?.cancel()
+        if (continuePlay) {
+            // 息屏续听：不停播、不取消取流；清亮屏锁、持有 PARTIAL_WAKE_LOCK
+            saveProgress(force = true)
+            syncPlaybackPower()
+            PlayerDiagLog.i("screen-off continue playing")
+        } else {
+            // 默认省电：熄屏/退后台暂停；作废进行中的取流
+            playGeneration++
+            playJob?.cancel()
+            playJob = null
+            pauseActive()
+            saveProgress(force = true)
+            // 退后台取消未完成跨季
+            seasonGeneration++
+            seasonJob?.cancel()
+            syncPlaybackPower()
+        }
         super.onStop()
     }
 
@@ -2299,6 +2349,7 @@ class PlayerActivity : AppCompatActivity() {
         seasonJob?.cancel()
         loadingShowJob?.cancel()
         loadingProlongedJob?.cancel()
+        if (::powerController.isInitialized) powerController.release()
         releasePlayer()
         super.onDestroy()
     }

@@ -100,6 +100,10 @@
     <string name="resume_hint">续</string>
     <string name="episodes_count">共 %1$d 集</string>
     <string name="loading">加载中…</string>
+    <!-- 首帧后弱网缓冲；手表小屏宜短 -->
+    <string name="player_buffering">网络较慢…</string>
+    <!-- 久卡静默提示（非 Toast），对应自动切流前 -->
+    <string name="player_buffering_failover_hint">网络较慢，即将切线…</string>
     <string name="retry">重试</string>
     <string name="play">播放</string>
     <string name="pause">暂停</string>

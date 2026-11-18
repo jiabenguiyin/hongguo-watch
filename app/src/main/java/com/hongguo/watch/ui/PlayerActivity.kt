@@ -93,9 +93,14 @@ class PlayerActivity : AppCompatActivity() {
     private var hideUnlockJob: Job? = null
     private var hintJob: Job? = null
     private var seasonJob: Job? = null
-    /** 播放中短暂缓冲：延迟显示「加载中」，避免闪烁。 */
+    /** 播放中短暂缓冲：延迟显示指示器，避免闪烁。 */
     private var loadingShowJob: Job? = null
+    /** 久卡后切换「即将切线」文案（非 Toast）。 */
+    private var loadingProlongedJob: Job? = null
     private var loadingWanted = false
+    /** 仅跨季等强制相位；其余由首帧 / 久卡推导。 */
+    private var loadingPhaseOverride: PlayerLoadingPolicy.Phase? = null
+    private var loadingProlonged = false
     private var remoteVideo: RemoteVideo? = null
     private var userSeeking = false
     private var controlsVisible = true
@@ -981,28 +986,84 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     /**
-     * 「加载中」显示控制：
+     * 缓冲指示显示控制（单一 loadingBox，避免与 PlayerView 叠圈）：
      * - immediate=true：切集 / 起播 / 跨季等强制立刻显示
      * - immediate=false：播放中缓冲防抖，短暂卡顿不闪字
+     * - 文案：起播「加载中…」/ 中途「网络较慢…」/ 久卡「即将切线…」
      */
-    private fun setLoadingIndicator(visible: Boolean, immediate: Boolean) {
+    private fun setLoadingIndicator(
+        visible: Boolean,
+        immediate: Boolean,
+        phaseOverride: PlayerLoadingPolicy.Phase? = null,
+    ) {
         loadingShowJob?.cancel()
         loadingShowJob = null
         if (!visible) {
             loadingWanted = false
+            loadingProlonged = false
+            loadingPhaseOverride = null
+            loadingProlongedJob?.cancel()
+            loadingProlongedJob = null
             binding.loadingBox.visibility = View.GONE
             return
         }
         loadingWanted = true
-        if (immediate || binding.loadingBox.visibility == View.VISIBLE) {
+        // null = 按首帧/久卡自动推导；显式相位（如跨季）写入覆盖
+        loadingPhaseOverride = phaseOverride
+        if (phaseOverride != null) {
+            loadingProlonged = false
+        }
+        applyLoadingText()
+        ensureProlongedHintScheduled()
+        val alreadyVisible = binding.loadingBox.visibility == View.VISIBLE
+        if (immediate || alreadyVisible) {
             binding.loadingBox.visibility = View.VISIBLE
             return
         }
         loadingShowJob = lifecycleScope.launch {
-            delay(BUFFERING_INDICATOR_DELAY_MS)
+            delay(PlayerLoadingPolicy.INDICATOR_DELAY_MS)
             if (loadingWanted) {
+                applyLoadingText()
                 binding.loadingBox.visibility = View.VISIBLE
             }
+        }
+    }
+
+    private fun resolveLoadingPhase(): PlayerLoadingPolicy.Phase {
+        loadingPhaseOverride?.let { return it }
+        return PlayerLoadingPolicy.phase(
+            firstFrameRendered = videoFrameRendered,
+            bufferingElapsedMs = if (loadingProlonged) {
+                PlayerLoadingPolicy.PROLONGED_HINT_MS
+            } else {
+                0L
+            },
+        )
+    }
+
+    private fun applyLoadingText() {
+        val res = when (resolveLoadingPhase()) {
+            PlayerLoadingPolicy.Phase.INITIAL -> R.string.loading
+            PlayerLoadingPolicy.Phase.REBUFFER -> R.string.player_buffering
+            PlayerLoadingPolicy.Phase.REBUFFER_PROLONGED ->
+                R.string.player_buffering_failover_hint
+            PlayerLoadingPolicy.Phase.NEXT_SEASON -> R.string.next_season_loading
+        }
+        binding.loadingText.setText(res)
+    }
+
+    /** 首帧后持续缓冲达阈值 → 静默改文案，提示可能自动切线。 */
+    private fun ensureProlongedHintScheduled() {
+        if (loadingPhaseOverride == PlayerLoadingPolicy.Phase.NEXT_SEASON) return
+        if (!videoFrameRendered) return
+        if (loadingProlonged) return
+        if (loadingProlongedJob?.isActive == true) return
+        loadingProlongedJob = lifecycleScope.launch {
+            delay(PlayerLoadingPolicy.PROLONGED_HINT_MS)
+            if (!loadingWanted || !videoFrameRendered) return@launch
+            if (loadingPhaseOverride != null) return@launch
+            loadingProlonged = true
+            applyLoadingText()
         }
     }
 
@@ -1509,6 +1570,10 @@ class PlayerActivity : AppCompatActivity() {
                     videoFrameRendered = true
                     firstFrameWatchJob?.cancel()
                     PlayerDiagLog.markFirstFrame()
+                    if (loadingWanted) {
+                        applyLoadingText()
+                        ensureProlongedHintScheduled()
+                    }
                 }
 
                 override fun onBuffering(buffering: Boolean) {
@@ -1680,6 +1745,10 @@ class PlayerActivity : AppCompatActivity() {
                 videoFrameRendered = true
                 firstFrameWatchJob?.cancel()
                 PlayerDiagLog.markFirstFrame()
+                if (loadingWanted) {
+                    applyLoadingText()
+                    ensureProlongedHintScheduled()
+                }
             }
 
             override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -2070,8 +2139,11 @@ class PlayerActivity : AppCompatActivity() {
             return
         }
         val token = seasonGeneration
-        binding.loadingText.text = getString(R.string.next_season_loading)
-        setLoadingIndicator(visible = true, immediate = true)
+        setLoadingIndicator(
+            visible = true,
+            immediate = true,
+            phaseOverride = PlayerLoadingPolicy.Phase.NEXT_SEASON,
+        )
         showGestureHint(getString(R.string.next_season_loading))
         seasonJob?.cancel()
         seasonJob = lifecycleScope.launch {
@@ -2090,18 +2162,16 @@ class PlayerActivity : AppCompatActivity() {
                 seasonPrepared = false
                 binding.seasonBanner.visibility = View.GONE
                 refreshEpisodePicker()
+                // loadCurrent 会立刻显示起播「加载中…」
                 loadCurrent()
             } catch (e: Exception) {
                 setLoadingIndicator(visible = false, immediate = true)
-                binding.loadingText.text = getString(R.string.loading)
                 Toast.makeText(
                     this@PlayerActivity,
                     e.message ?: getString(R.string.next_season_failed),
                     Toast.LENGTH_LONG,
                 ).show()
                 if (!locked) showControls(autoHide = false)
-            } finally {
-                binding.loadingText.text = getString(R.string.loading)
             }
         }
     }
@@ -2228,6 +2298,7 @@ class PlayerActivity : AppCompatActivity() {
         hintJob?.cancel()
         seasonJob?.cancel()
         loadingShowJob?.cancel()
+        loadingProlongedJob?.cancel()
         releasePlayer()
         super.onDestroy()
     }
@@ -2236,8 +2307,6 @@ class PlayerActivity : AppCompatActivity() {
         private const val TAG = PlayerDiagLog.TAG
         /** 锁定后小解锁钮自动隐藏（与普通控件栏相近）。 */
         private const val UNLOCK_CHIP_AUTO_HIDE_MS = 3_200L
-        /** 播放中缓冲提示防抖：短于此时长的卡顿不闪「加载中」。 */
-        private const val BUFFERING_INDICATOR_DELAY_MS = 450L
         /** 长按临时加速倍率（松手恢复用户倍速）。 */
         private const val LONG_PRESS_BOOST_SPEED = 2.0f
         private const val STATE_LANDSCAPE = "landscape_preferred"

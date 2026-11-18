@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.View
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
@@ -114,6 +115,18 @@ class SettingsActivity : AppCompatActivity() {
                 }
                 Toast.makeText(this@SettingsActivity, R.string.cache_cleared, Toast.LENGTH_SHORT).show()
             }
+        }
+
+        // 底部 QQ 群：轻量展示；点按/长按复制群号
+        val copyQq = View.OnClickListener {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("qq", "1130845653"))
+            Toast.makeText(this, R.string.qq_group_copied, Toast.LENGTH_SHORT).show()
+        }
+        binding.qqGroupLabel.setOnClickListener(copyQq)
+        binding.qqGroupLabel.setOnLongClickListener {
+            copyQq.onClick(it)
+            true
         }
     }
 

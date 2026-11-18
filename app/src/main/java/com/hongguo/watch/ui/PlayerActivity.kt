@@ -2,12 +2,13 @@ package com.hongguo.watch.ui
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.media.AudioManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.provider.Settings
-import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -28,6 +29,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.recyclerview.widget.GridLayoutManager
 import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
@@ -125,6 +127,8 @@ class PlayerActivity : AppCompatActivity() {
     private var nextSeasonWork: RelatedWork? = null
     private var seasonGeneration = 0
     private var seasonPrepared = false
+    /** 手表默认竖屏；可切横屏（传感器横屏，允许倒装）。 */
+    private var landscapePreferred = false
 
     private enum class GestureMode { NONE, SEEK, BRIGHTNESS, VOLUME }
 
@@ -135,6 +139,8 @@ class PlayerActivity : AppCompatActivity() {
         binding = ActivityPlayerBinding.inflate(layoutInflater)
         setContentView(binding.root)
         playerForeground = true
+        landscapePreferred = savedInstanceState?.getBoolean(STATE_LANDSCAPE, false) == true
+        applyRequestedOrientation(announce = false)
         WatchUi.applyImmersive(this)
         WatchUi.applySafePadding(binding.playerRoot)
 
@@ -157,6 +163,8 @@ class PlayerActivity : AppCompatActivity() {
         binding.playerView.useController = false
         // TextureView + 保留最后一帧，减轻 OEM SurfaceView 黑屏
         binding.playerView.setKeepContentOnPlayerReset(true)
+        // Media3：FIT = letterbox/pillarbox，禁止 stretch
+        binding.playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
         applyRoundPlayerChrome()
         bindControls()
         bindSheets()
@@ -202,12 +210,36 @@ class PlayerActivity : AppCompatActivity() {
         if (hasFocus) WatchUi.applyImmersive(this)
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_LANDSCAPE, landscapePreferred)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        WatchUi.applyImmersive(this)
+        WatchUi.applySafePadding(binding.playerRoot)
+        applyRoundPlayerChrome()
+        // 横竖切换后重算 IJK FIT；Media3 PlayerView 自带 AspectRatioFrameLayout
+        binding.playerRoot.post {
+            ijkEngine?.applyAspectFit()
+            binding.playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            refreshEpisodeGridSpan()
+        }
+    }
+
     private fun bindControls() {
         binding.backButton.setOnClickListener { finish() }
         binding.lockButton.setOnClickListener { setLocked(true) }
         binding.unlockButton.setOnClickListener {
             // 点在解锁钮上：真正解锁（空白处只负责显隐）
             setLocked(false)
+        }
+        binding.rotateButton.setOnClickListener {
+            if (locked) return@setOnClickListener
+            landscapePreferred = !landscapePreferred
+            applyRequestedOrientation(announce = true)
+            scheduleHideControls()
         }
         binding.prevButton.setOnClickListener {
             switchEpisode(episodeIndex - 1)
@@ -362,6 +394,30 @@ class PlayerActivity : AppCompatActivity() {
             hideUnlockChip()
             showControls(autoHide = true)
         }
+    }
+
+    private fun applyRequestedOrientation(announce: Boolean) {
+        requestedOrientation = if (landscapePreferred) {
+            // sensorLandscape：允许倒装横屏，手表腕姿更友好
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+        binding.rotateButton.contentDescription = getString(
+            if (landscapePreferred) R.string.rotate_portrait else R.string.rotate_landscape,
+        )
+        if (announce) {
+            showGestureHint(
+                getString(
+                    if (landscapePreferred) R.string.rotate_landscape else R.string.rotate_portrait,
+                ),
+            )
+        }
+    }
+
+    private fun refreshEpisodeGridSpan() {
+        val lm = binding.episodePicker.layoutManager as? GridLayoutManager ?: return
+        lm.spanCount = WatchUi.episodeColumns(this)
     }
 
     /** 锁定态小解锁钮：数秒后或点空白隐藏；再点任意处唤出。非全屏遮罩。 */
@@ -875,8 +931,8 @@ class PlayerActivity : AppCompatActivity() {
                     uploadDiagnosticsAsync("ijk_error")
                 }
 
-                override fun onVideoSize(width: Int, height: Int) {
-                    PlayerDiagLog.i("video size ${width}x$height")
+                override fun onVideoSize(width: Int, height: Int, sarNum: Int, sarDen: Int) {
+                    PlayerDiagLog.i("video size ${width}x$height sar=$sarNum:$sarDen fit=IJK")
                 }
             },
         )
@@ -891,6 +947,7 @@ class PlayerActivity : AppCompatActivity() {
     private suspend fun playWithMedia3(stream: StreamInfo, positionMs: Long, token: Int) {
         binding.ijkTexture.visibility = View.GONE
         binding.playerView.visibility = View.VISIBLE
+        binding.playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(1_500, 8_000, 1_000, 1_500)
             .build()
@@ -995,7 +1052,12 @@ class PlayerActivity : AppCompatActivity() {
 
             override fun onVideoSizeChanged(videoSize: VideoSize) {
                 if (videoSize.width > 0 && videoSize.height > 0) {
-                    PlayerDiagLog.i("video size ${videoSize.width}x${videoSize.height}")
+                    // 强制 FIT，避免 OEM / 旋转后落到 stretch
+                    binding.playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    PlayerDiagLog.i(
+                        "video size ${videoSize.width}x${videoSize.height} " +
+                            "pw=${videoSize.pixelWidthHeightRatio} fit=Media3",
+                    )
                 }
             }
 
@@ -1381,6 +1443,8 @@ class PlayerActivity : AppCompatActivity() {
             remoteVideo?.close()
             remoteVideo = null
         }
+        // 清掉 IJK FIT 矩阵，避免切回 Media3 时残留缩放
+        binding.ijkTexture.setTransform(android.graphics.Matrix())
     }
 
     override fun onStart() {
@@ -1418,6 +1482,7 @@ class PlayerActivity : AppCompatActivity() {
         private const val TAG = PlayerDiagLog.TAG
         /** 锁定后小解锁钮自动隐藏（与普通控件栏相近）。 */
         private const val UNLOCK_CHIP_AUTO_HIDE_MS = 3_200L
+        private const val STATE_LANDSCAPE = "landscape_preferred"
 
         const val EXTRA_SERIES_ID = "series_id"
         const val EXTRA_SERIES_TITLE = "series_title"

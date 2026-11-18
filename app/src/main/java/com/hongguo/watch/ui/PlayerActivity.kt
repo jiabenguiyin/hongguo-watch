@@ -10,6 +10,7 @@ import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.provider.Settings
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
@@ -44,7 +45,9 @@ import com.hongguo.watch.player.DecodePath
 import com.hongguo.watch.player.IjkPlayerEngine
 import com.hongguo.watch.player.PlayerDiagLog
 import com.hongguo.watch.player.PlayerKernel
+import com.hongguo.watch.player.VideoAspectHelper
 import com.hongguo.watch.player.VideoDataSource
+import com.hongguo.watch.player.VideoResizeMode
 import com.hongguo.watch.player.WatchDecodePolicy
 import com.hongguo.watch.upstream.CodecLabels
 import com.hongguo.watch.upstream.RemoteVideo
@@ -58,6 +61,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * 手表全屏播放：锁定、左亮度/右音量、横滑进度、图标控件；
@@ -78,6 +82,9 @@ class PlayerActivity : AppCompatActivity() {
     private var hideUnlockJob: Job? = null
     private var hintJob: Job? = null
     private var seasonJob: Job? = null
+    /** 播放中短暂缓冲：延迟显示「加载中」，避免闪烁。 */
+    private var loadingShowJob: Job? = null
+    private var loadingWanted = false
     private var remoteVideo: RemoteVideo? = null
     private var userSeeking = false
     private var controlsVisible = true
@@ -101,6 +108,10 @@ class PlayerActivity : AppCompatActivity() {
     private var startPositionMs = 0L
     private var currentQuality = 480
     private var currentSpeed = 1.0f
+    /** 画面比例：适应 / 铺满 / 拉伸。 */
+    private var resizeMode: VideoResizeMode = VideoResizeMode.FIT
+    /** 双指缩放倍率（≥1）。 */
+    private var userZoom: Float = VideoAspectHelper.MIN_USER_ZOOM
 
     /** Media3 视频解码模式：默认 → 软解优先 → 仅软解。 */
     private var videoCodecMode = WatchDecodePolicy.VideoCodecMode.Default
@@ -114,6 +125,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private lateinit var episodeAdapter: EpisodeAdapter
     private lateinit var audioManager: AudioManager
+    private lateinit var scaleDetector: ScaleGestureDetector
     private var touchSlop = 0
     private var downX = 0f
     private var downY = 0f
@@ -124,6 +136,7 @@ class PlayerActivity : AppCompatActivity() {
     private var brightnessStart = 0f
     private var volumeStart = 0
     private var gestureConsumedClick = false
+    private var scaling = false
     private var nextSeasonWork: RelatedWork? = null
     private var seasonGeneration = 0
     private var seasonPrepared = false
@@ -160,11 +173,49 @@ class PlayerActivity : AppCompatActivity() {
         val initialNumber = intent.getIntExtra(EXTRA_EPISODE_NUMBER, 1)
 
         touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        scaleDetector = ScaleGestureDetector(
+            this,
+            object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+                    if (locked) return false
+                    scaling = true
+                    gestureConsumedClick = true
+                    gestureMode = GestureMode.NONE
+                    scrubbing = false
+                    adjustingBrightness = false
+                    adjustingVolume = false
+                    binding.brightnessMeter.visibility = View.GONE
+                    binding.volumeMeter.visibility = View.GONE
+                    hideControlsJob?.cancel()
+                    return true
+                }
+
+                override fun onScale(detector: ScaleGestureDetector): Boolean {
+                    val next = (userZoom * detector.scaleFactor)
+                        .coerceIn(VideoAspectHelper.MIN_USER_ZOOM, VideoAspectHelper.MAX_USER_ZOOM)
+                    if (abs(next - userZoom) < 0.001f) return true
+                    userZoom = next
+                    applyVideoTransform()
+                    showGestureHint(
+                        getString(R.string.zoom_hint, (userZoom * 100f).roundToInt()),
+                    )
+                    return true
+                }
+
+                override fun onScaleEnd(detector: ScaleGestureDetector) {
+                    scaling = false
+                    if (userZoom < 1.05f) {
+                        userZoom = VideoAspectHelper.MIN_USER_ZOOM
+                        applyVideoTransform()
+                    }
+                    scheduleHideControls()
+                }
+            },
+        )
         binding.playerView.useController = false
         // TextureView + 保留最后一帧，减轻 OEM SurfaceView 黑屏
         binding.playerView.setKeepContentOnPlayerReset(true)
-        // Media3：FIT = letterbox/pillarbox，禁止 stretch
-        binding.playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+        applyVideoTransform()
         applyRoundPlayerChrome()
         bindControls()
         bindSheets()
@@ -220,10 +271,9 @@ class PlayerActivity : AppCompatActivity() {
         WatchUi.applyImmersive(this)
         WatchUi.applySafePadding(binding.playerRoot)
         applyRoundPlayerChrome()
-        // 横竖切换后重算 IJK FIT；Media3 PlayerView 自带 AspectRatioFrameLayout
+        // 横竖切换后重算 IJK / Media3 比例与缩放
         binding.playerRoot.post {
-            ijkEngine?.applyAspectFit()
-            binding.playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            applyVideoTransform()
             refreshEpisodeGridSpan()
         }
     }
@@ -234,6 +284,10 @@ class PlayerActivity : AppCompatActivity() {
         binding.unlockButton.setOnClickListener {
             // 点在解锁钮上：真正解锁（空白处只负责显隐）
             setLocked(false)
+        }
+        binding.aspectButton.setOnClickListener {
+            if (locked) return@setOnClickListener
+            openAspectSheet()
         }
         binding.rotateButton.setOnClickListener {
             if (locked) return@setOnClickListener
@@ -314,6 +368,15 @@ class PlayerActivity : AppCompatActivity() {
         binding.speed125.setOnClickListener { applySpeed(1.25f) }
         binding.speed150.setOnClickListener { applySpeed(1.5f) }
         binding.speed200.setOnClickListener { applySpeed(2.0f) }
+        binding.aspectFit.setOnClickListener { applyResizeMode(VideoResizeMode.FIT) }
+        binding.aspectFill.setOnClickListener { applyResizeMode(VideoResizeMode.FILL) }
+        binding.aspectStretch.setOnClickListener { applyResizeMode(VideoResizeMode.STRETCH) }
+        binding.aspectZoomReset.setOnClickListener {
+            userZoom = VideoAspectHelper.MIN_USER_ZOOM
+            applyVideoTransform()
+            showGestureHint(getString(R.string.zoom_reset_done))
+            closeSheets()
+        }
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -467,6 +530,25 @@ class PlayerActivity : AppCompatActivity() {
             }
             return true
         }
+
+        val wasScaling = scaling
+        scaleDetector.onTouchEvent(event)
+        // 双指缩放期间不走亮度/音量/进度，避免误触
+        if (scaling || wasScaling || event.pointerCount > 1) {
+            if (event.actionMasked == MotionEvent.ACTION_UP ||
+                event.actionMasked == MotionEvent.ACTION_CANCEL
+            ) {
+                gestureMode = GestureMode.NONE
+                scrubbing = false
+                adjustingBrightness = false
+                adjustingVolume = false
+                binding.brightnessMeter.visibility = View.GONE
+                binding.volumeMeter.visibility = View.GONE
+                if (!scaling) scheduleHideControls()
+            }
+            return true
+        }
+
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = event.x
@@ -627,7 +709,7 @@ class PlayerActivity : AppCompatActivity() {
         hideControlsJob = lifecycleScope.launch {
             delay(3_200)
             if (!userSeeking && !scrubbing && !adjustingBrightness && !adjustingVolume &&
-                isActivelyPlaying() && !locked
+                !scaling && isActivelyPlaying() && !locked
             ) {
                 hideControls()
             }
@@ -639,6 +721,7 @@ class PlayerActivity : AppCompatActivity() {
         binding.sheetScrim.visibility = View.VISIBLE
         binding.qualitySheet.visibility = View.VISIBLE
         binding.speedSheet.visibility = View.GONE
+        binding.aspectSheet.visibility = View.GONE
         binding.episodesSheet.visibility = View.GONE
         refreshQualityUi()
         hideControlsJob?.cancel()
@@ -650,8 +733,21 @@ class PlayerActivity : AppCompatActivity() {
         binding.sheetScrim.visibility = View.VISIBLE
         binding.speedSheet.visibility = View.VISIBLE
         binding.qualitySheet.visibility = View.GONE
+        binding.aspectSheet.visibility = View.GONE
         binding.episodesSheet.visibility = View.GONE
         refreshSpeedUi()
+        hideControlsJob?.cancel()
+        showControls(autoHide = false)
+    }
+
+    private fun openAspectSheet() {
+        if (locked) return
+        binding.sheetScrim.visibility = View.VISIBLE
+        binding.aspectSheet.visibility = View.VISIBLE
+        binding.qualitySheet.visibility = View.GONE
+        binding.speedSheet.visibility = View.GONE
+        binding.episodesSheet.visibility = View.GONE
+        refreshAspectUi()
         hideControlsJob?.cancel()
         showControls(autoHide = false)
     }
@@ -663,6 +759,7 @@ class PlayerActivity : AppCompatActivity() {
         binding.episodesSheet.visibility = View.VISIBLE
         binding.qualitySheet.visibility = View.GONE
         binding.speedSheet.visibility = View.GONE
+        binding.aspectSheet.visibility = View.GONE
         hideControlsJob?.cancel()
         showControls(autoHide = false)
         binding.episodePicker.post {
@@ -674,8 +771,94 @@ class PlayerActivity : AppCompatActivity() {
         binding.sheetScrim.visibility = View.GONE
         binding.qualitySheet.visibility = View.GONE
         binding.speedSheet.visibility = View.GONE
+        binding.aspectSheet.visibility = View.GONE
         binding.episodesSheet.visibility = View.GONE
         scheduleHideControls()
+    }
+
+    private fun applyResizeMode(mode: VideoResizeMode) {
+        resizeMode = mode
+        applyVideoTransform()
+        refreshAspectUi()
+        showGestureHint(
+            getString(
+                when (mode) {
+                    VideoResizeMode.FIT -> R.string.aspect_hint_fit
+                    VideoResizeMode.FILL -> R.string.aspect_hint_fill
+                    VideoResizeMode.STRETCH -> R.string.aspect_hint_stretch
+                },
+            ),
+        )
+        closeSheets()
+    }
+
+    private fun refreshAspectUi() {
+        binding.aspectFit.isSelected = resizeMode == VideoResizeMode.FIT
+        binding.aspectFill.isSelected = resizeMode == VideoResizeMode.FILL
+        binding.aspectStretch.isSelected = resizeMode == VideoResizeMode.STRETCH
+        binding.aspectButton.contentDescription = getString(
+            when (resizeMode) {
+                VideoResizeMode.FIT -> R.string.aspect_hint_fit
+                VideoResizeMode.FILL -> R.string.aspect_hint_fill
+                VideoResizeMode.STRETCH -> R.string.aspect_hint_stretch
+            },
+        )
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun applyVideoTransform() {
+        val zoom = userZoom.coerceIn(VideoAspectHelper.MIN_USER_ZOOM, VideoAspectHelper.MAX_USER_ZOOM)
+        userZoom = zoom
+        ijkEngine?.setAspect(resizeMode, zoom)
+        binding.playerView.resizeMode = media3ResizeMode(resizeMode)
+        val applyPivotAndScale = {
+            val w = binding.playerView.width
+            val h = binding.playerView.height
+            if (w > 0 && h > 0) {
+                binding.playerView.pivotX = w / 2f
+                binding.playerView.pivotY = h / 2f
+            }
+            binding.playerView.scaleX = zoom
+            binding.playerView.scaleY = zoom
+        }
+        if (binding.playerView.width > 0) {
+            applyPivotAndScale()
+        } else {
+            binding.playerView.post { applyPivotAndScale() }
+        }
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun media3ResizeMode(mode: VideoResizeMode): Int = when (mode) {
+        VideoResizeMode.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+        VideoResizeMode.FILL -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+        VideoResizeMode.STRETCH -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+    }
+
+    /**
+     * 「加载中」显示控制：
+     * - immediate=true：切集 / 起播 / 跨季等强制立刻显示
+     * - immediate=false：播放中缓冲防抖，短暂卡顿不闪字
+     */
+    private fun setLoadingIndicator(visible: Boolean, immediate: Boolean) {
+        loadingShowJob?.cancel()
+        loadingShowJob = null
+        if (!visible) {
+            loadingWanted = false
+            binding.loadingBox.visibility = View.GONE
+            return
+        }
+        loadingWanted = true
+        if (immediate || binding.loadingBox.visibility == View.VISIBLE) {
+            binding.loadingBox.visibility = View.VISIBLE
+            return
+        }
+        loadingShowJob = lifecycleScope.launch {
+            delay(BUFFERING_INDICATOR_DELAY_MS)
+            if (loadingWanted) {
+                binding.loadingBox.visibility = View.VISIBLE
+            }
+        }
     }
 
     private fun applyQuality(height: Int) {
@@ -770,7 +953,7 @@ class PlayerActivity : AppCompatActivity() {
         binding.playerTitle.text = "$seriesTitle · 第${episodeNumber}集"
         binding.playerTitle.isSelected = true
         binding.retryButton.visibility = View.GONE
-        binding.loadingBox.visibility = View.VISIBLE
+        setLoadingIndicator(visible = true, immediate = true)
         if (!locked) showControls(autoHide = false)
 
         // 取消上一次取流，避免快速切集时旧结果覆盖当前集
@@ -782,7 +965,7 @@ class PlayerActivity : AppCompatActivity() {
                 if (token != playGeneration) return@launch
                 Toast.makeText(this@PlayerActivity, R.string.error_wifi_only, Toast.LENGTH_LONG).show()
                 binding.retryButton.visibility = View.VISIBLE
-                binding.loadingBox.visibility = View.GONE
+                setLoadingIndicator(visible = false, immediate = true)
                 return@launch
             }
             try {
@@ -838,7 +1021,7 @@ class PlayerActivity : AppCompatActivity() {
                     Toast.LENGTH_LONG,
                 ).show()
                 binding.retryButton.visibility = View.VISIBLE
-                binding.loadingBox.visibility = View.GONE
+                setLoadingIndicator(visible = false, immediate = true)
                 uploadDiagnosticsAsync("fetch_or_start_failed")
             }
         }
@@ -888,7 +1071,7 @@ class PlayerActivity : AppCompatActivity() {
                     PlayerDiagLog.markVideoDecoder(
                         if (softDecodePreferred) "ijk-ffmpeg-soft" else "ijk-mediacodec",
                     )
-                    binding.loadingBox.visibility = View.GONE
+                    setLoadingIndicator(visible = false, immediate = true)
                     updatePlayPause()
                     if (!locked) scheduleHideControls()
                     scheduleFirstFrameWatch(token, stream)
@@ -903,7 +1086,7 @@ class PlayerActivity : AppCompatActivity() {
 
                 override fun onBuffering(buffering: Boolean) {
                     if (token != playGeneration) return
-                    binding.loadingBox.visibility = if (buffering) View.VISIBLE else View.GONE
+                    setLoadingIndicator(visible = buffering, immediate = false)
                 }
 
                 override fun onCompletion() {
@@ -921,7 +1104,7 @@ class PlayerActivity : AppCompatActivity() {
                     PlayerDiagLog.e(message ?: "ijk error")
                     if (tryDecodeRecovery(stream, activePosition(), reason = "ijk_error")) return
                     binding.retryButton.visibility = View.VISIBLE
-                    binding.loadingBox.visibility = View.GONE
+                    setLoadingIndicator(visible = false, immediate = true)
                     if (!locked) showControls(autoHide = false)
                     Toast.makeText(
                         this@PlayerActivity,
@@ -932,22 +1115,25 @@ class PlayerActivity : AppCompatActivity() {
                 }
 
                 override fun onVideoSize(width: Int, height: Int, sarNum: Int, sarDen: Int) {
-                    PlayerDiagLog.i("video size ${width}x$height sar=$sarNum:$sarDen fit=IJK")
+                    PlayerDiagLog.i(
+                        "video size ${width}x$height sar=$sarNum:$sarDen mode=$resizeMode zoom=$userZoom",
+                    )
                 }
             },
         )
         ijkEngine = engine
+        engine.setAspect(resizeMode, userZoom)
         engine.start(stream, remote, positionMs, currentSpeed)
         startProgressLoop()
         updatePlayPause()
-        binding.loadingBox.visibility = View.VISIBLE
+        setLoadingIndicator(visible = true, immediate = true)
     }
 
     @OptIn(UnstableApi::class)
     private suspend fun playWithMedia3(stream: StreamInfo, positionMs: Long, token: Int) {
         binding.ijkTexture.visibility = View.GONE
         binding.playerView.visibility = View.VISIBLE
-        binding.playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+        applyVideoTransform()
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(1_500, 8_000, 1_000, 1_500)
             .build()
@@ -1017,8 +1203,12 @@ class PlayerActivity : AppCompatActivity() {
         exo.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 updatePlayPause()
-                binding.loadingBox.visibility =
-                    if (playbackState == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
+                when (playbackState) {
+                    Player.STATE_BUFFERING ->
+                        setLoadingIndicator(visible = true, immediate = false)
+                    Player.STATE_IDLE -> Unit
+                    else -> setLoadingIndicator(visible = false, immediate = true)
+                }
                 if (playbackState == Player.STATE_READY && !locked) scheduleHideControls()
                 if (playbackState == Player.STATE_READY) {
                     scheduleFirstFrameWatch(token, stream)
@@ -1053,11 +1243,10 @@ class PlayerActivity : AppCompatActivity() {
 
             override fun onVideoSizeChanged(videoSize: VideoSize) {
                 if (videoSize.width > 0 && videoSize.height > 0) {
-                    // 强制 FIT，避免 OEM / 旋转后落到 stretch
-                    binding.playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    applyVideoTransform()
                     PlayerDiagLog.i(
                         "video size ${videoSize.width}x${videoSize.height} " +
-                            "pw=${videoSize.pixelWidthHeightRatio} fit=Media3",
+                            "pw=${videoSize.pixelWidthHeightRatio} mode=$resizeMode zoom=$userZoom",
                     )
                 }
             }
@@ -1071,7 +1260,7 @@ class PlayerActivity : AppCompatActivity() {
                     return
                 }
                 binding.retryButton.visibility = View.VISIBLE
-                binding.loadingBox.visibility = View.GONE
+                setLoadingIndicator(visible = false, immediate = true)
                 if (!locked) showControls(autoHide = false)
                 Toast.makeText(this@PlayerActivity, error.message ?: "播放失败", Toast.LENGTH_LONG).show()
                 uploadDiagnosticsAsync("player_error")
@@ -1087,7 +1276,7 @@ class PlayerActivity : AppCompatActivity() {
         exo.playWhenReady = true
         startProgressLoop()
         updatePlayPause()
-        binding.loadingBox.visibility = View.VISIBLE
+        setLoadingIndicator(visible = true, immediate = true)
     }
 
     /**
@@ -1333,8 +1522,8 @@ class PlayerActivity : AppCompatActivity() {
             return
         }
         val token = seasonGeneration
-        binding.loadingBox.visibility = View.VISIBLE
         binding.loadingText.text = getString(R.string.next_season_loading)
+        setLoadingIndicator(visible = true, immediate = true)
         showGestureHint(getString(R.string.next_season_loading))
         seasonJob?.cancel()
         seasonJob = lifecycleScope.launch {
@@ -1355,7 +1544,7 @@ class PlayerActivity : AppCompatActivity() {
                 refreshEpisodePicker()
                 loadCurrent()
             } catch (e: Exception) {
-                binding.loadingBox.visibility = View.GONE
+                setLoadingIndicator(visible = false, immediate = true)
                 binding.loadingText.text = getString(R.string.loading)
                 Toast.makeText(
                     this@PlayerActivity,
@@ -1455,8 +1644,9 @@ class PlayerActivity : AppCompatActivity() {
             remoteVideo?.close()
             remoteVideo = null
         }
-        // 清掉 IJK FIT 矩阵，避免切回 Media3 时残留缩放
+        // 清掉 IJK 矩阵；Media3 缩放由 applyVideoTransform 维持
         binding.ijkTexture.setTransform(android.graphics.Matrix())
+        applyVideoTransform()
     }
 
     override fun onStart() {
@@ -1486,6 +1676,7 @@ class PlayerActivity : AppCompatActivity() {
         hideUnlockJob?.cancel()
         hintJob?.cancel()
         seasonJob?.cancel()
+        loadingShowJob?.cancel()
         releasePlayer()
         super.onDestroy()
     }
@@ -1494,6 +1685,8 @@ class PlayerActivity : AppCompatActivity() {
         private const val TAG = PlayerDiagLog.TAG
         /** 锁定后小解锁钮自动隐藏（与普通控件栏相近）。 */
         private const val UNLOCK_CHIP_AUTO_HIDE_MS = 3_200L
+        /** 播放中缓冲提示防抖：短于此时长的卡顿不闪「加载中」。 */
+        private const val BUFFERING_INDICATOR_DELAY_MS = 450L
         private const val STATE_LANDSCAPE = "landscape_preferred"
 
         const val EXTRA_SERIES_ID = "series_id"

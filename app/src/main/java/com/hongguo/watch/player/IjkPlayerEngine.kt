@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 轻量 IJK 会话：TextureView 出画、软/硬解开关、速度、seek。
- * 画面用 [VideoAspectHelper] FIT（letterbox/pillarbox），禁止 stretch。
+ * 画面用 [VideoAspectHelper] 按 [VideoResizeMode] + 用户缩放变换。
  * 不重写主播放器架构；由 PlayerActivity 在手表路径选用。
  */
 class IjkPlayerEngine(
@@ -41,6 +41,8 @@ class IjkPlayerEngine(
     private var videoHeight = 0
     private var sarNum = 1
     private var sarDen = 1
+    private var resizeMode: VideoResizeMode = VideoResizeMode.FIT
+    private var userZoom: Float = VideoAspectHelper.MIN_USER_ZOOM
 
     fun start(
         stream: StreamInfo,
@@ -92,7 +94,7 @@ class IjkPlayerEngine(
             videoHeight = height
             sarNum = if (num > 0) num else 1
             sarDen = if (den > 0) den else 1
-            applyAspectFit()
+            applyAspect()
             listener.onVideoSize(width, height, sarNum, sarDen)
         }
         bindSurface(ijk)
@@ -110,17 +112,35 @@ class IjkPlayerEngine(
         ijk.prepareAsync()
     }
 
-    /** 旋转 / 布局变化后由 Activity 再调一次。 */
-    fun applyAspectFit() {
+    fun setResizeMode(mode: VideoResizeMode) {
+        resizeMode = mode
+        applyAspect()
+    }
+
+    fun setUserZoom(zoom: Float) {
+        userZoom = zoom.coerceIn(VideoAspectHelper.MIN_USER_ZOOM, VideoAspectHelper.MAX_USER_ZOOM)
+        applyAspect()
+    }
+
+    fun setAspect(mode: VideoResizeMode, zoom: Float) {
+        resizeMode = mode
+        userZoom = zoom.coerceIn(VideoAspectHelper.MIN_USER_ZOOM, VideoAspectHelper.MAX_USER_ZOOM)
+        applyAspect()
+    }
+
+    /** 旋转 / 布局 / 模式 / 缩放变化后由 Activity 再调。 */
+    fun applyAspect() {
         if (released.get()) return
         if (videoWidth <= 0 || videoHeight <= 0) return
         val apply = {
-            VideoAspectHelper.applyFitTransform(
+            VideoAspectHelper.applyTransform(
                 textureView,
+                resizeMode,
                 videoWidth,
                 videoHeight,
                 sarNum,
                 sarDen,
+                userZoom,
             )
         }
         if (textureView.width > 0 && textureView.height > 0) {
@@ -129,6 +149,9 @@ class IjkPlayerEngine(
             textureView.post(apply)
         }
     }
+
+    /** @deprecated 使用 [applyAspect] */
+    fun applyAspectFit() = applyAspect()
 
     fun play() {
         player?.start()
@@ -175,7 +198,7 @@ class IjkPlayerEngine(
         if (st != null) {
             surface = Surface(st)
             ijk.setSurface(surface)
-            applyAspectFit()
+            applyAspect()
             return
         }
         textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
@@ -184,11 +207,11 @@ class IjkPlayerEngine(
                 surface?.release()
                 surface = Surface(surfaceTexture)
                 player?.setSurface(surface)
-                applyAspectFit()
+                applyAspect()
             }
 
             override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, w: Int, h: Int) {
-                applyAspectFit()
+                applyAspect()
             }
 
             override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {

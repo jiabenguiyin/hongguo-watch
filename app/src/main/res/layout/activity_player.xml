@@ -18,6 +18,8 @@
         app:resize_mode="fit"
         app:keep_content_on_player_reset="true"
         app:use_artwork="false"
+        app:use_controller="false"
+        app:show_buffering="never"
         app:shutter_background_color="@android:color/black" />
 
     <!-- IJK/FFmpeg 兼容软解路径（手表 / 低配）；默认隐藏 -->
@@ -108,6 +110,7 @@
             android:rotation="270" />
     </LinearLayout>
 
+    <!-- 唯一缓冲指示：勿与 PlayerView 内置 buffering 叠圈 -->
     <LinearLayout
         android:id="@+id/loadingBox"
         android:layout_width="wrap_content"
@@ -119,7 +122,8 @@
 
         <ProgressBar
             android:layout_width="28dp"
-            android:layout_height="28dp" />
+            android:layout_height="28dp"
+            android:indeterminateTint="@color/accent" />
 
         <TextView
             android:id="@+id/loadingText"

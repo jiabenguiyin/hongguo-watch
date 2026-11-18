@@ -7,6 +7,7 @@ import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import coil.request.CachePolicy
 import com.hongguo.watch.data.AppContainer
+import com.hongguo.watch.data.cache.VideoCacheManager
 import com.hongguo.watch.ui.WatchUi
 import com.hongguo.watch.upstream.VendorConstants
 import kotlinx.coroutines.CoroutineScope
@@ -26,6 +27,10 @@ class HongguoWatchApp : Application(), ImageLoaderFactory {
         container = AppContainer(this)
         appScope.launch {
             WatchUi.setRoundAdaptOverride(container.settings.roundAdaptOverrideNow())
+            container.videoCacheBudgetBytes = container.settings.videoCacheBudgetBytesNow()
+            container.settings.videoCacheBudgetMb.collect { mb ->
+                container.videoCacheBudgetBytes = VideoCacheManager.budgetBytesForMb(mb)
+            }
         }
     }
 

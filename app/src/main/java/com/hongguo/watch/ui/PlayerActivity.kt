@@ -39,6 +39,9 @@ import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
 import com.hongguo.watch.data.DiagUploader
 import com.hongguo.watch.data.SettingsStore
+import com.hongguo.watch.data.cache.VideoCacheManager
+import com.hongguo.watch.data.cache.VideoCachePriority
+import com.hongguo.watch.data.cache.VideoCacheRequest
 import com.hongguo.watch.data.model.Episode
 import com.hongguo.watch.data.model.RelatedWork
 import com.hongguo.watch.data.model.SeriesSource
@@ -64,6 +67,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -102,6 +106,9 @@ class PlayerActivity : AppCompatActivity() {
 
     private val repo get() = (application as HongguoWatchApp).container.repository
     private val settings get() = (application as HongguoWatchApp).container.settings
+    private val videoCache get() = (application as HongguoWatchApp).container.videoCache
+    /** 当前是否走本地缓存文件（与网络流二选一）。 */
+    private var playingFromCache = false
 
     private var seriesId = ""
     private var seriesTitle = ""
@@ -347,6 +354,11 @@ class PlayerActivity : AppCompatActivity() {
             loadCurrent()
         }
         binding.qualityButton.setOnClickListener { openQualitySheet() }
+        binding.cacheButton.setOnClickListener {
+            if (locked) return@setOnClickListener
+            enqueueCacheExplicit()
+            scheduleHideControls()
+        }
         binding.speedButton.setOnClickListener { openSpeedSheet() }
         binding.episodesButton.setOnClickListener { openEpisodesSheet() }
         binding.controlsMidTap.setOnClickListener {
@@ -1119,12 +1131,28 @@ class PlayerActivity : AppCompatActivity() {
         binding.retryButton.visibility = View.GONE
         setLoadingIndicator(visible = true, immediate = true)
         if (!locked) showControls(autoHide = false)
+        refreshCacheButtonUi()
 
         // 取消上一次取流，避免快速切集时旧结果覆盖当前集
         playJob?.cancel()
         firstFrameWatchJob?.cancel()
         val token = ++playGeneration
         playJob = lifecycleScope.launch {
+            // 优先本地缓存：弱网 / 无网可播；Wi‑Fi 限制不拦缓存命中
+            val cachedFile = runCatching {
+                videoCache.resolvePlayFile(requestedSeriesId, episodeId)
+            }.getOrNull()
+            if (cachedFile != null) {
+                if (token != playGeneration) return@launch
+                PlayerDiagLog.i("play from cache ep=$episodeId file=${cachedFile.name}")
+                playingFromCache = true
+                refreshCacheButtonUi()
+                playCachedFile(cachedFile, startPositionMs, token)
+                // 有网时仍可预取下一集
+                maybePrefetchNext(token)
+                return@launch
+            }
+
             if (settings.wifiOnlyNow() && !isWifi()) {
                 if (token != playGeneration) return@launch
                 Toast.makeText(this@PlayerActivity, R.string.error_wifi_only, Toast.LENGTH_LONG).show()
@@ -1133,6 +1161,7 @@ class PlayerActivity : AppCompatActivity() {
                 return@launch
             }
             try {
+                playingFromCache = false
                 val userMax = settings.maxQualityNow()
                 val effectiveMax = WatchDecodePolicy.effectiveMaxQuality(this@PlayerActivity, userMax)
                 currentQuality = userMax
@@ -1175,6 +1204,14 @@ class PlayerActivity : AppCompatActivity() {
                         "isAvc=${CodecLabels.isAvc(stream.codec)} isHevc=${CodecLabels.isHevc(stream.codec)}",
                 )
                 playStream(stream, startPositionMs)
+                // 边看边缓存当前选中流；可选预取下一集
+                enqueueCacheForStream(
+                    episodeId = episodeId,
+                    episodeNumber = episodeNumber,
+                    stream = stream,
+                    priority = VideoCachePriority.CURRENT,
+                )
+                maybePrefetchNext(token)
             } catch (e: Exception) {
                 if (token != playGeneration) return@launch
                 if (e is kotlinx.coroutines.CancellationException) throw e
@@ -1203,6 +1240,157 @@ class PlayerActivity : AppCompatActivity() {
         } else {
             playWithMedia3(stream, positionMs, token)
         }
+    }
+
+    /** 本地解密文件：IJK / Media3 均走 file URI，不再经过 RemoteVideo。 */
+    @OptIn(UnstableApi::class)
+    private suspend fun playCachedFile(file: File, positionMs: Long, token: Int) {
+        if (!playerForeground || token != playGeneration) return
+        val local = StreamInfo(
+            url = file.toURI().toString(),
+            quality = getString(R.string.cache_ready),
+            isPreview = false,
+            decryptionKey = null,
+            codec = "",
+        )
+        releasePlayer(save = false)
+        videoFrameRendered = false
+        firstFrameWatchJob?.cancel()
+        binding.playerNotice.visibility = View.GONE
+        PlayerDiagLog.markPlayStart(
+            codec = "cache",
+            quality = local.quality,
+            mode = "kernel=$activeKernel soft=$softDecodePreferred local=1",
+        )
+        if (activeKernel == PlayerKernel.IJK) {
+            playWithIjk(local, positionMs, token)
+        } else {
+            playWithMedia3(local, positionMs, token)
+        }
+        Toast.makeText(this, R.string.playing_from_cache, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun enqueueCacheForStream(
+        episodeId: String,
+        episodeNumber: Int,
+        stream: StreamInfo,
+        priority: VideoCachePriority,
+    ) {
+        val free = videoCache.freeSpaceBytes()
+        if (free < VideoCacheManager.STORAGE_HEADROOM_BYTES) {
+            PlayerDiagLog.w("skip cache: low storage free=$free")
+            return
+        }
+        videoCache.enqueue(
+            request = VideoCacheRequest(
+                seriesId = seriesId,
+                episodeId = episodeId,
+                seriesTitle = seriesTitle,
+                episodeNumber = episodeNumber,
+            ),
+            stream = stream,
+            priority = priority,
+        )
+        refreshCacheButtonUi()
+    }
+
+    private fun enqueueCacheExplicit() {
+        val episodeId = episodeIds.getOrNull(episodeIndex) ?: return
+        val episodeNumber = episodeNumbers.getOrNull(episodeIndex) ?: (episodeIndex + 1)
+        if (videoCache.isReady(seriesId, episodeId)) {
+            Toast.makeText(this, R.string.cache_already, Toast.LENGTH_SHORT).show()
+            refreshCacheButtonUi()
+            return
+        }
+        if (videoCache.isCaching(seriesId, episodeId)) {
+            Toast.makeText(this, R.string.cache_caching, Toast.LENGTH_SHORT).show()
+            refreshCacheButtonUi()
+            return
+        }
+        lifecycleScope.launch {
+            if (settings.wifiOnlyNow() && !isWifi()) {
+                Toast.makeText(this@PlayerActivity, R.string.error_wifi_only, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            try {
+                val userMax = settings.maxQualityNow()
+                val effectiveMax = WatchDecodePolicy.effectiveMaxQuality(this@PlayerActivity, userMax)
+                val stream = repo.stream(
+                    seriesId = seriesId,
+                    episodeId = episodeId,
+                    preferAvc = true,
+                    avcOnly = forceAvcOnly,
+                    maxHeight = effectiveMax,
+                )
+                enqueueCacheForStream(
+                    episodeId = episodeId,
+                    episodeNumber = episodeNumber,
+                    stream = stream,
+                    priority = VideoCachePriority.CURRENT,
+                )
+                Toast.makeText(this@PlayerActivity, R.string.cache_started, Toast.LENGTH_SHORT).show()
+                refreshCacheButtonUi()
+            } catch (err: Exception) {
+                if (err is kotlinx.coroutines.CancellationException) throw err
+                val msg = if (VideoCacheManager.isNoSpace(err)) {
+                    getString(R.string.cache_low_storage)
+                } else {
+                    getString(R.string.cache_failed, err.message ?: "")
+                }
+                Toast.makeText(this@PlayerActivity, msg, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun maybePrefetchNext(token: Int) {
+        val nextIndex = episodeIndex + 1
+        if (nextIndex > episodeIds.lastIndex) return
+        val nextId = episodeIds.getOrNull(nextIndex) ?: return
+        val nextNumber = episodeNumbers.getOrNull(nextIndex) ?: (nextIndex + 1)
+        if (videoCache.isReady(seriesId, nextId) || videoCache.isCaching(seriesId, nextId)) return
+        lifecycleScope.launch {
+            if (token != playGeneration) return@launch
+            if (settings.wifiOnlyNow() && !isWifi()) return@launch
+            if (!isWifi() && !isNetworkAvailable()) return@launch
+            runCatching {
+                val userMax = settings.maxQualityNow()
+                val effectiveMax = WatchDecodePolicy.effectiveMaxQuality(this@PlayerActivity, userMax)
+                val stream = repo.stream(
+                    seriesId = seriesId,
+                    episodeId = nextId,
+                    preferAvc = true,
+                    avcOnly = forceAvcOnly,
+                    maxHeight = effectiveMax,
+                )
+                if (token != playGeneration) return@runCatching
+                enqueueCacheForStream(
+                    episodeId = nextId,
+                    episodeNumber = nextNumber,
+                    stream = stream,
+                    priority = VideoCachePriority.NEXT,
+                )
+            }.onFailure { err ->
+                PlayerDiagLog.w("prefetch next failed: ${err.message}")
+            }
+        }
+    }
+
+    private fun refreshCacheButtonUi() {
+        val episodeId = episodeIds.getOrNull(episodeIndex) ?: return
+        binding.cacheButton.text = when {
+            videoCache.isReady(seriesId, episodeId) || playingFromCache ->
+                getString(R.string.cache_ready)
+            videoCache.isCaching(seriesId, episodeId) ->
+                getString(R.string.cache_caching)
+            else -> getString(R.string.cache_action)
+        }
+    }
+
+    private fun isNetworkAvailable(): Boolean {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     private suspend fun playWithIjk(stream: StreamInfo, positionMs: Long, token: Int) {
@@ -1304,6 +1492,7 @@ class PlayerActivity : AppCompatActivity() {
         val renderersFactory = WatchDecodePolicy.renderersFactory(this, videoCodecMode)
 
         val key = stream.decryptionKey
+        val localFile = stream.url.startsWith("file:", ignoreCase = true)
         val exo = if (key != null) {
             val remote = withContext(Dispatchers.IO) {
                 RemoteVideo(
@@ -1318,6 +1507,13 @@ class PlayerActivity : AppCompatActivity() {
             remoteVideo = remote
             ExoPlayer.Builder(this, renderersFactory)
                 .setMediaSourceFactory(ProgressiveMediaSource.Factory { VideoDataSource(remote) })
+                .setLoadControl(loadControl)
+                .build()
+        } else if (localFile) {
+            // 本地缓存：DefaultDataSource 可读 file://，勿走仅 HTTP 的 DataSource
+            if (!playerForeground || token != playGeneration) return
+            ExoPlayer.Builder(this, renderersFactory)
+                .setMediaSourceFactory(DefaultMediaSourceFactory(this))
                 .setLoadControl(loadControl)
                 .build()
         } else {

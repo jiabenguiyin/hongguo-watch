@@ -71,6 +71,21 @@
             android:textSize="@dimen/watch_meta" />
     </LinearLayout>
 
+    <!-- T-57 钩子：库页展示视频缓存占用；完整离线列表后续 PR -->
+    <TextView
+        android:id="@+id/libraryCacheHook"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/bg_panel"
+        android:gravity="center_vertical"
+        android:minHeight="32dp"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp"
+        android:textColor="@color/text_secondary"
+        android:textSize="@dimen/watch_meta"
+        android:visibility="gone" />
+
     <HorizontalScrollView
         android:id="@+id/homeNavScroll"
         android:layout_width="match_parent"

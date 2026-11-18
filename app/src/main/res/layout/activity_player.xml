@@ -234,6 +234,19 @@
                 android:textColor="@color/text_primary"
                 android:textSize="@dimen/watch_meta" />
 
+            <TextView
+                android:id="@+id/cacheButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginStart="2dp"
+                android:background="@drawable/bg_player_pill"
+                android:gravity="center"
+                android:minWidth="40dp"
+                android:paddingHorizontal="8dp"
+                android:text="@string/cache_action"
+                android:textColor="@color/text_primary"
+                android:textSize="@dimen/watch_meta" />
+
             <ImageButton
                 android:id="@+id/aspectButton"
                 android:layout_width="36dp"

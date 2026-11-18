@@ -4,11 +4,10 @@ package com.hongguo.watch.upstream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
+import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
-import org.bouncycastle.crypto.digests.SM3Digest
-import org.bouncycastle.util.encoders.Base64
 
 internal fun Byte.u() = toInt() and 255
 
@@ -22,10 +21,10 @@ internal fun ByteArray.hex() = joinToString("") { "%02x".format(it.u()) }
 internal fun decode64(s: String): ByteArray {
     val normalized = s.replace('-', '+').replace('_', '/')
     require(normalized.length % 4 != 1) { "Invalid Base64 length" }
-    return Base64.decode(normalized.padEnd((normalized.length + 3) / 4 * 4, '='))
+    return Base64.getDecoder().decode(normalized.padEnd((normalized.length + 3) / 4 * 4, '='))
 }
 
-internal fun ByteArray.base64(): String = Base64.toBase64String(this)
+internal fun ByteArray.base64(): String = Base64.getEncoder().encodeToString(this)
 
 internal fun le32(n: Int) = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(n).array()
 
@@ -49,11 +48,7 @@ internal fun ByteArray.i64(at: Int, little: Boolean = false) =
 internal fun digest(algorithm: String, value: ByteArray): ByteArray =
     MessageDigest.getInstance(algorithm).digest(value)
 
-internal fun sm3(value: ByteArray): ByteArray =
-    SM3Digest().let { d ->
-        d.update(value, 0, value.size)
-        ByteArray(32).also { d.doFinal(it, 0) }
-    }
+internal fun sm3(value: ByteArray): ByteArray = Sm3.digest(value)
 
 internal fun aes(mode: String, key: ByteArray, iv: ByteArray, data: ByteArray): ByteArray =
     Cipher.getInstance("AES/$mode/NoPadding").run {

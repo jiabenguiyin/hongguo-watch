@@ -12,9 +12,9 @@ android {
         applicationId = "com.hongguo.watch"
         minSdk = 24
         targetSdk = 34
-        // main tip 0.4.24/30（#31）；本 PR：息屏续播省电（T-60）
-        versionCode = 31
-        versionName = "0.4.25"
+        // main tip 0.4.25/#32；本 PR：安装包体积再压缩（T-61）→ 0.4.26
+        versionCode = 32
+        versionName = "0.4.26"
         resourceConfigurations += listOf("zh", "en")
         // 可选诊断上传端点（构建时注入）；空则走公开粘贴服务。切勿把密钥写进仓库。
         val diagUrl = (System.getenv("HG_DIAG_UPLOAD_URL") ?: "")
@@ -100,8 +100,15 @@ android {
             )
         }
         debug {
-            isMinifyEnabled = false
+            // CI / GitHub Releases 发的是 assembleDebug；对 debug 也开 R8+资源收缩，
+            // 与 release 同规则，避免侧载包比 release 大一截。
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.getByName("debug")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 
@@ -121,7 +128,22 @@ android {
 
     packaging {
         resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += listOf(
+                "/META-INF/{AL2.0,LGPL2.1}",
+                "/META-INF/*.kotlin_module",
+                "/META-INF/*.version",
+                "/META-INF/NOTICE*",
+                "/META-INF/LICENSE*",
+                "/META-INF/DEPENDENCIES",
+                "kotlin/**",
+                "DebugProbesKt.bin",
+                "org/bouncycastle/**",
+            )
+        }
+        // 压缩 APK 内 .so（含 IJK/FFmpeg），减小下载体积；安装时仍解压到 lib 目录。
+        // 不删除任何 ABI / codec 原生库，保留 CD12 Max 软解路径。
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 
@@ -147,14 +169,13 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    // SM3 for App-path Signer（对照 hongguoTV Bytes.kt）
-    implementation("org.bouncycastle:bcprov-jdk18on:1.79")
+    // SM3 已内置 Sm3.kt，不再依赖完整 bcprov（约 8MB jar）
 
     implementation("androidx.media3:media3-exoplayer:1.4.1")
-    implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
+    // 片源为渐进式 MP4（RemoteVideo），不打包 HLS 扩展
     implementation("androidx.media3:media3-ui:1.4.1")
 
-    // IJK + FFmpeg soft decode（手表 / 低配 SoC 兼容路径；Media3 仍为默认非手表路径）
+    // IJK + FFmpeg soft decode（手表 / 低配 SoC 兼容路径；Media3 仍为可选内核）
     implementation(project(":ijkplayer-java"))
 
     implementation("androidx.room:room-runtime:2.6.1")

@@ -25,7 +25,6 @@ import com.hongguo.watch.data.DiagUploader
 import com.hongguo.watch.data.SettingsStore
 import com.hongguo.watch.data.UpdateApkInstaller
 import com.hongguo.watch.data.UpdateChecker
-import com.hongguo.watch.data.cache.VideoCacheManager
 import com.hongguo.watch.databinding.ActivitySettingsBinding
 import com.hongguo.watch.player.DecodePath
 import com.hongguo.watch.player.PlayerDiagLog
@@ -45,7 +44,6 @@ class SettingsActivity : AppCompatActivity() {
     private var currentQuality = 480
     private var currentKernel = PlayerKernel.AUTO
     private var currentDecode = DecodePath.AUTO
-    private var currentCacheBudgetMb = 512
     private var roundSwitchReady = false
     private var updateChecking = false
     private var downloadJob: Job? = null
@@ -67,7 +65,6 @@ class SettingsActivity : AppCompatActivity() {
             currentQuality = container.settings.maxQuality.first()
             currentKernel = container.settings.playerKernel.first()
             currentDecode = container.settings.decodePath.first()
-            currentCacheBudgetMb = container.settings.videoCacheBudgetMb.first()
             refreshQualityChips()
             refreshKernelChips()
             refreshDecodeChips()
@@ -98,9 +95,6 @@ class SettingsActivity : AppCompatActivity() {
         binding.decodeAuto.setOnClickListener { pickDecode(DecodePath.AUTO) }
         binding.decodeHw.setOnClickListener { pickDecode(DecodePath.HARDWARE) }
         binding.decodeSw.setOnClickListener { pickDecode(DecodePath.SOFTWARE) }
-        binding.cacheBudget256.setOnClickListener { pickCacheBudget(256) }
-        binding.cacheBudget512.setOnClickListener { pickCacheBudget(512) }
-        binding.cacheBudget1024.setOnClickListener { pickCacheBudget(1024) }
         binding.manageOfflineButton.setOnClickListener {
             startActivity(
                 Intent(this, MainActivity::class.java).apply {
@@ -494,30 +488,15 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    private fun pickCacheBudget(mb: Int) {
-        lifecycleScope.launch {
-            container.settings.setVideoCacheBudgetMb(mb)
-            currentCacheBudgetMb = VideoCacheManager.normalizeBudgetMb(mb)
-            container.videoCacheBudgetBytes =
-                VideoCacheManager.budgetBytesForMb(currentCacheBudgetMb)
-            refreshVideoCacheUi()
-        }
-    }
-
     private fun refreshVideoCacheUi() {
         val summary = container.videoCache.spaceSummary()
         binding.videoCacheUsage.text = getString(
             R.string.video_cache_usage,
             summary.usedLabel,
-            VideoCacheManager.formatBytes(
-                VideoCacheManager.budgetBytesForMb(currentCacheBudgetMb),
-            ),
+            summary.budgetLabel,
         )
         binding.videoCacheFree.text = getString(R.string.offline_free_space, summary.freeLabel) +
             " · " + getString(R.string.offline_entry_count, summary.entryCount)
-        binding.cacheBudget256.isSelected = currentCacheBudgetMb == 256
-        binding.cacheBudget512.isSelected = currentCacheBudgetMb == 512
-        binding.cacheBudget1024.isSelected = currentCacheBudgetMb == 1024
     }
 
     private fun refreshQualityChips() {

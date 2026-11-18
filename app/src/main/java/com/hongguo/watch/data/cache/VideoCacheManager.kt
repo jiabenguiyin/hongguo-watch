@@ -35,7 +35,8 @@ import java.util.concurrent.TimeUnit
 class VideoCacheManager(
     context: Context,
     private val http: OkHttpClient = defaultHttp,
-    private val budgetProvider: () -> Long = { DEFAULT_BUDGET_BYTES },
+    /** 测试可注入；默认按本机 StatFs + 已用缓存动态计算。 */
+    private val budgetProvider: (() -> Long)? = null,
 ) {
     private val appContext = context.applicationContext
     private val rootDir: File = File(appContext.filesDir, DIR_NAME).also { it.mkdirs() }
@@ -49,11 +50,27 @@ class VideoCacheManager(
 
     fun rootDirectory(): File = rootDir
 
-    fun budgetBytes(): Long = budgetProvider().coerceIn(MIN_BUDGET_BYTES, MAX_BUDGET_BYTES)
+    /**
+     * 动态预算：每次调用按当前空闲/总量与已用缓存重算（下载前、清空后、空间摘要均走此路径）。
+     * @see VideoCacheBudget
+     */
+    fun budgetBytes(): Long {
+        budgetProvider?.let { return it().coerceAtLeast(0L) }
+        return computeDynamicBudget()
+    }
 
     fun usedBytes(): Long = VideoCacheLru.totalReadyBytes(snapshot())
 
     fun freeSpaceBytes(): Long = runCatching { availableBytes(rootDir) }.getOrDefault(0L)
+
+    fun totalSpaceBytes(): Long = runCatching { totalBytes(rootDir) }.getOrDefault(0L)
+
+    private fun computeDynamicBudget(): Long {
+        val free = freeSpaceBytes()
+        val total = totalSpaceBytes()
+        val used = usedBytes()
+        return VideoCacheBudget.compute(free, total, used)
+    }
 
     fun formatUsedLabel(): String = formatBytes(usedBytes())
 
@@ -382,11 +399,10 @@ class VideoCacheManager(
         private const val TAG = "HgVideoCache"
         const val DIR_NAME = "video_cache"
         private const val INDEX_NAME = "index.json"
-        const val DEFAULT_BUDGET_BYTES = 512L * 1024L * 1024L
-        const val MIN_BUDGET_BYTES = 256L * 1024L * 1024L
-        const val MAX_BUDGET_BYTES = 1024L * 1024L * 1024L
-        /** 预留空间，避免把手表内部存储写满导致系统异常。 */
-        const val STORAGE_HEADROOM_BYTES = 64L * 1024L * 1024L
+        /** @deprecated 保留兼容旧引用；实际预算见 [VideoCacheBudget]。 */
+        const val DEFAULT_BUDGET_BYTES = VideoCacheBudget.FLOOR_BYTES
+        /** 写盘前额外预留；动态预算已含更大 headroom。 */
+        const val STORAGE_HEADROOM_BYTES = VideoCacheBudget.HEADROOM_MIN_BYTES
         private const val CHUNK_BYTES = 256 * 1024
         const val ERR_LOW_STORAGE = "存储空间不足"
 
@@ -404,6 +420,12 @@ class VideoCacheManager(
             val path = if (dir.exists()) dir else dir.parentFile ?: dir
             val stat = StatFs(path.absolutePath)
             return stat.availableBlocksLong * stat.blockSizeLong
+        }
+
+        fun totalBytes(dir: File): Long {
+            val path = if (dir.exists()) dir else dir.parentFile ?: dir
+            val stat = StatFs(path.absolutePath)
+            return stat.blockCountLong * stat.blockSizeLong
         }
 
         fun isNoSpace(err: Throwable): Boolean {
@@ -433,15 +455,6 @@ class VideoCacheManager(
                 else -> "${bytes.coerceAtLeast(0L)} B"
             }
         }
-
-        fun normalizeBudgetMb(mb: Int): Int = when {
-            mb >= 1024 -> 1024
-            mb >= 512 -> 512
-            else -> 256
-        }
-
-        fun budgetBytesForMb(mb: Int): Long =
-            normalizeBudgetMb(mb).toLong() * 1024L * 1024L
 
         @Suppress("UNUSED_PARAMETER")
         fun userAgent(): String = "HongguoWatch/${BuildConfig.VERSION_NAME}"

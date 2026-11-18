@@ -1038,7 +1038,8 @@ class PlayerActivity : AppCompatActivity() {
                 if (isPlaying) {
                     if (!locked) scheduleHideControls()
                     scheduleFirstFrameWatch(token, stream)
-                } else {
+                } else if (exo.playWhenReady.not()) {
+                    // 仅用户暂停 / playWhenReady=false 时落盘；缓冲导致的 isPlaying=false 不打断控件栏
                     hideControlsJob?.cancel()
                     saveProgress(force = true)
                 }
@@ -1246,8 +1247,17 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun hasActiveEngine(): Boolean = player != null || ijkEngine != null
 
-    private fun isActivelyPlaying(): Boolean =
-        player?.isPlaying == true || ijkEngine?.isPlaying() == true
+    /**
+     * 播放键图标应对齐「用户期望的播/停」，而不是瞬时 [Player.isPlaying]。
+     * Media3 缓冲时 isPlaying=false 但 playWhenReady=true → 仍应显示暂停；
+     * IJK 在 prepared 后同步 start，用引擎 isPlaying。
+     */
+    private fun isActivelyPlaying(): Boolean {
+        val ijk = ijkEngine
+        if (ijk != null) return ijk.isPlaying()
+        val exo = player ?: return false
+        return exo.playWhenReady && exo.playbackState != Player.STATE_ENDED
+    }
 
     private fun activePosition(): Long =
         ijkEngine?.currentPosition() ?: player?.currentPosition?.coerceAtLeast(0L) ?: 0L
@@ -1375,6 +1385,8 @@ class PlayerActivity : AppCompatActivity() {
             binding.timeTotal.text = formatTime(duration)
         }
         binding.timeCurrent.text = formatTime(position)
+        // IJK 无 isPlaying 回调：进度循环顺带校正播放键，避免偶发不同步
+        if (ijkEngine != null && controlsVisible) updatePlayPause()
     }
 
     private fun formatTime(ms: Long): String {

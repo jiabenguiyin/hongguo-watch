@@ -10,6 +10,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
+import com.hongguo.watch.data.ContentRepository
 import com.hongguo.watch.data.model.Episode
 import com.hongguo.watch.data.model.SeriesSource
 import com.hongguo.watch.databinding.ActivityDetailBinding
@@ -131,6 +132,17 @@ class DetailActivity : AppCompatActivity() {
                     binding.episodeGrid.scrollToPosition(index)
                 }
                 refreshFavoriteIcon()
+                // 已收藏则用详情真实总集数回写，避免库内残留历史进度集号
+                if (favorited) {
+                    val total = ContentRepository.episodeTotal(episodeCount, episodes.size)
+                    repo.addFavorite(
+                        seriesId = seriesId,
+                        seriesTitle = seriesTitle,
+                        cover = cover,
+                        source = source,
+                        episodeCount = total,
+                    )
+                }
                 loadRelated()
             } catch (e: Exception) {
                 binding.errorView.visibility = View.VISIBLE
@@ -180,7 +192,7 @@ class DetailActivity : AppCompatActivity() {
                 seriesTitle = seriesTitle,
                 cover = cover,
                 source = source,
-                episodeCount = episodeCount.coerceAtLeast(episodes.size),
+                episodeCount = ContentRepository.episodeTotal(episodeCount, episodes.size),
             )
             binding.favoriteButton.setImageResource(
                 if (favorited) R.drawable.ic_favorite else R.drawable.ic_favorite_border,

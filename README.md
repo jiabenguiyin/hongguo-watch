@@ -1,6 +1,6 @@
 <div align="center">
 
-# 红果短剧手表版
+# 红果终端
 
 **hongguo-watch · 为小屏而生的安卓短剧客户端**
 

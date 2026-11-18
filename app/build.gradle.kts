@@ -20,12 +20,11 @@ android {
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
         buildConfigField("String", "DIAG_UPLOAD_URL", "\"$diagUrl\"")
-        // APK 下载镜像基址（逗号分隔）。默认社区前缀代理；可用 HG_APK_MIRROR_BASES 覆盖/清空。
-        // 条目约定见 UpdateChecker.parseMirrorBases；勿写入密钥。
+        // 额外 APK 镜像基址（逗号分隔，可选）。默认可空：优先 github.com→githubfast.com，再回落 GitHub。
+        // 可用 HG_APK_MIRROR_BASES 追加前缀代理 / 自建 file:；见 UpdateChecker；勿写入密钥。
         fun escapeBuildConfig(raw: String): String =
             raw.replace("\\", "\\\\").replace("\"", "\\\"")
-        val defaultMirrors = "https://ghproxy.net/,https://ghfast.top/"
-        val mirrorBases = System.getenv("HG_APK_MIRROR_BASES") ?: defaultMirrors
+        val mirrorBases = System.getenv("HG_APK_MIRROR_BASES") ?: ""
         buildConfigField("String", "APK_MIRROR_BASES", "\"${escapeBuildConfig(mirrorBases)}\"")
     }
 

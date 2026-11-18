@@ -32,11 +32,11 @@ Lightweight short-drama player for Android watches and small-screen devices.
 
 打开 [最新正式发布页](https://github.com/jiabenguiyin/hongguo-watch/releases/latest)，在 Assets 中选择与你设备系统 ABI 对应的安装包。
 
-国内直连 GitHub Release 可能失败或极慢。可给原始 Assets 链接加社区前缀后再下载，例如：
+国内直连 GitHub Release 可能失败或极慢。把 Assets 链接里的 `github.com` 改成 `githubfast.com` 后再下载，例如：
 
-`https://ghproxy.net/` + `https://github.com/jiabenguiyin/hongguo-watch/releases/download/v…/hongguo-watch-….apk`
+`https://githubfast.com/jiabenguiyin/hongguo-watch/releases/download/v…/hongguo-watch-….apk`
 
-备用前缀：`https://ghfast.top/`。具体拼法与自建同步见 [安装指南 · 镜像](docs/install.md#下载与升级)。应用内更新会优先镜像、失败再回落 GitHub。
+详见 [安装指南 · 镜像](docs/install.md#下载与升级)。应用内更新会优先 githubfast、失败再回落 GitHub。
 
 | 安装包 | 适用系统 |
 | --- | --- |

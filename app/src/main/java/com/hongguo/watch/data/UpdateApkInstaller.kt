@@ -49,7 +49,7 @@ object UpdateApkInstaller {
     }
 
     /**
-     * 同步下载。优先尝试 [urls]（镜像→GitHub）；返回目标文件。
+     * 同步下载。优先尝试 [urls]（githubfast → 可选镜像 → GitHub）；返回目标文件。
      * [cancel] 为 true 时中止并删除半成品。
      * [onProgress] 进度 0–100；未知总长时按已下字节估算上限 99。
      */

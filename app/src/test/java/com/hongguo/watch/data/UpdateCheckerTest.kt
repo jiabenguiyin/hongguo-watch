@@ -122,9 +122,28 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun candidateUrlsPreferMirrorsThenGithub() {
+    fun rewriteGithubFastInsertsFastInHost() {
         val github =
             "https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/hongguo-watch-0.4.10-arm64-v8a.apk"
+        assertEquals(
+            "https://githubfast.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/hongguo-watch-0.4.10-arm64-v8a.apk",
+            UpdateChecker.rewriteGithubFast(github),
+        )
+        assertEquals(
+            null,
+            UpdateChecker.rewriteGithubFast(
+                "https://githubfast.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/a.apk",
+            ),
+        )
+        assertEquals(null, UpdateChecker.rewriteGithubFast("https://cdn.example.com/a.apk"))
+    }
+
+    @Test
+    fun candidateUrlsPreferGithubFastThenOptionalMirrorsThenGithub() {
+        val github =
+            "https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/hongguo-watch-0.4.10-arm64-v8a.apk"
+        val fast =
+            "https://githubfast.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/hongguo-watch-0.4.10-arm64-v8a.apk"
         val urls = UpdateChecker.candidateDownloadUrls(
             githubApkUrl = github,
             apkName = "hongguo-watch-0.4.10-arm64-v8a.apk",
@@ -135,6 +154,7 @@ class UpdateCheckerTest {
         )
         assertEquals(
             listOf(
+                fast,
                 "https://ghproxy.net/https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/hongguo-watch-0.4.10-arm64-v8a.apk",
                 "https://cdn.example.com/apk/hongguo-watch-0.4.10-arm64-v8a.apk",
                 github,
@@ -144,11 +164,14 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun candidateUrlsWithoutMirrorsOnlyGithub() {
+    fun candidateUrlsDefaultOnlyGithubFastThenGithub() {
         val github =
             "https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/x.apk"
         assertEquals(
-            listOf(github),
+            listOf(
+                "https://githubfast.com/jiabenguiyin/hongguo-watch/releases/download/v0.4.10/x.apk",
+                github,
+            ),
             UpdateChecker.candidateDownloadUrls(github, "x.apk", mirrorBases = emptyList()),
         )
     }

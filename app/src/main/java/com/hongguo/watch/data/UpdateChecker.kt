@@ -9,7 +9,7 @@ import java.util.concurrent.TimeUnit
 /**
  * 从 GitHub Releases 拉取最新版并与本地 versionName / versionCode 比较。
  * 按设备 ABI 优先挑选 APK 资源，供本地下载安装。
- * 下载时优先尝试可配置镜像，再回落到 GitHub 原始链接。
+ * 下载时优先 github.com→githubfast.com，再试可选镜像，最后回落 GitHub。
  */
 object UpdateChecker {
     private const val LATEST_API =
@@ -119,7 +119,7 @@ object UpdateChecker {
     }
 
     /**
-     * 解析 BuildConfig / 自定义镜像列表。
+     * 解析 BuildConfig / 自定义镜像列表（在 githubfast 改写之后、GitHub 回落之前试用）。
      * - `https://ghproxy.net/`：前缀代理，拼 `base + 原始 GitHub URL`
      * - `file:https://cdn.example.com/apk/`：按文件名，拼 `base + apkName`
      * - 含 `{url}` / `{file}`：占位符替换
@@ -132,7 +132,21 @@ object UpdateChecker {
     }
 
     /**
-     * 生成下载候选：镜像优先，最后 GitHub 原始链接。去重保序。
+     * 在 URL 的 `github` 后插入 `fast`：`github.com` → `githubfast.com`。
+     * 已是 githubfast 或无 github 主机则返回 null。
+     */
+    fun rewriteGithubFast(githubUrl: String): String? {
+        val original = githubUrl.trim()
+        if (original.isBlank()) return null
+        // 仅改写主机名中的 github.com（含 www.）；避免重复改写 githubfast.com
+        val rewritten = original
+            .replace("://www.github.com", "://www.githubfast.com", ignoreCase = true)
+            .replace("://github.com", "://githubfast.com", ignoreCase = true)
+        return rewritten.takeIf { it != original }
+    }
+
+    /**
+     * 生成下载候选：githubfast 优先 → 可选额外镜像 → GitHub 原始链接。去重保序。
      */
     fun candidateDownloadUrls(
         githubApkUrl: String,
@@ -143,7 +157,10 @@ object UpdateChecker {
         if (original.isBlank()) return emptyList()
         val fileName = apkName?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
             ?: original.substringAfterLast('/').substringBefore('?')
-        val out = ArrayList<String>(mirrorBases.size + 1)
+        val out = ArrayList<String>(mirrorBases.size + 2)
+        rewriteGithubFast(original)?.let { fast ->
+            if (fast !in out) out.add(fast)
+        }
         for (base in mirrorBases) {
             val mirrored = rewriteViaMirror(base, original, fileName) ?: continue
             if (mirrored.isNotBlank() && mirrored !in out) out.add(mirrored)

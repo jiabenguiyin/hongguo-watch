@@ -27,6 +27,9 @@ import com.hongguo.watch.data.model.Episode
 import com.hongguo.watch.data.model.SeriesSource
 import com.hongguo.watch.databinding.ActivityDetailBinding
 import com.hongguo.watch.player.WatchDecodePolicy
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class DetailActivity : AppCompatActivity() {
@@ -53,6 +56,12 @@ class DetailActivity : AppCompatActivity() {
     private var episodeRanges: List<IntRange> = emptyList()
     private var incomingTags: List<String> = emptyList()
 
+    /** 详情页手动下载：多选模式。 */
+    private var downloadSelectMode = false
+    private val downloadChecked = linkedSetOf<String>()
+    private var downloadStatusJob: Job? = null
+    private var downloadEnqueueJob: Job? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityDetailBinding.inflate(layoutInflater)
@@ -75,12 +84,33 @@ class DetailActivity : AppCompatActivity() {
         bindTags(incomingTags)
         bindHeatAndRating(incomingTags)
 
-        binding.backButton.setOnClickListener { finish() }
+        binding.backButton.setOnClickListener {
+            if (downloadSelectMode) {
+                exitDownloadSelectMode()
+            } else {
+                finish()
+            }
+        }
         binding.favoriteAction.setOnClickListener { toggleFavorite() }
         binding.favoriteButton.setOnClickListener { toggleFavorite() }
-        binding.cacheAction.setOnClickListener { cachePrimary() }
-        binding.playNowButton.setOnClickListener { playPrimary() }
-        binding.continueButton.setOnClickListener { playPrimary(resumePreferred = true) }
+        binding.cacheAction.setOnClickListener { enterDownloadSelectMode() }
+        binding.downloadSeasonButton.setOnClickListener { enqueueDownload(fullSeason = true) }
+        binding.downloadSelectedButton.setOnClickListener { enqueueDownload(fullSeason = false) }
+        binding.downloadCancelButton.setOnClickListener { exitDownloadSelectMode() }
+        binding.playNowButton.setOnClickListener {
+            if (downloadSelectMode) {
+                Toast.makeText(this, R.string.download_hint, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            playPrimary()
+        }
+        binding.continueButton.setOnClickListener {
+            if (downloadSelectMode) {
+                Toast.makeText(this, R.string.download_hint, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            playPrimary(resumePreferred = true)
+        }
         binding.orderToggle.setOnClickListener {
             ascending = !ascending
             binding.orderToggle.text = getString(
@@ -90,7 +120,13 @@ class DetailActivity : AppCompatActivity() {
         }
         binding.expandToggle.setOnClickListener { toggleEpisodeExpand() }
 
-        adapter = EpisodeAdapter { openPlayer(it, resume = false) }
+        adapter = EpisodeAdapter { episode ->
+            if (downloadSelectMode) {
+                toggleDownloadCheck(episode)
+            } else {
+                openPlayer(episode, resume = false)
+            }
+        }
         binding.episodeGrid.layoutManager =
             LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         binding.episodeGrid.adapter = adapter
@@ -126,8 +162,16 @@ class DetailActivity : AppCompatActivity() {
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
         lifecycleScope.launch {
             refreshFavoriteUi()
-            refreshCacheActionUi()
+            refreshDownloadChrome()
+            submitEpisodes()
         }
+        ensureDownloadStatusPolling()
+    }
+
+    override fun onPause() {
+        downloadStatusJob?.cancel()
+        downloadStatusJob = null
+        super.onPause()
     }
 
     private fun loadDetail() {
@@ -182,6 +226,7 @@ class DetailActivity : AppCompatActivity() {
                 submitEpisodes()
                 scrollEpisodesToResume()
                 refreshFavoriteUi()
+                refreshDownloadChrome()
                 if (favorited) {
                     val total = ContentRepository.episodeTotal(episodeCount, episodes.size)
                     repo.addFavorite(
@@ -279,14 +324,209 @@ class DetailActivity : AppCompatActivity() {
         } else {
             ordered
         }
-        adapter.submit(visible, resumeEpisodeId, gridMode = episodesExpanded)
+        adapter.submit(
+            episodes = visible,
+            selectedId = resumeEpisodeId,
+            gridMode = episodesExpanded,
+            selectionMode = downloadSelectMode,
+            checkedIds = downloadChecked.toSet(),
+            cacheStates = buildCacheStates(),
+        )
+        refreshDownloadSelectedLabel()
+    }
+
+    private fun buildCacheStates(): Map<String, EpisodeCacheUi> {
+        if (episodes.isEmpty()) return emptyMap()
+        val out = HashMap<String, EpisodeCacheUi>(episodes.size)
+        for (ep in episodes) {
+            out[ep.id] = when {
+                videoCache.isReady(seriesId, ep.id) -> EpisodeCacheUi.READY
+                videoCache.isCaching(seriesId, ep.id) -> EpisodeCacheUi.CACHING
+                else -> EpisodeCacheUi.NONE
+            }
+        }
+        return out
     }
 
     private fun scrollEpisodesToResume() {
-        if (episodesExpanded) return
+        if (episodesExpanded || downloadSelectMode) return
         val ordered = if (ascending) episodes else episodes.asReversed()
         val index = ordered.indexOfFirst { it.id == resumeEpisodeId }.coerceAtLeast(0)
         binding.episodeGrid.post { binding.episodeGrid.scrollToPosition(index) }
+    }
+
+    private fun enterDownloadSelectMode() {
+        if (episodes.isEmpty()) {
+            Toast.makeText(this, R.string.error_generic, Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!downloadSelectMode) {
+            downloadSelectMode = true
+            downloadChecked.clear()
+            // 默认展开长剧，便于多选
+            if (EpisodeExpandPolicy.shouldShowExpand(episodes.size) && !episodesExpanded) {
+                episodesExpanded = true
+                applyEpisodeLayout()
+            }
+            Toast.makeText(this, R.string.download_pick_mode, Toast.LENGTH_SHORT).show()
+        }
+        refreshDownloadChrome()
+        submitEpisodes()
+        ensureDownloadStatusPolling()
+    }
+
+    private fun exitDownloadSelectMode() {
+        downloadSelectMode = false
+        downloadChecked.clear()
+        refreshDownloadChrome()
+        submitEpisodes()
+    }
+
+    private fun toggleDownloadCheck(episode: Episode) {
+        if (episode.id in downloadChecked) {
+            downloadChecked.remove(episode.id)
+        } else {
+            downloadChecked.add(episode.id)
+        }
+        submitEpisodes()
+    }
+
+    private fun refreshDownloadChrome() {
+        binding.downloadBar.visibility = if (downloadSelectMode) View.VISIBLE else View.GONE
+        binding.downloadHint.visibility = if (downloadSelectMode) View.VISIBLE else View.GONE
+        binding.cacheAction.setTextColor(
+            ContextCompat.getColor(
+                this,
+                if (downloadSelectMode) R.color.accent else R.color.text_primary,
+            ),
+        )
+        binding.cacheAction.text = getString(R.string.download_action)
+        refreshDownloadSelectedLabel()
+    }
+
+    private fun refreshDownloadSelectedLabel() {
+        if (!downloadSelectMode) return
+        val n = downloadChecked.size
+        binding.downloadSelectedButton.text = if (n > 0) {
+            getString(R.string.download_selected_count, n)
+        } else {
+            getString(R.string.download_selected)
+        }
+    }
+
+    private fun ensureDownloadStatusPolling() {
+        if (downloadStatusJob?.isActive == true) return
+        downloadStatusJob = lifecycleScope.launch {
+            while (isActive) {
+                if (episodes.isNotEmpty()) {
+                    submitEpisodes()
+                }
+                val anyCaching = episodes.any { videoCache.isCaching(seriesId, it.id) }
+                delay(if (anyCaching || downloadSelectMode) 900L else 2500L)
+            }
+        }
+    }
+
+    /**
+     * 用户发起下载：多选分集或全季。不会自动边播边缓存。
+     */
+    private fun enqueueDownload(fullSeason: Boolean) {
+        if (episodes.isEmpty()) {
+            Toast.makeText(this, R.string.error_generic, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val targets = if (fullSeason) {
+            episodes
+        } else {
+            episodes.filter { it.id in downloadChecked }
+        }
+        if (targets.isEmpty()) {
+            Toast.makeText(this, R.string.download_none_selected, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val pending = targets.filterNot {
+            videoCache.isReady(seriesId, it.id) || videoCache.isCaching(seriesId, it.id)
+        }
+        if (pending.isEmpty()) {
+            Toast.makeText(this, R.string.download_all_ready, Toast.LENGTH_SHORT).show()
+            submitEpisodes()
+            return
+        }
+        if (downloadEnqueueJob?.isActive == true) {
+            Toast.makeText(this, R.string.cache_caching, Toast.LENGTH_SHORT).show()
+            return
+        }
+        downloadEnqueueJob = lifecycleScope.launch {
+            val settings = container.settings
+            if (settings.wifiOnlyNow() && !isWifi()) {
+                Toast.makeText(this@DetailActivity, R.string.error_wifi_only, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            val free = videoCache.freeSpaceBytes()
+            if (free < VideoCacheManager.STORAGE_HEADROOM_BYTES) {
+                Toast.makeText(this@DetailActivity, R.string.cache_low_storage, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            val userMax = settings.maxQualityNow()
+            val effectiveMax = WatchDecodePolicy.effectiveMaxQuality(this@DetailActivity, userMax)
+            val queuedIds = ArrayList<String>(pending.size)
+            var lastError: String? = null
+            for (ep in pending) {
+                if (!isActive) break
+                try {
+                    if (videoCache.freeSpaceBytes() < VideoCacheManager.STORAGE_HEADROOM_BYTES) {
+                        lastError = getString(R.string.cache_low_storage)
+                        break
+                    }
+                    val stream = repo.stream(
+                        seriesId = seriesId,
+                        episodeId = ep.id,
+                        preferAvc = true,
+                        maxHeight = effectiveMax,
+                    )
+                    videoCache.enqueue(
+                        request = VideoCacheRequest(
+                            seriesId = seriesId,
+                            episodeId = ep.id,
+                            seriesTitle = seriesTitle,
+                            episodeNumber = ep.number,
+                        ),
+                        stream = stream,
+                        priority = VideoCachePriority.CURRENT,
+                    )
+                    queuedIds += ep.id
+                    submitEpisodes()
+                } catch (err: Exception) {
+                    if (err is kotlinx.coroutines.CancellationException) throw err
+                    lastError = if (VideoCacheManager.isNoSpace(err)) {
+                        getString(R.string.cache_low_storage)
+                    } else {
+                        err.message ?: getString(R.string.error_generic)
+                    }
+                }
+            }
+            val queued = queuedIds.size
+            if (queued > 0) {
+                val msg = if (fullSeason) {
+                    getString(R.string.download_season_queued, queued)
+                } else {
+                    getString(R.string.download_queued, queued)
+                }
+                Toast.makeText(this@DetailActivity, msg, Toast.LENGTH_SHORT).show()
+                if (!fullSeason) {
+                    downloadChecked.removeAll(queuedIds.toSet())
+                }
+            }
+            if (queued == 0 && lastError != null) {
+                Toast.makeText(
+                    this@DetailActivity,
+                    getString(R.string.cache_failed, lastError),
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+            submitEpisodes()
+            ensureDownloadStatusPolling()
+        }
     }
 
     private fun bindCover(url: String) {
@@ -415,81 +655,6 @@ class DetailActivity : AppCompatActivity() {
             openPlayer(target, resume = resumePreferred && target.id == resumeEpisodeId)
         } else {
             Toast.makeText(this, R.string.error_generic, Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    /** 缓存续播集（或第 1 集）；完整离线列表见 T-57。 */
-    private fun cachePrimary() {
-        val target = episodes.firstOrNull { it.id == resumeEpisodeId } ?: episodes.firstOrNull()
-        if (target == null) {
-            Toast.makeText(this, R.string.error_generic, Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (videoCache.isReady(seriesId, target.id)) {
-            binding.cacheAction.text = getString(R.string.cache_ready)
-            Toast.makeText(this, R.string.cache_already, Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (videoCache.isCaching(seriesId, target.id)) {
-            binding.cacheAction.text = getString(R.string.cache_caching)
-            Toast.makeText(this, R.string.cache_caching, Toast.LENGTH_SHORT).show()
-            return
-        }
-        lifecycleScope.launch {
-            val settings = container.settings
-            if (settings.wifiOnlyNow() && !isWifi()) {
-                Toast.makeText(this@DetailActivity, R.string.error_wifi_only, Toast.LENGTH_LONG).show()
-                return@launch
-            }
-            binding.cacheAction.text = getString(R.string.cache_caching)
-            try {
-                val userMax = settings.maxQualityNow()
-                val effectiveMax = WatchDecodePolicy.effectiveMaxQuality(this@DetailActivity, userMax)
-                val stream = repo.stream(
-                    seriesId = seriesId,
-                    episodeId = target.id,
-                    preferAvc = true,
-                    maxHeight = effectiveMax,
-                )
-                val free = videoCache.freeSpaceBytes()
-                if (free < VideoCacheManager.STORAGE_HEADROOM_BYTES) {
-                    Toast.makeText(this@DetailActivity, R.string.cache_low_storage, Toast.LENGTH_LONG).show()
-                    refreshCacheActionUi(target)
-                    return@launch
-                }
-                videoCache.enqueue(
-                    request = VideoCacheRequest(
-                        seriesId = seriesId,
-                        episodeId = target.id,
-                        seriesTitle = seriesTitle,
-                        episodeNumber = target.number,
-                    ),
-                    stream = stream,
-                    priority = VideoCachePriority.CURRENT,
-                )
-                Toast.makeText(this@DetailActivity, R.string.cache_started, Toast.LENGTH_SHORT).show()
-            } catch (err: Exception) {
-                if (err is kotlinx.coroutines.CancellationException) throw err
-                val msg = if (VideoCacheManager.isNoSpace(err)) {
-                    getString(R.string.cache_low_storage)
-                } else {
-                    getString(R.string.cache_failed, err.message ?: "")
-                }
-                Toast.makeText(this@DetailActivity, msg, Toast.LENGTH_LONG).show()
-            }
-            refreshCacheActionUi(target)
-        }
-    }
-
-    private fun refreshCacheActionUi(episode: Episode? = null) {
-        val target = episode
-            ?: episodes.firstOrNull { it.id == resumeEpisodeId }
-            ?: episodes.firstOrNull()
-            ?: return
-        binding.cacheAction.text = when {
-            videoCache.isReady(seriesId, target.id) -> getString(R.string.cache_ready)
-            videoCache.isCaching(seriesId, target.id) -> getString(R.string.cache_caching)
-            else -> getString(R.string.cache_action)
         }
     }
 

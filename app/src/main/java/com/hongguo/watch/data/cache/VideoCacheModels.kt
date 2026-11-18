@@ -33,9 +33,9 @@ data class VideoCacheRequest(
 )
 
 enum class VideoCachePriority {
-    /** 正在观看 / 用户点「缓存」 */
+    /** 详情页用户发起的下载（单集 / 多选 / 全季） */
     CURRENT,
-    /** 可选预取下一集 */
+    /** 保留枚举兼容；播放器不再预取 */
     NEXT,
 }
 

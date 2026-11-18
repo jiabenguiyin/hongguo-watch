@@ -30,7 +30,7 @@ import java.util.concurrent.TimeUnit
  * 短剧集本地缓存：解密落盘 → 本地文件播放；LRU + 磁盘预算；空间不足时软失败。
  *
  * 目录：`filesDir/video_cache/`（与 Coil / 更新包隔离）。
- * [listReady] 留给 T-57 离线浏览 UI。
+ * 写入由详情页用户发起（多选 / 全季）；[listReady] 供库·离线管理。
  */
 class VideoCacheManager(
     context: Context,

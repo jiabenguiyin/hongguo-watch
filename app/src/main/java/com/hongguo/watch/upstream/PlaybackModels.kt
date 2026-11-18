@@ -101,9 +101,18 @@ internal object PlaybackModels {
                         }
                     },
                 )
-                val label = entry.str("codec_type").ifEmpty {
-                    meta?.str("codec_type").orEmpty()
-                }.lowercase()
+                // codec_type 优先；空时从 gear_des_key 推断，避免 AVC 档被标成空串而漏选
+                val labelHint = listOf(
+                    entry.str("codec_type"),
+                    meta?.str("codec_type").orEmpty(),
+                    entry.str("gear_des_key"),
+                ).firstOrNull { it.isNotBlank() }.orEmpty().lowercase()
+                val label = when {
+                    CodecLabels.isAvc(labelHint) -> CodecLabels.normalize(labelHint).ifBlank { "h264" }
+                        .let { if (it == "avc") "h264" else it }
+                    CodecLabels.isHevc(labelHint) -> CodecLabels.normalize(labelHint).ifBlank { "bytevc1" }
+                    else -> labelHint
+                }
                 Rendition(quality, label, width.takeIf { it > 0 }, height.takeIf { it > 0 }, resolved, key)
             }.getOrNull()
         }

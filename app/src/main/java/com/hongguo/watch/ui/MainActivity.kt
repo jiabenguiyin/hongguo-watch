@@ -166,6 +166,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showHome(forceReload: Boolean = false) {
+        // 历史/收藏 → 首页：必须立刻清空共用 adapter，否则推荐标题下会闪历史行
+        val switchingToHome = mode != Mode.HOME
         mode = Mode.HOME
         highlightTabs(home = true)
         lastQuery = ""
@@ -174,10 +176,13 @@ class MainActivity : AppCompatActivity() {
         binding.categoryScroll.visibility = View.VISIBLE
         binding.pageSubtitle.visibility = View.GONE
         binding.brandTitle.text = getString(R.string.app_name)
-        adapter.showResumeHint = false
         binding.loading.visibility = View.VISIBLE
         binding.emptyView.visibility = View.GONE
-        val token = beginListLoad(clearAdapter = forceReload)
+        val clear = ListTabPolicy.shouldClearHomeAdapter(switchingToHome, forceReload)
+        val token = beginListLoad(clearAdapter = clear)
+        // 先清空再改 hint，避免 notifyDataSetChanged 把旧历史行刷成「进」
+        adapter.showResumeHint = false
+        if (clear) binding.seriesList.scrollToPosition(0)
         listJob = lifecycleScope.launch {
             try {
                 if (forceReload || !categoriesReady) {
@@ -308,7 +313,7 @@ class MainActivity : AppCompatActivity() {
         page: com.hongguo.watch.data.model.CatalogPage,
         append: Boolean,
     ) {
-        // 硬闸：离开首页后绝不再写共用 adapter
+        // 硬闸：离开首页后绝不再写共用 adapter；历史/收藏行不得混入推荐
         if (mode != Mode.HOME) return
         val seen = feedItems.map { it.id }.toHashSet()
         val fresh = page.items.filter { it.id !in seen }
@@ -352,6 +357,7 @@ class MainActivity : AppCompatActivity() {
                 fresh.map { HomeRow.Item(it) }
             }
             adapter.submit(rows)
+            binding.seriesList.scrollToPosition(0)
             val empty = fresh.isEmpty()
             binding.emptyView.visibility = if (empty) View.VISIBLE else View.GONE
             binding.emptyView.text = when {
@@ -553,9 +559,10 @@ class MainActivity : AppCompatActivity() {
         binding.brandTitle.text = getString(R.string.tab_history)
         binding.loading.visibility = View.VISIBLE
         binding.emptyView.visibility = View.GONE
-        adapter.showResumeHint = true
-        // 立刻清空 + 作废首页 feed，避免推荐残留/异步回写
+        // 立刻清空 + 作废首页 feed，避免推荐残留/异步回写；再开续播 hint
         val token = beginListLoad(clearAdapter = true)
+        adapter.showResumeHint = true
+        binding.seriesList.scrollToPosition(0)
         listJob = lifecycleScope.launch {
             try {
                 val history = repo.recentHistory()
@@ -571,7 +578,7 @@ class MainActivity : AppCompatActivity() {
                         series = Series(
                             id = it.seriesId,
                             title = it.seriesTitle,
-                            cover = it.cover,
+                            cover = com.hongguo.watch.data.CoverUrls.normalize(it.cover),
                             description = getString(R.string.progress_meta, it.episodeNumber, percent),
                             episodeCount = it.episodeNumber,
                             source = runCatching { SeriesSource.valueOf(it.source) }
@@ -580,7 +587,9 @@ class MainActivity : AppCompatActivity() {
                         favorited = it.seriesId in favoritedIds,
                     )
                 }
+                if (token != listGeneration || mode != Mode.HISTORY) return@launch
                 adapter.submit(rows)
+                binding.seriesList.scrollToPosition(0)
                 binding.emptyView.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
                 binding.emptyView.text = getString(R.string.empty_history)
             } finally {
@@ -624,8 +633,10 @@ class MainActivity : AppCompatActivity() {
         binding.brandTitle.text = getString(R.string.tab_favorites)
         binding.loading.visibility = View.VISIBLE
         binding.emptyView.visibility = View.GONE
-        adapter.showResumeHint = false
+        // 立刻清空，避免首页/历史行串进收藏；收藏行不显示行内 ♡（favorited=null）
         val token = beginListLoad(clearAdapter = true)
+        adapter.showResumeHint = false
+        binding.seriesList.scrollToPosition(0)
         listJob = lifecycleScope.launch {
             try {
                 val favorites = repo.favorites()
@@ -635,7 +646,7 @@ class MainActivity : AppCompatActivity() {
                         Series(
                             id = it.seriesId,
                             title = it.seriesTitle,
-                            cover = it.cover,
+                            cover = com.hongguo.watch.data.CoverUrls.normalize(it.cover),
                             description = if (it.episodeCount > 0) "全${it.episodeCount}集" else "",
                             episodeCount = it.episodeCount,
                             source = runCatching { SeriesSource.valueOf(it.source) }
@@ -643,7 +654,9 @@ class MainActivity : AppCompatActivity() {
                         ),
                     )
                 }
+                if (token != listGeneration || mode != Mode.FAVORITES) return@launch
                 adapter.submit(rows)
+                binding.seriesList.scrollToPosition(0)
                 binding.emptyView.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
                 binding.emptyView.text = getString(R.string.empty_favorites)
             } finally {

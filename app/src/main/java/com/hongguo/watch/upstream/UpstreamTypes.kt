@@ -42,7 +42,8 @@ class StreamLadder(val renditions: List<Rendition>) {
 
     /**
      * @param preferAvc 默认 true：上限内只要有 AVC 就选 AVC（手表 SoC 上 HEVC 硬解常有声无画）。
-     * @param avcOnly 仅保留 AVC；无 AVC 时返回 null（由调用方决定是否放宽）。
+     * @param avcOnly 硬性只选 AVC/H.264；无 AVC 时返回 null，**绝不**回落 bytevc1/HEVC。
+     *   上限内无 AVC 时会降清晰度（或在全阶梯中取最接近上限的 AVC 档）。
      */
     fun select(
         maxQuality: Int,
@@ -53,19 +54,33 @@ class StreamLadder(val renditions: List<Rendition>) {
         val pool = renditions.filter(supported)
         if (pool.isEmpty()) return null
         if (avcOnly) {
-            return pick(pool.filter { it.isAvc }, maxQuality)
+            return pickAvc(pool, maxQuality)
         }
         if (preferAvc) {
-            pick(pool.filter { it.isAvc }, maxQuality)?.let { return it }
+            pickAvc(pool, maxQuality)?.let { return it }
         }
         return pick(pool, maxQuality)
     }
 
+    /** 仅 AVC：先上限内最高，再降档；没有 AVC 则 null。 */
+    private fun pickAvc(pool: List<Rendition>, maxQuality: Int): Rendition? {
+        val avc = pool.filter { it.isAvc }
+        if (avc.isEmpty()) return null
+        return pick(avc, maxQuality)
+    }
+
     private fun pick(candidates: List<Rendition>, maxQuality: Int): Rendition? {
         if (candidates.isEmpty()) return null
-        return candidates.filter { it.quality in 1..maxQuality }.maxWithOrNull(byQualityThenAvc)
-            ?: candidates.filter { it.quality <= 0 }.maxWithOrNull(byQualityThenAvc)
-            ?: candidates.maxWithOrNull(byQualityThenAvc)
+        // 1) 上限内最高档
+        candidates.filter { it.quality in 1..maxQuality }.maxWithOrNull(byQualityThenAvc)
+            ?.let { return it }
+        // 2) 无明确清晰度的兼容档
+        candidates.filter { it.quality <= 0 }.maxWithOrNull(byQualityThenAvc)
+            ?.let { return it }
+        // 3) 上限内没有 → 取超过上限中最接近的一档（宁可略高也不丢 AVC）
+        candidates.filter { it.quality > maxQuality }.minWithOrNull(compareBy { it.quality })
+            ?.let { return it }
+        return candidates.maxWithOrNull(byQualityThenAvc)
     }
 }
 

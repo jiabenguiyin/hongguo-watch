@@ -69,6 +69,16 @@ class WatchDecodePolicyTest {
                 model = "CD12 Max",
             ),
         )
+        // 真机 paste kzty6：sprd / uws6152
+        assertTrue(
+            WatchDecodePolicy.isFragileSoc(
+                manufacturer = "sprd",
+                brand = "BiDeZhi",
+                hardware = "uws6152_1h10_go",
+                board = "uws6152_1h10_go",
+                model = "CD_Watch_A",
+            ),
+        )
         assertFalse(
             WatchDecodePolicy.isFragileSoc(
                 manufacturer = "Google",
@@ -77,6 +87,22 @@ class WatchDecodePolicyTest {
                 board = "shiba",
                 model = "Pixel 8",
             ),
+        )
+    }
+
+    @Test
+    fun effectiveMaxQualityCapsFragileLowMemAt480() {
+        org.junit.Assert.assertEquals(
+            480,
+            WatchDecodePolicy.effectiveMaxQuality(720, fragileSoc = true, memClassMb = 192),
+        )
+        org.junit.Assert.assertEquals(
+            360,
+            WatchDecodePolicy.effectiveMaxQuality(360, fragileSoc = true, memClassMb = 192),
+        )
+        org.junit.Assert.assertEquals(
+            720,
+            WatchDecodePolicy.effectiveMaxQuality(720, fragileSoc = false, memClassMb = 192),
         )
     }
 }

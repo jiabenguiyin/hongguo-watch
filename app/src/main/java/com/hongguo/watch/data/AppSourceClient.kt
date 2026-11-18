@@ -476,20 +476,36 @@ class AppSourceClient(
             MobilePlayback.ladder(vid, device, client, MobilePlayback.signer, clock())
         }
         val capped = maxHeight.coerceIn(240, 1080)
-        // 手表 / 脆弱 SoC：上限内优先 AVC；黑屏回退时可 avcOnly
+        // 手表 / 脆弱 SoC：上限内优先 AVC；avcOnly 时硬性只要 H.264，绝不回落 bytevc1
         val selected = ladder.select(capped, preferAvc = preferAvc, avcOnly = avcOnly) {
             true
-        } ?: if (avcOnly) {
-            ladder.select(capped, preferAvc = true, avcOnly = false) { true }
-        } else {
-            null
-        } ?: throw IllegalStateException("没有可播放清晰度（上限 ${maxHeight}p）")
+        } ?: throw IllegalStateException(
+            if (avcOnly) {
+                "没有可用的 AVC/H.264 清晰度（上限 ${maxHeight}p，已拒绝 HEVC/bytevc1）"
+            } else {
+                "没有可播放清晰度（上限 ${maxHeight}p）"
+            },
+        )
+
+        // 双保险：avcOnly 会话绝不能把 bytevc1/HEVC 交给 ExoPlayer
+        if (avcOnly && !selected.isAvc) {
+            throw IllegalStateException(
+                "avcOnly 选流异常：codec=${selected.codec.ifBlank { "?" }} q=${selected.quality}",
+            )
+        }
 
         val qualityLabel = if (selected.quality > 0) {
             "${selected.quality}p" + if (selected.quality > maxHeight) "（兼容）" else ""
         } else {
             "auto"
         }
+        android.util.Log.i(
+            "HgWatchPlayer",
+            "stream pick codec=${selected.codec.ifBlank { "?" }} " +
+                "q=${qualityLabel} avcOnly=$avcOnly preferAvc=$preferAvc " +
+                "ladder=${ladder.renditions.size} " +
+                "avcRungs=${ladder.renditions.count { it.isAvc }}",
+        )
         return StreamInfo(
             url = selected.url,
             quality = qualityLabel,

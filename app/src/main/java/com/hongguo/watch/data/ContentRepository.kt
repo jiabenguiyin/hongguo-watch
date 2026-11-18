@@ -25,14 +25,23 @@ class ContentRepository(
         appSource.search(query, page)
     }
 
-    /** 首页推荐流（书城 tab_type=16）。 */
-    suspend fun recommend(page: Int = 1): CatalogPage = withContext(Dispatchers.IO) {
-        appSource.fetchRecommend(page)
+    /** 首页推荐流（书城 tab_type=16）；传 offset/sessionId 续页。 */
+    suspend fun recommend(
+        page: Int = 1,
+        offset: Int = 0,
+        sessionId: String = "",
+    ): CatalogPage = withContext(Dispatchers.IO) {
+        appSource.fetchRecommend(page = page, offset = offset, sessionId = sessionId)
     }
 
-    /** App 热播榜（bookmall cell/change）。 */
-    suspend fun rank(rankKey: String, page: Int = 1): CatalogPage = withContext(Dispatchers.IO) {
-        appSource.fetchRank(rankKey, page)
+    /** App 热播榜（bookmall cell/change）；传 offset/sessionId 续页。 */
+    suspend fun rank(
+        rankKey: String,
+        page: Int = 1,
+        offset: Int = 0,
+        sessionId: String = "",
+    ): CatalogPage = withContext(Dispatchers.IO) {
+        appSource.fetchRank(rankKey = rankKey, page = page, offset = offset, sessionId = sessionId)
     }
 
     /**
@@ -42,8 +51,15 @@ class ContentRepository(
     suspend fun category(
         filters: Map<String, String> = emptyMap(),
         withSelector: Boolean = true,
+        offset: Int = 0,
+        sessionId: String = "",
     ): CatalogPage = withContext(Dispatchers.IO) {
-        appSource.fetchCategory(filters = filters, withSelector = withSelector)
+        appSource.fetchCategory(
+            filters = filters,
+            offset = offset,
+            sessionId = sessionId,
+            withSelector = withSelector && offset == 0,
+        )
     }
 
     /** 组装默认分类条：推荐 + App 热播榜 + 落地页题材/类型（题材失败仍保留榜）。 */

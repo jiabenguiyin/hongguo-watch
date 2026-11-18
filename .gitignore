@@ -37,6 +37,13 @@ captures/
 *.dex
 *.hprof
 
+# Release signing (never commit secrets / keystores)
+signing/keystore.properties
+signing/*.jks
+signing/*.keystore
+*.jks
+*.keystore
+
 # OS
 .DS_Store
 Thumbs.db

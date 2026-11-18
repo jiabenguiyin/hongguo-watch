@@ -15,7 +15,6 @@ import com.hongguo.watch.upstream.MobilePlayback
 import com.hongguo.watch.upstream.RequestScope
 import com.hongguo.watch.upstream.Signer
 import com.hongguo.watch.upstream.VendorConstants
-import com.hongguo.watch.upstream.cleanUrl
 import com.hongguo.watch.upstream.objects
 import com.hongguo.watch.upstream.str
 import okhttp3.CookieJar
@@ -122,10 +121,15 @@ class AppSourceClient(
     /**
      * 书城推荐流。对照 hongguoTV `RecommendationFeed`：
      * `GET .../reading/bookapi/bookmall/tab/v1/`，`tab_type=16`。
-     * 手表首屏只取第一页；续页 / cell 无限流未接。
+     * 用服务端 offset + session_id 续页（has_more 常不可信，有新片就继续）。
      */
-    fun fetchRecommend(page: Int = 1): CatalogPage {
-        require(page in 1..20)
+    fun fetchRecommend(
+        page: Int = 1,
+        offset: Int = 0,
+        sessionId: String = "",
+    ): CatalogPage {
+        require(page in 1..50)
+        require(offset in 0..1_000_000)
         ensureDevice()
         val values = feedIdentity().toMutableMap()
         values.putAll(
@@ -133,10 +137,11 @@ class AppSourceClient(
                 "tab_type" to "16",
                 "bottom_tab_type" to "7",
                 "landing_bottom_tab_type" to "7",
-                "offset" to ((page - 1) * 12).toString(),
-                "client_req_type" to if (page <= 1) "1" else "2",
+                "offset" to offset.toString(),
+                "client_req_type" to if (offset == 0) "1" else "2",
             ),
         )
+        if (sessionId.isNotBlank()) values["session_id"] = sessionId
         var last: Exception? = null
         for (host in FEED_HOSTS) {
             try {
@@ -145,9 +150,23 @@ class AppSourceClient(
                 if (root.optInt("code", -1) != 0) {
                     throw IllegalStateException("推荐暂不可用（code=${root.optInt("code")}）")
                 }
+                val tab = root.optJSONObject("data")?.optJSONArray("tab_item")?.objects()
+                    ?.firstOrNull { it.str("tab_type") == "16" || it.optInt("tab_type") == 16 }
+                    ?: throw IllegalStateException("推荐数据格式已变化")
                 val items = parseBookmallTab(root)
                 if (items.isEmpty()) throw IllegalStateException("推荐未返回可播放剧集")
-                return CatalogPage(items = items, page = page, hasMore = page < 20)
+                val rawCount = rawBookmallVideoCount(root).coerceAtLeast(items.size)
+                val nextOffset = offset + maxOf(1, rawCount)
+                val nextSession = tab.str("session_id").ifBlank { sessionId }
+                // 官方 feed 的 has_more 常为 false 仍有新片；有内容且未触顶就允许续页
+                val hasMore = page < 50 && items.isNotEmpty()
+                return CatalogPage(
+                    items = items,
+                    page = page,
+                    hasMore = hasMore,
+                    nextOffset = nextOffset,
+                    sessionId = nextSession,
+                )
             } catch (e: Exception) {
                 last = e
             }
@@ -158,18 +177,23 @@ class AppSourceClient(
     /**
      * App 热播榜。对照 jackotom/hongguo-drama `hongguo-app-catalog.js`：
      * `GET .../reading/bookapi/bookmall/cell/change/v`，
-     * `selected_items` + `sub_selected_items` 指定榜单。
-     * 手表首屏只取第 1 页（offset=0）；续页游标未接。
+     * 支持 offset / session_id 续页。
      */
-    fun fetchRank(rankKey: String, page: Int = 1): CatalogPage {
-        require(page in 1..20)
+    fun fetchRank(
+        rankKey: String,
+        page: Int = 1,
+        offset: Int = 0,
+        sessionId: String = "",
+    ): CatalogPage {
+        require(page in 1..50)
+        require(offset in 0..1_000_000)
         val selectors = RANK_SELECTORS[rankKey]
             ?: throw IllegalArgumentException("未知榜单：$rankKey")
         ensureDevice()
         val values = feedIdentity().toMutableMap()
         values.putAll(
             linkedMapOf(
-                "tab_type" to if (page <= 1) "26" else "18",
+                "tab_type" to if (offset == 0) "26" else "18",
                 "client_req_type" to "2",
                 "client_template" to "2",
                 "background_selected_items" to "",
@@ -181,8 +205,8 @@ class AppSourceClient(
                 "selected_items" to selectors.first,
                 "sub_selected_items" to selectors.second,
                 "panel_selected_items" to "",
-                "offset" to "0",
-                "session_id" to "",
+                "offset" to offset.toString(),
+                "session_id" to sessionId,
                 "filter_ids" to "",
                 "unlimited_selector_change_type" to "0",
             ),
@@ -200,7 +224,26 @@ class AppSourceClient(
                         ?: throw IllegalStateException("榜单数据缺失")
                     val items = parseRankCellView(data, selectors)
                     if (items.isEmpty()) throw IllegalStateException("榜单未返回可播放剧集")
-                    return CatalogPage(items = items, page = page, hasMore = false)
+                    val view = data.optJSONObject("cell_view")
+                    val nextOffset = when {
+                        data.has("next_offset") -> data.optInt("next_offset", offset + items.size)
+                        view != null && view.has("next_offset") ->
+                            view.optInt("next_offset", offset + items.size)
+                        else -> offset + items.size
+                    }
+                    val nextSession = data.str("session_id")
+                        .ifBlank { view?.str("session_id").orEmpty() }
+                        .ifBlank { sessionId }
+                    val moreFlag = data.optBoolean("has_more", view?.optBoolean("has_more", false) ?: false)
+                    val hasMore = page < 50 && items.isNotEmpty() &&
+                        (moreFlag || nextOffset > offset)
+                    return CatalogPage(
+                        items = items,
+                        page = page,
+                        hasMore = hasMore,
+                        nextOffset = nextOffset.coerceAtLeast(offset + 1),
+                        sessionId = nextSession,
+                    )
                 } catch (e: Exception) {
                     last = e
                 }
@@ -265,11 +308,15 @@ class AppSourceClient(
                 if (items.isEmpty() && categories.isEmpty()) {
                     throw IllegalStateException("分类未返回内容")
                 }
+                val nextOffset = data.optInt("next_offset", offset + items.size)
+                val nextSession = data.str("session_id").ifBlank { sessionId }
                 return CatalogPage(
                     items = items,
-                    page = 1,
-                    hasMore = data.optBoolean("has_more", false),
+                    page = if (offset == 0) 1 else (offset / 24) + 1,
+                    hasMore = data.optBoolean("has_more", false) && items.isNotEmpty(),
                     categories = categories,
+                    nextOffset = nextOffset.coerceAtLeast(offset + items.size.coerceAtLeast(1)),
+                    sessionId = nextSession,
                 )
             } catch (e: Exception) {
                 last = e
@@ -505,6 +552,22 @@ class AppSourceClient(
         return rows.mapNotNull { row -> seriesFromFeedRow(row) }.distinctBy { it.id }
     }
 
+    /** 推荐响应里实际视频条数，用于推进服务端按条 offset。 */
+    private fun rawBookmallVideoCount(root: JSONObject): Int {
+        val tab = root.optJSONObject("data")?.optJSONArray("tab_item")?.objects()
+            ?.firstOrNull { it.str("tab_type") == "16" || it.optInt("tab_type") == 16 }
+            ?: return 0
+        val cells = tab.optJSONArray("cell_data") ?: return 0
+        var count = 0
+        for (i in 0 until cells.length()) {
+            val inner = cells.optJSONObject(i)?.optJSONArray("cell_data") ?: continue
+            for (k in 0 until inner.length()) {
+                count += inner.optJSONObject(k)?.optJSONArray("video_data")?.length() ?: 0
+            }
+        }
+        return count
+    }
+
     /**
      * 热播榜响应：`data.cell_view.cell_data[].video_data`。
      * 若带 selector，核对外层/子层选中项与请求一致；演员榜（仅 ugc_user_data）拒绝。
@@ -610,7 +673,10 @@ class AppSourceClient(
             id = id,
             title = title,
             cover = safeCover(
-                row.str("series_cover").ifBlank { row.str("cover").ifBlank { row.str("cover_url") } },
+                row.str("cover")
+                    .ifBlank { row.str("series_cover") }
+                    .ifBlank { row.str("cover_url") }
+                    .ifBlank { row.str("thumb_url") },
             ),
             description = row.str("series_intro").ifBlank { row.str("video_desc") },
             episodeCount = count,
@@ -723,9 +789,6 @@ class AppSourceClient(
                 .build()
         }
 
-        private fun safeCover(value: String): String {
-            val url = cleanUrl(value)
-            return if (url.startsWith("http://") || url.startsWith("https://")) url else ""
-        }
+        private fun safeCover(value: String): String = CoverUrls.normalize(value)
     }
 }

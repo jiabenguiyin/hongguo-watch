@@ -20,4 +20,6 @@
     <dimen name="watch_tab_h">44dp</dimen>
     <dimen name="watch_mini_progress_h">2dp</dimen>
     <dimen name="watch_safe_inset_min">8dp</dimen>
+    <!-- 方屏大圆角（CD12 Max 等）默认内收下限 -->
+    <dimen name="watch_corner_inset_min">14dp</dimen>
 </resources>

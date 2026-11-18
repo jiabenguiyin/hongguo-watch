@@ -13,12 +13,14 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
 import com.hongguo.watch.data.model.HomeCategory
 import com.hongguo.watch.data.model.Series
 import com.hongguo.watch.data.model.SeriesSource
 import com.hongguo.watch.databinding.ActivityMainBinding
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -32,6 +34,17 @@ class MainActivity : AppCompatActivity() {
     private var selectedCategoryId: String = HomeCategory.ID_RECOMMEND
     private var categoryChipViews: List<TextView> = emptyList()
     private var lastRoundLayout: Boolean = false
+
+    /** 首页分类流分页状态（推荐 / 榜单 / 题材）。 */
+    private val feedItems = mutableListOf<Series>()
+    private var feedPage = 0
+    private var feedOffset = 0
+    private var feedSession = ""
+    private var feedHasMore = false
+    private var feedLoadingMore = false
+    private var feedGeneration = 0
+    private var feedJob: Job? = null
+    private var feedRankBase = 0
 
     private val container get() = (application as HongguoWatchApp).container
     private val repo get() = container.repository
@@ -48,6 +61,12 @@ class MainActivity : AppCompatActivity() {
         binding.seriesList.layoutManager = LinearLayoutManager(this)
         binding.seriesList.adapter = adapter
         binding.seriesList.itemAnimator = null
+        binding.seriesList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                if (dy <= 0) return
+                maybeLoadMoreFeed()
+            }
+        })
 
         binding.swipeRefresh.setColorSchemeResources(R.color.accent)
         binding.swipeRefresh.setProgressBackgroundColorSchemeResource(R.color.bg_elevated)
@@ -102,15 +121,24 @@ class MainActivity : AppCompatActivity() {
     /** 圆/方屏边距与空态留白；设置页改圆屏适配后回首页会重算。 */
     private fun applyWatchChrome() {
         lastRoundLayout = WatchUi.useRoundLayout(this)
+        val cornerSafe = WatchUi.needsCornerSafeInset(this)
         WatchUi.applySafePadding(binding.mainRoot, extraBottom = 0)
-        val listBottom = if (lastRoundLayout) WatchUi.dp(this, 14f) else WatchUi.dp(this, 6f)
+        val listBottom = when {
+            lastRoundLayout -> WatchUi.dp(this, 14f)
+            cornerSafe -> WatchUi.dp(this, 10f)
+            else -> WatchUi.dp(this, 6f)
+        }
         binding.seriesList.setPadding(
             binding.seriesList.paddingLeft,
             binding.seriesList.paddingTop,
             binding.seriesList.paddingRight,
             listBottom,
         )
-        val emptyPad = if (lastRoundLayout) WatchUi.dp(this, 28f) else WatchUi.dp(this, 20f)
+        val emptyPad = when {
+            lastRoundLayout -> WatchUi.dp(this, 28f)
+            cornerSafe -> WatchUi.dp(this, 22f)
+            else -> WatchUi.dp(this, 20f)
+        }
         binding.emptyView.setPadding(
             emptyPad,
             binding.emptyView.paddingTop,
@@ -166,33 +194,161 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun resetFeedState() {
+        feedJob?.cancel()
+        feedGeneration++
+        feedItems.clear()
+        feedPage = 0
+        feedOffset = 0
+        feedSession = ""
+        feedHasMore = false
+        feedLoadingMore = false
+        feedRankBase = 0
+    }
+
     private suspend fun loadSelectedCategory() {
         val cat = categories.firstOrNull { it.id == selectedCategoryId }
             ?: HomeCategory.recommend()
         highlightCategoryChips()
         scrollSelectedChipIntoView()
-        val page = when {
-            cat.isRecommend -> repo.recommend(page = 1)
-            cat.isRank -> repo.rank(rankKey = cat.rankKey.orEmpty(), page = 1)
-            else -> repo.category(filters = cat.filters, withSelector = false)
+        resetFeedState()
+        val token = feedGeneration
+        val page = fetchFeedPage(cat, page = 1, offset = 0, sessionId = "")
+        if (token != feedGeneration) return
+        applyFeedPage(cat, page, append = false)
+        // 首屏若条数太少填不满可视区，用户无法上滑触发续页 → 自动连拉几页
+        fillFeedUntilScrollable(cat, token)
+    }
+
+    /**
+     * 小屏手表首屏常见只解析出 1～3 条；列表不满时无法 scroll，
+     * [maybeLoadMoreFeed] 永远不触发。自动续页直到够滑或没有更多。
+     */
+    private suspend fun fillFeedUntilScrollable(cat: HomeCategory, token: Int) {
+        var guard = 0
+        while (token == feedGeneration && feedHasMore && feedItems.size < 12 && guard < 6) {
+            guard++
+            val page = fetchFeedPage(
+                cat,
+                page = feedPage + 1,
+                offset = feedOffset,
+                sessionId = feedSession,
+            )
+            if (token != feedGeneration) return
+            val before = feedItems.size
+            applyFeedPage(cat, page, append = true)
+            if (feedItems.size <= before) break
         }
-        val rows = mutableListOf<HomeRow>()
-        rows += HomeRow.Header(
-            title = cat.label,
-            subtitle = if (cat.isRank) getString(R.string.rank_header_hint) else "",
+    }
+
+    private suspend fun fetchFeedPage(
+        cat: HomeCategory,
+        page: Int,
+        offset: Int,
+        sessionId: String,
+    ) = when {
+        cat.isRecommend -> repo.recommend(page = page, offset = offset, sessionId = sessionId)
+        cat.isRank -> repo.rank(
+            rankKey = cat.rankKey.orEmpty(),
+            page = page,
+            offset = offset,
+            sessionId = sessionId,
         )
-        rows += if (cat.isRank) {
-            page.items.mapIndexed { index, series -> HomeRow.Item(series, rank = index + 1) }
+        else -> repo.category(
+            filters = cat.filters,
+            withSelector = false,
+            offset = offset,
+            sessionId = sessionId,
+        )
+    }
+
+    private fun applyFeedPage(
+        cat: HomeCategory,
+        page: com.hongguo.watch.data.model.CatalogPage,
+        append: Boolean,
+    ) {
+        val seen = feedItems.map { it.id }.toHashSet()
+        val fresh = page.items.filter { it.id !in seen }
+        if (append) {
+            val advanced = page.nextOffset > feedOffset
+            feedOffset = page.nextOffset.coerceAtLeast(feedOffset)
+            feedSession = page.sessionId.ifBlank { feedSession }
+            feedPage = page.page
+            if (fresh.isEmpty()) {
+                // 整页重复：游标能前进则保留 hasMore 以便再试，否则停
+                feedHasMore = page.hasMore && advanced
+                return
+            }
+            val startRank = feedRankBase + feedItems.size
+            feedItems += fresh
+            feedHasMore = page.hasMore
+            val rows = if (cat.isRank) {
+                fresh.mapIndexed { index, series ->
+                    HomeRow.Item(series, rank = startRank + index + 1)
+                }
+            } else {
+                fresh.map { HomeRow.Item(it) }
+            }
+            adapter.appendItems(rows)
         } else {
-            page.items.map { HomeRow.Item(it) }
+            feedItems.clear()
+            feedItems += fresh
+            feedOffset = page.nextOffset
+            feedSession = page.sessionId
+            feedPage = page.page
+            feedHasMore = page.hasMore
+            feedRankBase = 0
+            val rows = mutableListOf<HomeRow>()
+            rows += HomeRow.Header(
+                title = cat.label,
+                subtitle = if (cat.isRank) getString(R.string.rank_header_hint) else "",
+            )
+            rows += if (cat.isRank) {
+                fresh.mapIndexed { index, series -> HomeRow.Item(series, rank = index + 1) }
+            } else {
+                fresh.map { HomeRow.Item(it) }
+            }
+            adapter.submit(rows)
+            val empty = fresh.isEmpty()
+            binding.emptyView.visibility = if (empty) View.VISIBLE else View.GONE
+            binding.emptyView.text = when {
+                !empty -> ""
+                cat.isRank -> getString(R.string.empty_rank)
+                else -> getString(R.string.empty_category)
+            }
         }
-        adapter.submit(rows)
-        val empty = page.items.isEmpty()
-        binding.emptyView.visibility = if (empty) View.VISIBLE else View.GONE
-        binding.emptyView.text = when {
-            !empty -> ""
-            cat.isRank -> getString(R.string.empty_rank)
-            else -> getString(R.string.empty_category)
+    }
+
+    private fun maybeLoadMoreFeed() {
+        if (mode != Mode.HOME || lastQuery.isNotBlank()) return
+        if (!feedHasMore || feedLoadingMore) return
+        val lm = binding.seriesList.layoutManager as? LinearLayoutManager ?: return
+        val last = lm.findLastVisibleItemPosition()
+        if (last < adapter.itemCount - 4) return
+        loadMoreFeed()
+    }
+
+    private fun loadMoreFeed() {
+        if (!feedHasMore || feedLoadingMore) return
+        val cat = categories.firstOrNull { it.id == selectedCategoryId } ?: return
+        feedLoadingMore = true
+        val token = feedGeneration
+        val nextPage = feedPage + 1
+        val offset = feedOffset
+        val session = feedSession
+        feedJob = lifecycleScope.launch {
+            try {
+                val page = fetchFeedPage(cat, page = nextPage, offset = offset, sessionId = session)
+                if (token != feedGeneration) return@launch
+                applyFeedPage(cat, page, append = true)
+            } catch (_: Exception) {
+                if (token == feedGeneration) {
+                    // 续页失败不清空已有列表；短暂停止自动续页，下拉可刷新
+                    feedHasMore = false
+                }
+            } finally {
+                if (token == feedGeneration) feedLoadingMore = false
+            }
         }
     }
 
@@ -299,6 +455,7 @@ class MainActivity : AppCompatActivity() {
         mode = Mode.HOME
         highlightTabs(home = true)
         lastQuery = query
+        resetFeedState()
         binding.searchRow.visibility = View.VISIBLE
         binding.categoryScroll.visibility = View.GONE
         binding.pageSubtitle.visibility = View.GONE

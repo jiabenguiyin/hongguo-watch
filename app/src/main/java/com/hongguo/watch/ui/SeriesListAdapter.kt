@@ -39,6 +39,15 @@ class SeriesListAdapter(
         notifyDataSetChanged()
     }
 
+    fun appendItems(items: List<HomeRow.Item>) {
+        if (items.isEmpty()) return
+        val start = rows.size
+        rows.addAll(items)
+        notifyItemRangeInserted(start, items.size)
+    }
+
+    fun itemCountRows(): Int = rows.size
+
     override fun getItemViewType(position: Int): Int = when (rows[position]) {
         is HomeRow.Header -> 0
         is HomeRow.Item -> 1

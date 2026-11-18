@@ -36,7 +36,17 @@ class DetailActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
         WatchUi.applySafePadding(binding.detailRoot)
+        if (WatchUi.useRoundLayout(this)) {
+            val bottom = WatchUi.dp(this, 10f)
+            binding.relatedList.setPadding(
+                binding.relatedList.paddingLeft,
+                binding.relatedList.paddingTop,
+                binding.relatedList.paddingRight,
+                bottom,
+            )
+        }
 
         seriesId = intent.getStringExtra(EXTRA_SERIES_ID).orEmpty()
         seriesTitle = intent.getStringExtra(EXTRA_SERIES_TITLE).orEmpty()
@@ -77,8 +87,14 @@ class DetailActivity : AppCompatActivity() {
         loadDetail()
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
+    }
+
     override fun onResume() {
         super.onResume()
+        if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
         lifecycleScope.launch { refreshFavoriteIcon() }
     }
 

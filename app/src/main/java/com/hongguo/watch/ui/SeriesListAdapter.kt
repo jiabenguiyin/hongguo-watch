@@ -66,10 +66,13 @@ class SeriesListAdapter(
         private val binding: ItemSectionHeaderBinding,
     ) : RecyclerView.ViewHolder(binding.root) {
         fun bind(row: HomeRow.Header) {
-            binding.sectionTitle.text = if (row.subtitle.isBlank()) {
-                row.title
+            binding.sectionTitle.text = row.title
+            if (row.subtitle.isBlank()) {
+                binding.sectionSubtitle.visibility = View.GONE
+                binding.sectionSubtitle.text = ""
             } else {
-                "${row.title} · ${row.subtitle}"
+                binding.sectionSubtitle.visibility = View.VISIBLE
+                binding.sectionSubtitle.text = row.subtitle
             }
         }
     }
@@ -82,11 +85,11 @@ class SeriesListAdapter(
             val rank = row.rank
             binding.title.text = series.title
 
-            val ranked = rank != null && rank > 0
-            if (ranked) {
+            val rankValue = rank?.takeIf { it > 0 }
+            if (rankValue != null) {
                 binding.rankBadge.visibility = View.VISIBLE
-                binding.rankBadge.text = rank.toString()
-                val colorRes = when (rank) {
+                binding.rankBadge.text = rankValue.toString()
+                val colorRes = when (rankValue) {
                     1 -> R.color.rank_gold
                     2 -> R.color.rank_silver
                     3 -> R.color.rank_bronze
@@ -95,7 +98,7 @@ class SeriesListAdapter(
                 binding.rankBadge.setTextColor(
                     ContextCompat.getColor(binding.root.context, colorRes),
                 )
-                binding.rankBadge.textSize = if (rank <= 3) 15f else 12f
+                binding.rankBadge.textSize = if (rankValue <= 3) 15f else 12f
             } else {
                 binding.rankBadge.visibility = View.GONE
             }
@@ -108,6 +111,7 @@ class SeriesListAdapter(
                     value.contains("播放")
             val heat = series.tags.firstOrNull(::isHeatTag)
             val genre = series.tags.firstOrNull { !isHeatTag(it) }
+            val ranked = rankValue != null
             val meta = when {
                 showResumeHint && series.description.isNotBlank() -> series.description
                 ranked && series.episodeCount > 0 && !heat.isNullOrBlank() ->

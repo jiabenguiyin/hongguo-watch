@@ -99,9 +99,9 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WatchUi.applyImmersive(this)
         binding = ActivityPlayerBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        WatchUi.applyImmersive(this)
         WatchUi.applySafePadding(binding.playerRoot)
 
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -259,17 +259,28 @@ class PlayerActivity : AppCompatActivity() {
             WatchUi.dp(this, 10f)
         }
         binding.midControls.setPadding(sidePad, 0, sidePad, 0)
-        if (round) {
-            val pad = WatchUi.dp(this, 12f)
-            binding.bottomButtons.setPadding(pad, binding.bottomButtons.paddingTop, pad, binding.bottomButtons.paddingBottom)
-            val seasonLp = binding.seasonBanner.layoutParams as? android.widget.FrameLayout.LayoutParams
-            if (seasonLp != null) {
-                val h = WatchUi.edgeInsetPx(this)
-                seasonLp.marginStart = h
-                seasonLp.marginEnd = h
-                binding.seasonBanner.layoutParams = seasonLp
-            }
+        val bottomPad = if (round) WatchUi.dp(this, 12f) else WatchUi.dp(this, 8f)
+        binding.bottomButtons.setPadding(
+            bottomPad,
+            binding.bottomButtons.paddingTop,
+            bottomPad,
+            binding.bottomButtons.paddingBottom,
+        )
+        val seasonLp = binding.seasonBanner.layoutParams as? android.widget.FrameLayout.LayoutParams
+        if (seasonLp != null) {
+            val h = if (round) WatchUi.edgeInsetPx(this) else WatchUi.dp(this, 14f)
+            seasonLp.marginStart = h
+            seasonLp.marginEnd = h
+            binding.seasonBanner.layoutParams = seasonLp
         }
+        // 圆屏：顶栏左右再内收一点，返回钮不贴圆弧
+        val topPad = if (round) WatchUi.dp(this, 6f) else WatchUi.dp(this, 2f)
+        binding.topBar.setPadding(
+            topPad,
+            binding.topBar.paddingTop,
+            topPad,
+            binding.topBar.paddingBottom,
+        )
     }
 
     private fun setLocked(value: Boolean) {
@@ -778,6 +789,8 @@ class PlayerActivity : AppCompatActivity() {
                     Toast.LENGTH_LONG,
                 ).show()
                 if (!locked) showControls(autoHide = false)
+            } finally {
+                binding.loadingText.text = getString(R.string.loading)
             }
         }
     }

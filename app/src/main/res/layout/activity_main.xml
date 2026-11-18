@@ -108,12 +108,13 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:gravity="center"
-            android:lineSpacingExtra="2dp"
+            android:lineSpacingExtra="3dp"
             android:paddingHorizontal="20dp"
-            android:paddingVertical="14dp"
+            android:paddingVertical="16dp"
             android:text="@string/empty_search"
             android:textColor="@color/text_secondary"
-            android:textSize="@dimen/watch_body" />
+            android:textSize="@dimen/watch_body"
+            android:visibility="gone" />
 
         <ProgressBar
             android:id="@+id/loading"

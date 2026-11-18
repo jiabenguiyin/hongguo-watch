@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 更新 APK 落在应用私有目录，供 FileProvider 安装 -->
+    <files-path
+        name="update_apk"
+        path="updates/" />
+    <external-files-path
+        name="ext_updates"
+        path="updates/" />
+    <cache-path
+        name="cache"
+        path="." />
+</paths>

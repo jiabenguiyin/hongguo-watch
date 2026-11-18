@@ -166,9 +166,30 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:layout_marginBottom="6dp"
                     android:textColor="@color/text_secondary"
                     android:textSize="@dimen/watch_meta" />
+
+                <TextView
+                    android:id="@+id/signingNote"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="6dp"
+                    android:lineSpacingExtra="1dp"
+                    android:text="@string/update_signing_note"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/watch_meta" />
+
+                <Button
+                    android:id="@+id/uploadDiagButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginBottom="6dp"
+                    android:backgroundTint="@color/episode_normal"
+                    android:minHeight="0dp"
+                    android:text="@string/upload_diagnostics"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_body" />
 
                 <Button
                     android:id="@+id/clearHistoryButton"

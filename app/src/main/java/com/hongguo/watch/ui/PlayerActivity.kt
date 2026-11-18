@@ -44,6 +44,7 @@ import com.hongguo.watch.databinding.ActivityPlayerBinding
 import com.hongguo.watch.player.DecodePath
 import com.hongguo.watch.player.IjkPlayerEngine
 import com.hongguo.watch.player.PlayerDiagLog
+import com.hongguo.watch.player.PlayerGestureZones
 import com.hongguo.watch.player.PlayerKernel
 import com.hongguo.watch.player.VideoAspectHelper
 import com.hongguo.watch.player.VideoDataSource
@@ -129,6 +130,8 @@ class PlayerActivity : AppCompatActivity() {
     private var touchSlop = 0
     private var downX = 0f
     private var downY = 0f
+    /** ACTION_DOWN 时相对 playerRoot 内容区（去 padding）的 X，用于左右分区。 */
+    private var downContentX = 0f
     private var scrubbing = false
     private var adjustingBrightness = false
     private var adjustingVolume = false
@@ -553,6 +556,7 @@ class PlayerActivity : AppCompatActivity() {
             MotionEvent.ACTION_DOWN -> {
                 downX = event.x
                 downY = event.y
+                downContentX = eventContentX(event)
                 scrubbing = false
                 adjustingBrightness = false
                 adjustingVolume = false
@@ -568,7 +572,7 @@ class PlayerActivity : AppCompatActivity() {
                 val dy = event.y - downY
                 if (gestureMode == GestureMode.NONE) {
                     if (abs(dx) > touchSlop * 1.5f || abs(dy) > touchSlop * 1.5f) {
-                        gestureMode = classifyGesture(downX, dx, dy)
+                        gestureMode = classifyGesture(downContentX, dx, dy)
                         gestureConsumedClick = true
                         hideControlsJob?.cancel()
                     }
@@ -578,7 +582,7 @@ class PlayerActivity : AppCompatActivity() {
                         scrubbing = true
                         showControls(autoHide = false)
                         val duration = activeDuration().takeIf { it > 0 } ?: return true
-                        val width = binding.playerRoot.width.coerceAtLeast(1)
+                        val width = playerContentWidth()
                         val delta = ((dx / width) * duration * 0.5f).toLong()
                         val target = (scrubStartPos + delta).coerceIn(0L, duration)
                         binding.seekBar.progress = ((target * 1000) / duration).toInt().coerceIn(0, 1000)
@@ -588,7 +592,7 @@ class PlayerActivity : AppCompatActivity() {
                     }
                     GestureMode.BRIGHTNESS -> {
                         adjustingBrightness = true
-                        val height = binding.playerRoot.height.coerceAtLeast(1)
+                        val height = playerContentHeight()
                         val delta = (-dy / height) // 上滑增亮
                         val next = (brightnessStart + delta).coerceIn(0.05f, 1f)
                         applyBrightness(next)
@@ -599,7 +603,7 @@ class PlayerActivity : AppCompatActivity() {
                     }
                     GestureMode.VOLUME -> {
                         adjustingVolume = true
-                        val height = binding.playerRoot.height.coerceAtLeast(1)
+                        val height = playerContentHeight()
                         val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                             .coerceAtLeast(1)
                         val delta = ((-dy / height) * maxVol).toInt()
@@ -651,19 +655,46 @@ class PlayerActivity : AppCompatActivity() {
         return false
     }
 
-    /** 左 1/3 竖直→亮度，右 1/3 竖直→音量，中间或以横向为主→进度。 */
-    private fun classifyGesture(startX: Float, dx: Float, dy: Float): GestureMode {
-        val width = binding.playerRoot.width.coerceAtLeast(1)
-        val vertical = abs(dy) > abs(dx) * 1.15f
-        return when {
-            vertical && startX < width / 3f -> GestureMode.BRIGHTNESS
-            vertical && startX > width * 2f / 3f -> GestureMode.VOLUME
-            abs(dx) > abs(dy) * 1.05f -> GestureMode.SEEK
-            vertical && startX < width / 2f -> GestureMode.BRIGHTNESS
-            vertical -> GestureMode.VOLUME
-            else -> GestureMode.SEEK
+    /**
+     * 左右亮度/音量分区：坐标与宽度均相对 [playerRoot] **内容区**（去安全边 padding）。
+     * 横屏 50%/50%；竖屏仍为左 1/3 / 右 1/3（中间优先进度）。见 [PlayerGestureZones]。
+     */
+    private fun classifyGesture(startXInContent: Float, dx: Float, dy: Float): GestureMode {
+        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+            landscapePreferred
+        return when (
+            PlayerGestureZones.classify(
+                startXInContent = startXInContent,
+                dx = dx,
+                dy = dy,
+                contentWidth = playerContentWidth(),
+                landscape = landscape,
+            )
+        ) {
+            PlayerGestureZones.Mode.BRIGHTNESS -> GestureMode.BRIGHTNESS
+            PlayerGestureZones.Mode.VOLUME -> GestureMode.VOLUME
+            PlayerGestureZones.Mode.SEEK -> GestureMode.SEEK
         }
     }
+
+    /** 触点相对 playerRoot 内容区左缘的 X（兼容 gestureLayer / controlsMidTap 等不同接收 View）。 */
+    private fun eventContentX(event: MotionEvent): Float {
+        val loc = IntArray(2)
+        binding.playerRoot.getLocationOnScreen(loc)
+        return event.rawX - loc[0] - binding.playerRoot.paddingLeft
+    }
+
+    private fun playerContentWidth(): Int = PlayerGestureZones.contentWidth(
+        binding.playerRoot.width,
+        binding.playerRoot.paddingLeft,
+        binding.playerRoot.paddingRight,
+    )
+
+    private fun playerContentHeight(): Int = PlayerGestureZones.contentHeight(
+        binding.playerRoot.height,
+        binding.playerRoot.paddingTop,
+        binding.playerRoot.paddingBottom,
+    )
 
     private fun currentBrightness(): Float {
         val lp = window.attributes

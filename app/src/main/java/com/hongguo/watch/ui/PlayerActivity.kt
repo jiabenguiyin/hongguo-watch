@@ -9,6 +9,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.provider.Settings
+import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
@@ -127,6 +128,8 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var episodeAdapter: EpisodeAdapter
     private lateinit var audioManager: AudioManager
     private lateinit var scaleDetector: ScaleGestureDetector
+    /** 单击显隐 / 双击播停 / 长按临时加速。 */
+    private lateinit var tapDetector: GestureDetector
     private var touchSlop = 0
     private var downX = 0f
     private var downY = 0f
@@ -140,6 +143,9 @@ class PlayerActivity : AppCompatActivity() {
     private var volumeStart = 0
     private var gestureConsumedClick = false
     private var scaling = false
+    /** 长按临时加速中；松手恢复 [currentSpeed]（与倍速面板一致）。 */
+    private var speedBoostActive = false
+    private var speedBeforeBoost = 1.0f
     private var nextSeasonWork: RelatedWork? = null
     private var seasonGeneration = 0
     private var seasonPrepared = false
@@ -308,6 +314,7 @@ class PlayerActivity : AppCompatActivity() {
         }
         binding.playPauseButton.setOnClickListener {
             if (!hasActiveEngine()) return@setOnClickListener
+            endSpeedBoost()
             if (isActivelyPlaying()) {
                 pauseActive()
                 saveProgress(force = true)
@@ -384,6 +391,35 @@ class PlayerActivity : AppCompatActivity() {
 
     @SuppressLint("ClickableViewAccessibility")
     private fun bindGestures() {
+        tapDetector = GestureDetector(
+            this,
+            object : GestureDetector.SimpleOnGestureListener() {
+                override fun onDown(e: MotionEvent): Boolean = true
+
+                override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                    if (locked) return false
+                    if (binding.sheetScrim.visibility == View.VISIBLE) {
+                        closeSheets()
+                    } else {
+                        toggleControls()
+                    }
+                    gestureConsumedClick = true
+                    return true
+                }
+
+                override fun onDoubleTap(e: MotionEvent): Boolean {
+                    if (locked) return false
+                    togglePlayPauseGesture()
+                    gestureConsumedClick = true
+                    return true
+                }
+
+                override fun onLongPress(e: MotionEvent) {
+                    if (locked || scaling || gestureMode != GestureMode.NONE) return
+                    startSpeedBoost()
+                }
+            },
+        )
         val listener = View.OnTouchListener { _, event -> handleGesture(event) }
         binding.gestureLayer.setOnTouchListener(listener)
         binding.controlsMidTap.setOnTouchListener(listener)
@@ -457,6 +493,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun setLocked(value: Boolean) {
         locked = value
         if (locked) {
+            endSpeedBoost()
             closeSheets()
             hideControls()
             // 防误触：藏控件、吞手势；画面保持可见；小解锁钮可自动隐藏
@@ -548,6 +585,7 @@ class PlayerActivity : AppCompatActivity() {
         scaleDetector.onTouchEvent(event)
         // 双指缩放期间不走亮度/音量/进度，避免误触
         if (scaling || wasScaling || event.pointerCount > 1) {
+            endSpeedBoost()
             if (event.actionMasked == MotionEvent.ACTION_UP ||
                 event.actionMasked == MotionEvent.ACTION_CANCEL
             ) {
@@ -575,6 +613,8 @@ class PlayerActivity : AppCompatActivity() {
                 scrubStartPos = activePosition()
                 brightnessStart = currentBrightness()
                 volumeStart = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                // 单击/双击/长按：交给 GestureDetector（与滑动分区并存）
+                tapDetector.onTouchEvent(event)
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -582,10 +622,15 @@ class PlayerActivity : AppCompatActivity() {
                 val dy = event.y - downY
                 if (gestureMode == GestureMode.NONE) {
                     if (abs(dx) > touchSlop * 1.5f || abs(dy) > touchSlop * 1.5f) {
+                        endSpeedBoost()
                         gestureMode = classifyGesture(downContentX, dx, dy)
                         gestureConsumedClick = true
                         hideControlsJob?.cancel()
                     }
+                }
+                // 仍喂给 tapDetector，超 touchSlop 时取消待决长按
+                if (gestureMode == GestureMode.NONE) {
+                    tapDetector.onTouchEvent(event)
                 }
                 when (gestureMode) {
                     GestureMode.SEEK -> {
@@ -629,6 +674,8 @@ class PlayerActivity : AppCompatActivity() {
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val boosting = speedBoostActive
+                endSpeedBoost()
                 when (gestureMode) {
                     GestureMode.SEEK -> {
                         val duration = activeDuration().takeIf { it > 0 }
@@ -646,15 +693,9 @@ class PlayerActivity : AppCompatActivity() {
                         scheduleHideControls()
                     }
                     GestureMode.NONE -> {
-                        val dx = abs(event.x - downX)
-                        val dy = abs(event.y - downY)
-                        if (dx < touchSlop && dy < touchSlop) {
-                            if (binding.sheetScrim.visibility == View.VISIBLE) {
-                                closeSheets()
-                            } else {
-                                toggleControls()
-                            }
-                            gestureConsumedClick = true
+                        // 单击显隐 / 双击播停由 tapDetector 确认；长按加速在松手时已恢复
+                        if (!boosting) {
+                            tapDetector.onTouchEvent(event)
                         }
                     }
                 }
@@ -771,6 +812,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun openSpeedSheet() {
         if (locked) return
+        endSpeedBoost()
         binding.sheetScrim.visibility = View.VISIBLE
         binding.speedSheet.visibility = View.VISIBLE
         binding.qualitySheet.visibility = View.GONE
@@ -934,6 +976,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun applySpeed(speed: Float) {
         lifecycleScope.launch {
+            endSpeedBoost()
             settings.setPlaybackSpeed(speed)
             currentSpeed = SettingsStore.normalizeSpeed(speed)
             refreshSpeedUi()
@@ -941,6 +984,46 @@ class PlayerActivity : AppCompatActivity() {
             closeSheets()
             scheduleHideControls()
         }
+    }
+
+    /** 双击画面：播/停；不进入锁定态逻辑。 */
+    private fun togglePlayPauseGesture() {
+        if (!hasActiveEngine()) return
+        endSpeedBoost()
+        if (isActivelyPlaying()) {
+            pauseActive()
+            saveProgress(force = true)
+            showGestureHint(getString(R.string.gesture_paused))
+        } else {
+            playActive()
+            showGestureHint(getString(R.string.gesture_playing))
+        }
+        updatePlayPause()
+        scheduleHideControls()
+    }
+
+    /** 长按临时 2x；不改用户倍速偏好，松手恢复 [currentSpeed]。 */
+    private fun startSpeedBoost() {
+        if (speedBoostActive || locked || !hasActiveEngine()) return
+        speedBoostActive = true
+        speedBeforeBoost = currentSpeed
+        setActiveSpeed(LONG_PRESS_BOOST_SPEED)
+        binding.speedButton.text = SettingsStore.formatSpeed(LONG_PRESS_BOOST_SPEED)
+        hintJob?.cancel()
+        binding.gestureHint.text = getString(
+            R.string.speed_boost_hint,
+            SettingsStore.formatSpeed(LONG_PRESS_BOOST_SPEED),
+        )
+        binding.gestureHint.visibility = View.VISIBLE
+    }
+
+    private fun endSpeedBoost() {
+        if (!speedBoostActive) return
+        speedBoostActive = false
+        setActiveSpeed(currentSpeed)
+        refreshSpeedUi()
+        hintJob?.cancel()
+        binding.gestureHint.visibility = View.GONE
     }
 
     private fun refreshEpisodePicker() {
@@ -1702,6 +1785,7 @@ class PlayerActivity : AppCompatActivity() {
         playGeneration++
         playJob?.cancel()
         playJob = null
+        endSpeedBoost()
         pauseActive()
         saveProgress(force = true)
         // 退后台取消未完成跨季
@@ -1729,6 +1813,8 @@ class PlayerActivity : AppCompatActivity() {
         private const val UNLOCK_CHIP_AUTO_HIDE_MS = 3_200L
         /** 播放中缓冲提示防抖：短于此时长的卡顿不闪「加载中」。 */
         private const val BUFFERING_INDICATOR_DELAY_MS = 450L
+        /** 长按临时加速倍率（松手恢复用户倍速）。 */
+        private const val LONG_PRESS_BOOST_SPEED = 2.0f
         private const val STATE_LANDSCAPE = "landscape_preferred"
 
         const val EXTRA_SERIES_ID = "series_id"

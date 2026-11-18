@@ -139,6 +139,9 @@
     <string name="update_signing_note">若安装提示签名冲突，请先卸载旧版再装。0.4.4 起调试包使用仓库固定签名，之后可直接覆盖升级。</string>
     <string name="episodes">选集</string>
     <string name="playing_now">正在播放: %1$s 第%2$d集</string>
+    <string name="gesture_playing">播放</string>
+    <string name="gesture_paused">暂停</string>
+    <string name="speed_boost_hint">长按加速 %1$s</string>
     <string name="related_section">相关季 / 同系列</string>
     <string name="related_empty">暂无相关季</string>
     <string name="related_upcoming">待上线</string>

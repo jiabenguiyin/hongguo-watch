@@ -8,6 +8,7 @@ import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -38,7 +39,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: SeriesListAdapter
     private lateinit var offlineAdapter: OfflineCacheAdapter
     private var mode = Mode.HOME
-    private var librarySegment = LibrarySegment.FAVORITES
+    private var librarySegment = LibrarySegmentPolicy.Segment.FAVORITES
     private var homeNav = HomeNav.RECOMMEND
     private var lastQuery: String = ""
     private var categories: List<HomeCategory> =
@@ -141,17 +142,17 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         binding.segmentFavorites.setOnClickListener {
-            showLibrary(segment = LibrarySegment.FAVORITES)
+            showLibrary(segment = LibrarySegmentPolicy.Segment.FAVORITES)
         }
         binding.segmentHistory.setOnClickListener {
-            showLibrary(segment = LibrarySegment.HISTORY)
+            showLibrary(segment = LibrarySegmentPolicy.Segment.HISTORY)
         }
         binding.segmentOffline.setOnClickListener {
-            showLibrary(segment = LibrarySegment.OFFLINE)
+            showLibrary(segment = LibrarySegmentPolicy.Segment.OFFLINE)
         }
 
         if (intent.getBooleanExtra(EXTRA_OPEN_LIBRARY_OFFLINE, false)) {
-            showLibrary(segment = LibrarySegment.OFFLINE)
+            showLibrary(segment = LibrarySegmentPolicy.Segment.OFFLINE)
         } else {
             showHome()
         }
@@ -161,7 +162,7 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.getBooleanExtra(EXTRA_OPEN_LIBRARY_OFFLINE, false)) {
-            showLibrary(segment = LibrarySegment.OFFLINE)
+            showLibrary(segment = LibrarySegmentPolicy.Segment.OFFLINE)
         }
     }
 
@@ -953,7 +954,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showLibrary(
         fromSwipe: Boolean = false,
-        segment: LibrarySegment = librarySegment,
+        segment: LibrarySegmentPolicy.Segment = librarySegment,
     ) {
         mode = Mode.LIBRARY
         librarySegment = segment
@@ -966,21 +967,21 @@ class MainActivity : AppCompatActivity() {
         highlightLibrarySegment(librarySegment)
         binding.brandTitle.text = getString(R.string.tab_library)
         when (librarySegment) {
-            LibrarySegment.HISTORY -> {
+            LibrarySegmentPolicy.Segment.HISTORY -> {
                 binding.pageSubtitle.visibility = View.GONE
                 binding.libraryCacheHook.visibility = View.VISIBLE
                 refreshLibraryCacheHook()
                 useSeriesAdapter()
                 loadHistoryList(fromSwipe)
             }
-            LibrarySegment.FAVORITES -> {
+            LibrarySegmentPolicy.Segment.FAVORITES -> {
                 binding.pageSubtitle.visibility = View.GONE
                 binding.libraryCacheHook.visibility = View.VISIBLE
                 refreshLibraryCacheHook()
                 useSeriesAdapter()
                 loadFavoritesList(fromSwipe)
             }
-            LibrarySegment.OFFLINE -> {
+            LibrarySegmentPolicy.Segment.OFFLINE -> {
                 binding.libraryCacheHook.visibility = View.GONE
                 binding.pageSubtitle.visibility = View.VISIBLE
                 binding.pageSubtitle.text = getString(R.string.offline_subtitle)
@@ -999,7 +1000,7 @@ class MainActivity : AppCompatActivity() {
         )
         binding.libraryCacheHook.contentDescription = getString(R.string.library_cache_hook_hint)
         binding.libraryCacheHook.setOnClickListener {
-            showLibrary(segment = LibrarySegment.OFFLINE)
+            showLibrary(segment = LibrarySegmentPolicy.Segment.OFFLINE)
         }
     }
 
@@ -1031,7 +1032,7 @@ class MainActivity : AppCompatActivity() {
                 val summary = withContext(Dispatchers.IO) { container.videoCache.spaceSummary() }
                 val entries = withContext(Dispatchers.IO) { container.videoCache.listReady() }
                 if (token != listGeneration || mode != Mode.LIBRARY ||
-                    librarySegment != LibrarySegment.OFFLINE
+                    librarySegment != LibrarySegmentPolicy.Segment.OFFLINE
                 ) {
                     return@launch
                 }
@@ -1078,7 +1079,7 @@ class MainActivity : AppCompatActivity() {
                     }
                     Toast.makeText(this@MainActivity, R.string.offline_deleted, Toast.LENGTH_SHORT)
                         .show()
-                    if (mode == Mode.LIBRARY && librarySegment == LibrarySegment.OFFLINE) {
+                    if (mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.OFFLINE) {
                         loadOfflineCacheList(fromSwipe = false)
                     }
                     refreshLibraryCacheHook()
@@ -1103,7 +1104,7 @@ class MainActivity : AppCompatActivity() {
                     withContext(Dispatchers.IO) { container.videoCache.clearAll() }
                     Toast.makeText(this@MainActivity, R.string.video_cache_cleared, Toast.LENGTH_SHORT)
                         .show()
-                    if (mode == Mode.LIBRARY && librarySegment == LibrarySegment.OFFLINE) {
+                    if (mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.OFFLINE) {
                         loadOfflineCacheList(fromSwipe = false)
                     }
                     refreshLibraryCacheHook()
@@ -1139,7 +1140,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 val history = repo.recentHistory()
                 if (token != listGeneration || mode != Mode.LIBRARY ||
-                    librarySegment != LibrarySegment.HISTORY
+                    librarySegment != LibrarySegmentPolicy.Segment.HISTORY
                 ) {
                     return@launch
                 }
@@ -1167,7 +1168,7 @@ class MainActivity : AppCompatActivity() {
                     )
                 }
                 if (token != listGeneration || mode != Mode.LIBRARY ||
-                    librarySegment != LibrarySegment.HISTORY
+                    librarySegment != LibrarySegmentPolicy.Segment.HISTORY
                 ) {
                     return@launch
                 }
@@ -1185,7 +1186,7 @@ class MainActivity : AppCompatActivity() {
 
     /** 历史行 ♡：一键收藏/取消，不打断续播入口。总集数走详情接口，不用进度集号。 */
     private fun toggleHistoryFavorite(series: Series, @Suppress("UNUSED_PARAMETER") currentlyFavorited: Boolean) {
-        if (mode != Mode.LIBRARY || librarySegment != LibrarySegment.HISTORY) return
+        if (mode != Mode.LIBRARY || librarySegment != LibrarySegmentPolicy.Segment.HISTORY) return
         lifecycleScope.launch {
             val totalEpisodes = runCatching { repo.resolveEpisodeTotal(series.id) }.getOrDefault(0)
             val nowFavorited = repo.toggleFavorite(
@@ -1195,7 +1196,7 @@ class MainActivity : AppCompatActivity() {
                 source = series.source,
                 episodeCount = totalEpisodes,
             )
-            if (mode != Mode.LIBRARY || librarySegment != LibrarySegment.HISTORY) return@launch
+            if (mode != Mode.LIBRARY || librarySegment != LibrarySegmentPolicy.Segment.HISTORY) return@launch
             adapter.setFavorited(series.id, nowFavorited)
             Toast.makeText(
                 this@MainActivity,
@@ -1221,7 +1222,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 val favorites = repo.favoritesWithResolvedEpisodeTotals()
                 if (token != listGeneration || mode != Mode.LIBRARY ||
-                    librarySegment != LibrarySegment.FAVORITES
+                    librarySegment != LibrarySegmentPolicy.Segment.FAVORITES
                 ) {
                     return@launch
                 }
@@ -1251,7 +1252,7 @@ class MainActivity : AppCompatActivity() {
                     )
                 }
                 if (token != listGeneration || mode != Mode.LIBRARY ||
-                    librarySegment != LibrarySegment.FAVORITES
+                    librarySegment != LibrarySegmentPolicy.Segment.FAVORITES
                 ) {
                     return@launch
                 }
@@ -1267,10 +1268,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun highlightLibrarySegment(segment: LibrarySegment) {
-        val favorites = segment == LibrarySegment.FAVORITES
-        val history = segment == LibrarySegment.HISTORY
-        val offline = segment == LibrarySegment.OFFLINE
+    private fun highlightLibrarySegment(segment: LibrarySegmentPolicy.Segment) {
+        val favorites = segment == LibrarySegmentPolicy.Segment.FAVORITES
+        val history = segment == LibrarySegmentPolicy.Segment.HISTORY
+        val offline = segment == LibrarySegmentPolicy.Segment.OFFLINE
         val active = ContextCompat.getColor(this, R.color.text_primary)
         val muted = ContextCompat.getColor(this, R.color.text_secondary)
         fun style(view: TextView, selected: Boolean) {
@@ -1285,8 +1286,16 @@ class MainActivity : AppCompatActivity() {
         style(binding.segmentOffline, offline)
     }
 
+    /**
+     * 库页横滑只切换收藏/历史/离线；到边停住，绝不切底栏首页/设置。
+     * 水平认领后 requestDisallowIntercept，避免被 SwipeRefresh / 父级跟手带走。
+     */
     @SuppressLint("ClickableViewAccessibility")
     private fun setupLibrarySegmentSwipe() {
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop.toFloat()
+        var downX = 0f
+        var downY = 0f
+        var claimedHorizontal = false
         librarySegmentGesture = GestureDetector(
             this,
             object : GestureDetector.SimpleOnGestureListener() {
@@ -1299,40 +1308,62 @@ class MainActivity : AppCompatActivity() {
                     velocityY: Float,
                 ): Boolean {
                     if (mode != Mode.LIBRARY) return false
-                    if (abs(velocityX) < abs(velocityY) || abs(velocityX) < 800f) return false
-                    // 左滑下一段、右滑上一段：收藏 → 历史 → 离线
-                    val order = listOf(
-                        LibrarySegment.FAVORITES,
-                        LibrarySegment.HISTORY,
-                        LibrarySegment.OFFLINE,
-                    )
-                    val index = order.indexOf(librarySegment).coerceAtLeast(0)
-                    val target = if (velocityX < 0) {
-                        order[(index + 1) % order.size]
-                    } else {
-                        order[(index - 1 + order.size) % order.size]
-                    }
-                    if (target == librarySegment) return false
+                    val target = LibrarySegmentPolicy.targetAfterFling(
+                        current = librarySegment,
+                        velocityX = velocityX,
+                        velocityY = velocityY,
+                    ) ?: return false
                     showLibrary(segment = target)
                     return true
                 }
             },
         )
-        binding.seriesList.setOnTouchListener { _, event ->
-            if (mode != Mode.LIBRARY) return@setOnTouchListener false
+        val isolateLibraryTouch = View.OnTouchListener { v, event ->
+            if (mode != Mode.LIBRARY) {
+                claimedHorizontal = false
+                return@OnTouchListener false
+            }
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.x
+                    downY = event.y
+                    claimedHorizontal = false
+                    // 先占住父级，随后按轴向确认是否水平
+                    v.parent?.requestDisallowInterceptTouchEvent(true)
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (!claimedHorizontal) {
+                        val dx = event.x - downX
+                        val dy = event.y - downY
+                        if (LibrarySegmentPolicy.shouldClaimHorizontal(dx, dy, touchSlop)) {
+                            claimedHorizontal = true
+                            v.parent?.requestDisallowInterceptTouchEvent(true)
+                        } else if (abs(dy) > touchSlop && abs(dy) > abs(dx)) {
+                            // 竖直滚动交给列表 / SwipeRefresh
+                            v.parent?.requestDisallowInterceptTouchEvent(false)
+                        }
+                    } else {
+                        v.parent?.requestDisallowInterceptTouchEvent(true)
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    v.parent?.requestDisallowInterceptTouchEvent(false)
+                    claimedHorizontal = false
+                }
+            }
             librarySegmentGesture.onTouchEvent(event)
+            // 不吞事件：列表仍可点按/竖滑；水平已通过 disallow 与 fling 策略隔离
             false
         }
-        binding.librarySegmentRow.setOnTouchListener { _, event ->
-            if (mode != Mode.LIBRARY) return@setOnTouchListener false
-            librarySegmentGesture.onTouchEvent(event)
-            false
-        }
+        binding.seriesList.setOnTouchListener(isolateLibraryTouch)
+        binding.swipeRefresh.setOnTouchListener(isolateLibraryTouch)
+        binding.librarySegmentRow.setOnTouchListener(isolateLibraryTouch)
+        binding.libraryCacheHook.setOnTouchListener(isolateLibraryTouch)
     }
 
     private fun openSeries(series: Series) {
         when {
-            mode == Mode.LIBRARY && librarySegment == LibrarySegment.HISTORY -> {
+            mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.HISTORY -> {
                 lifecycleScope.launch {
                     val history = repo.historyFor(series.id)
                     val intent = Intent(this@MainActivity, PlayerActivity::class.java).apply {
@@ -1399,8 +1430,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private enum class Mode { HOME, LIBRARY }
-
-    private enum class LibrarySegment { FAVORITES, HISTORY, OFFLINE }
 
     companion object {
         const val EXTRA_OPEN_LIBRARY_OFFLINE = "open_library_offline"

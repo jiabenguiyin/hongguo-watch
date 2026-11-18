@@ -59,6 +59,8 @@ import com.hongguo.watch.player.VideoResizeMode
 import com.hongguo.watch.player.WatchDecodePolicy
 import com.hongguo.watch.upstream.CodecLabels
 import com.hongguo.watch.upstream.RemoteVideo
+import com.hongguo.watch.upstream.Rendition
+import com.hongguo.watch.upstream.StreamFailover
 import com.hongguo.watch.upstream.StreamInfo as UpstreamStreamInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -134,6 +136,16 @@ class PlayerActivity : AppCompatActivity() {
     /** 0=未回退；1=切 IJK 软解；2=Media3 仅软解/AVC；≥2 后上传诊断。 */
     private var blackScreenRecoveryStage = 0
     private var diagUploadJob: Job? = null
+    /** 当前集阶梯缓存（失败切流复用，避免每次重拉）。 */
+    private var ladderRenditions: List<Rendition> = emptyList()
+    private var ladderEpisodeId: String? = null
+    private val failedStreamKeys = linkedSetOf<String>()
+    /** 切流 + 解码策略切换合计次数。 */
+    private var playbackFailoverAttempts = 0
+    private var activeStreamKey: String? = null
+    private var activeStreamInfo: StreamInfo? = null
+    private var stallWatchJob: Job? = null
+    private var stallAnchorPositionMs = 0L
 
     private lateinit var episodeAdapter: EpisodeAdapter
     private lateinit var audioManager: AudioManager
@@ -349,8 +361,8 @@ class PlayerActivity : AppCompatActivity() {
             scheduleHideControls()
         }
         binding.retryButton.setOnClickListener {
-            // 手动重试：允许再走一遍兼容回退
-            resetDecodePolicyForDevice()
+            // 手动重试：清空失败档与回退计数，再走一遍
+            resetPlaybackRecoveryState()
             loadCurrent()
         }
         binding.qualityButton.setOnClickListener { openQualitySheet() }
@@ -998,6 +1010,8 @@ class PlayerActivity : AppCompatActivity() {
         lifecycleScope.launch {
             settings.setMaxQuality(height)
             currentQuality = SettingsStore.normalizeQuality(height)
+            // 用户改清晰度：尊重新上限，清空本集失败档（不永久写入更低档）
+            resetStreamFailoverSession()
             refreshQualityUi()
             closeSheets()
             startPositionMs = activePosition()
@@ -1101,10 +1115,26 @@ class PlayerActivity : AppCompatActivity() {
         seasonPrepared = false
         nextSeasonWork = null
         binding.seasonBanner.visibility = View.GONE
-        // 切集重置黑屏回退状态，但保留设备默认软解偏好
-        resetDecodePolicyForDevice()
+        // 切集重置回退/切流状态，但保留设备默认软解偏好
+        resetPlaybackRecoveryState()
         refreshEpisodePicker()
         loadCurrent()
+    }
+
+    private fun resetPlaybackRecoveryState() {
+        resetDecodePolicyForDevice()
+        resetStreamFailoverSession()
+    }
+
+    private fun resetStreamFailoverSession() {
+        ladderRenditions = emptyList()
+        ladderEpisodeId = null
+        failedStreamKeys.clear()
+        playbackFailoverAttempts = 0
+        activeStreamKey = null
+        activeStreamInfo = null
+        stallWatchJob?.cancel()
+        stallWatchJob = null
     }
 
     private fun resetDecodePolicyForDevice() {
@@ -1172,17 +1202,35 @@ class PlayerActivity : AppCompatActivity() {
                         "fragileSoc quality clamp user=${userMax}p → effective=${effectiveMax}p",
                     )
                 }
-                val stream = repo.stream(
-                    seriesId = requestedSeriesId,
-                    episodeId = episodeId,
-                    preferAvc = true,
-                    avcOnly = forceAvcOnly,
-                    maxHeight = effectiveMax,
-                )
+                val selection = if (
+                    ladderEpisodeId == episodeId &&
+                    ladderRenditions.isNotEmpty()
+                ) {
+                    repo.selectFromLadder(
+                        renditions = ladderRenditions,
+                        maxHeight = effectiveMax,
+                        preferAvc = true,
+                        avcOnly = forceAvcOnly,
+                        excludeKeys = failedStreamKeys,
+                    )
+                } else {
+                    repo.streamSelection(
+                        seriesId = requestedSeriesId,
+                        episodeId = episodeId,
+                        preferAvc = true,
+                        avcOnly = forceAvcOnly,
+                        maxHeight = effectiveMax,
+                        excludeKeys = failedStreamKeys,
+                    )
+                }
                 if (token != playGeneration) return@launch
                 if (!playerForeground) return@launch
                 if (seriesId != requestedSeriesId || episodeIndex != requestedIndex) return@launch
                 if (episodeIds.getOrNull(episodeIndex) != episodeId) return@launch
+                ladderRenditions = selection.renditions
+                ladderEpisodeId = episodeId
+                activeStreamKey = selection.selectedKey
+                val stream = selection.stream
                 // avcOnly 会话：拒绝把 HEVC/bytevc1 交给播放器（选流层已硬拦，此处再防）
                 if (forceAvcOnly && CodecLabels.isHevc(stream.codec)) {
                     PlayerDiagLog.e(
@@ -1192,16 +1240,27 @@ class PlayerActivity : AppCompatActivity() {
                         "本机仅支持 AVC，当前源为 ${stream.codec.ifBlank { "HEVC" }}",
                     )
                 }
+                // 下一档为 HEVC 时优先 IJK 软解（手表更安全）
+                if (
+                    CodecLabels.isHevc(stream.codec) &&
+                    IjkPlayerEngine.isAbiSupported() &&
+                    playbackFailoverAttempts > 0
+                ) {
+                    activeKernel = PlayerKernel.IJK
+                    softDecodePreferred = true
+                }
                 binding.playerNotice.visibility = if (stream.isPreview) View.VISIBLE else View.GONE
                 PlayerDiagLog.markPlayStart(
                     codec = stream.codec.ifBlank { "?" },
                     quality = stream.quality,
                     mode = "kernel=$activeKernel soft=$softDecodePreferred " +
-                        "media3=$videoCodecMode avcOnly=$forceAvcOnly",
+                        "media3=$videoCodecMode avcOnly=$forceAvcOnly " +
+                        "failover=$playbackFailoverAttempts",
                 )
                 PlayerDiagLog.i(
                     "selected codec_id=${stream.codec.ifBlank { "?" }} " +
-                        "isAvc=${CodecLabels.isAvc(stream.codec)} isHevc=${CodecLabels.isHevc(stream.codec)}",
+                        "isAvc=${CodecLabels.isAvc(stream.codec)} isHevc=${CodecLabels.isHevc(stream.codec)} " +
+                        "key=${selection.selectedKey.take(64)}",
                 )
                 playStream(stream, startPositionMs)
                 // 边看边缓存当前选中流；可选预取下一集
@@ -1216,6 +1275,17 @@ class PlayerActivity : AppCompatActivity() {
                 if (token != playGeneration) return@launch
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 PlayerDiagLog.e("fetchStream/play failed: ${e.message}", e)
+                if (e is com.hongguo.watch.data.NoPlayableRenditionException &&
+                    e.renditions.isNotEmpty()
+                ) {
+                    ladderRenditions = e.renditions
+                    ladderEpisodeId = episodeId
+                }
+                // 选流失败：放宽解码策略或改走 HEVC+IJK 后再选
+                val fake = activeStreamInfo ?: StreamInfo(url = "", quality = "", codec = "")
+                if (tryPlaybackFailover(fake, startPositionMs, reason = "fetch_or_select_failed")) {
+                    return@launch
+                }
                 Toast.makeText(
                     this@PlayerActivity,
                     e.message ?: getString(R.string.error_no_play_url),
@@ -1235,6 +1305,11 @@ class PlayerActivity : AppCompatActivity() {
         releasePlayer(save = false)
         videoFrameRendered = false
         firstFrameWatchJob?.cancel()
+        stallWatchJob?.cancel()
+        activeStreamInfo = stream
+        if (activeStreamKey.isNullOrBlank()) {
+            activeStreamKey = StreamFailover.key(stream.quality, stream.codec, stream.url)
+        }
         if (activeKernel == PlayerKernel.IJK) {
             playWithIjk(stream, positionMs, token)
         } else {
@@ -1439,6 +1514,7 @@ class PlayerActivity : AppCompatActivity() {
                 override fun onBuffering(buffering: Boolean) {
                     if (token != playGeneration) return
                     setLoadingIndicator(visible = buffering, immediate = false)
+                    watchStall(buffering, token, stream)
                 }
 
                 override fun onCompletion() {
@@ -1454,7 +1530,7 @@ class PlayerActivity : AppCompatActivity() {
                 override fun onError(what: Int, extra: Int, message: String?) {
                     if (token != playGeneration) return
                     PlayerDiagLog.e(message ?: "ijk error")
-                    if (tryDecodeRecovery(stream, activePosition(), reason = "ijk_error")) return
+                    if (tryPlaybackFailover(stream, activePosition(), reason = "ijk_error")) return
                     binding.retryButton.visibility = View.VISIBLE
                     setLoadingIndicator(visible = false, immediate = true)
                     if (!locked) showControls(autoHide = false)
@@ -1564,10 +1640,15 @@ class PlayerActivity : AppCompatActivity() {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 updatePlayPause()
                 when (playbackState) {
-                    Player.STATE_BUFFERING ->
+                    Player.STATE_BUFFERING -> {
                         setLoadingIndicator(visible = true, immediate = false)
+                        watchStall(buffering = true, token = token, stream = stream)
+                    }
                     Player.STATE_IDLE -> Unit
-                    else -> setLoadingIndicator(visible = false, immediate = true)
+                    else -> {
+                        setLoadingIndicator(visible = false, immediate = true)
+                        watchStall(buffering = false, token = token, stream = stream)
+                    }
                 }
                 if (playbackState == Player.STATE_READY && !locked) scheduleHideControls()
                 if (playbackState == Player.STATE_READY) {
@@ -1616,14 +1697,24 @@ class PlayerActivity : AppCompatActivity() {
                     "player error code=${error.errorCode} msg=${error.message}",
                     error,
                 )
-                if (tryDecodeRecovery(stream, exo.currentPosition, reason = "player_error")) {
+                val reason = when {
+                    error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED ||
+                        error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES ||
+                        error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ->
+                        "decode_error"
+                    error.errorCode >= PlaybackException.ERROR_CODE_IO_UNSPECIFIED &&
+                        error.errorCode < PlaybackException.ERROR_CODE_DRM_UNSPECIFIED ->
+                        "http_or_io_error"
+                    else -> "player_error"
+                }
+                if (tryPlaybackFailover(stream, exo.currentPosition, reason = reason)) {
                     return
                 }
                 binding.retryButton.visibility = View.VISIBLE
                 setLoadingIndicator(visible = false, immediate = true)
                 if (!locked) showControls(autoHide = false)
                 Toast.makeText(this@PlayerActivity, error.message ?: "播放失败", Toast.LENGTH_LONG).show()
-                uploadDiagnosticsAsync("player_error")
+                uploadDiagnosticsAsync(reason)
             }
         })
 
@@ -1640,12 +1731,12 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     /**
-     * 有声无画：READY 后仍无首帧 → 分段抬升解码策略。
+     * 有声无画：READY 后仍无首帧 → 先切流再抬升解码策略。
      * 另：视频解码器名为空（仅音频起来）时尽快拒绝并回退。
      * 硬解「成功」但不吐帧时 Media3 不会走 decoder fallback。
      */
     private fun scheduleFirstFrameWatch(token: Int, stream: StreamInfo) {
-        if (videoFrameRendered || blackScreenRecoveryStage >= 2) return
+        if (videoFrameRendered || playbackFailoverAttempts >= StreamFailover.MAX_ATTEMPTS) return
         if (firstFrameWatchJob?.isActive == true) return
         val timeout = WatchDecodePolicy.firstFrameTimeoutMs(this)
         firstFrameWatchJob = lifecycleScope.launch {
@@ -1661,16 +1752,19 @@ class PlayerActivity : AppCompatActivity() {
                 PlayerDiagLog.w(
                     "video decoder null after prepare; codec=${stream.codec} " +
                         "audio=${PlayerDiagLog.lastAudioDecoder.ifBlank { "-" }} " +
-                        "kernel=$activeKernel mode=$videoCodecMode stage=$blackScreenRecoveryStage",
+                        "kernel=$activeKernel mode=$videoCodecMode " +
+                        "failover=$playbackFailoverAttempts",
                 )
-                if (tryDecodeRecovery(stream, early.currentPosition, reason = "null_video_decoder")) {
+                if (tryPlaybackFailover(stream, early.currentPosition, reason = "null_video_decoder")) {
                     return@launch
                 }
             }
             val remaining = (timeout - 1_200L).coerceAtLeast(0L)
             if (remaining > 0L) delay(remaining)
             if (token != playGeneration || !playerForeground) return@launch
-            if (videoFrameRendered || blackScreenRecoveryStage >= 2) return@launch
+            if (videoFrameRendered || playbackFailoverAttempts >= StreamFailover.MAX_ATTEMPTS) {
+                return@launch
+            }
             if (!hasActiveEngine()) return@launch
             val exo = player
             if (exo != null && !exo.playWhenReady && exo.playbackState != Player.STATE_READY) {
@@ -1684,14 +1778,14 @@ class PlayerActivity : AppCompatActivity() {
             PlayerDiagLog.w(
                 "no first frame after ${timeout}ms; codec=${stream.codec} " +
                     "kernel=$activeKernel mode=$videoCodecMode " +
-                    "stage=$blackScreenRecoveryStage$decoderHint",
+                    "failover=$playbackFailoverAttempts$decoderHint",
             )
             val reason = if (PlayerDiagLog.lastVideoDecoder.isBlank()) {
                 "null_video_decoder"
             } else {
                 "first_frame_timeout"
             }
-            if (!tryDecodeRecovery(stream, activePosition(), reason = reason)) {
+            if (!tryPlaybackFailover(stream, activePosition(), reason = reason)) {
                 uploadDiagnosticsAsync(reason)
                 binding.retryButton.visibility = View.VISIBLE
                 Toast.makeText(
@@ -1703,6 +1797,99 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    /** 首帧后长时间缓冲且进度不前进 → 视为卡顿超时，自动切流。 */
+    private fun watchStall(buffering: Boolean, token: Int, stream: StreamInfo) {
+        if (!buffering || !videoFrameRendered || playingFromCache) {
+            stallWatchJob?.cancel()
+            return
+        }
+        stallAnchorPositionMs = activePosition()
+        stallWatchJob?.cancel()
+        stallWatchJob = lifecycleScope.launch {
+            delay(StreamFailover.STALL_TIMEOUT_MS)
+            if (token != playGeneration || !playerForeground) return@launch
+            if (!hasActiveEngine() || !videoFrameRendered) return@launch
+            val pos = activePosition()
+            if (pos - stallAnchorPositionMs >= 400L) return@launch
+            PlayerDiagLog.w(
+                "stall timeout ${StreamFailover.STALL_TIMEOUT_MS}ms " +
+                    "pos=$pos anchor=$stallAnchorPositionMs codec=${stream.codec}",
+            )
+            if (!tryPlaybackFailover(stream, pos, reason = "stall_timeout")) {
+                binding.retryButton.visibility = View.VISIBLE
+                setLoadingIndicator(visible = false, immediate = true)
+                if (!locked) showControls(autoHide = false)
+                Toast.makeText(
+                    this@PlayerActivity,
+                    R.string.player_stall_failed,
+                    Toast.LENGTH_LONG,
+                ).show()
+                uploadDiagnosticsAsync("stall_timeout")
+            }
+        }
+    }
+
+    /**
+     * 播放失败自动恢复：先沿阶梯切下一档（偏 AVC / 降档），再切解码策略。
+     * 切流时才把当前档记入失败集；解码回退可对同一 URL 换内核重试。
+     * @return true 表示已发起重试（勿再 toast 终态错误）。
+     */
+    private fun tryPlaybackFailover(
+        stream: StreamInfo,
+        positionMs: Long,
+        reason: String,
+    ): Boolean {
+        if (playbackFailoverAttempts >= StreamFailover.MAX_ATTEMPTS) {
+            PlayerDiagLog.w("failover cap reached ($playbackFailoverAttempts) reason=$reason")
+            return false
+        }
+        val currentKey = activeStreamKey
+            ?: StreamFailover.key(stream.quality, stream.codec, stream.url)
+        // currentQuality 已与用户设置同步；切流不改写 DataStore
+        val userMax = currentQuality
+        val effectiveMax = WatchDecodePolicy.effectiveMaxQuality(this, userMax)
+
+        if (!playingFromCache && ladderRenditions.isNotEmpty() && stream.url.isNotBlank()) {
+            val exclude = if (currentKey.isNotBlank()) {
+                failedStreamKeys + currentKey
+            } else {
+                failedStreamKeys
+            }
+            val next = StreamFailover.pick(
+                renditions = ladderRenditions,
+                maxQuality = effectiveMax,
+                excludeKeys = exclude,
+                preferAvc = true,
+                avcOnly = forceAvcOnly,
+            )
+            if (next != null) {
+                if (currentKey.isNotBlank()) failedStreamKeys.add(currentKey)
+                playbackFailoverAttempts++
+                if (StreamFailover.shouldPreferIjkSoft(next) && IjkPlayerEngine.isAbiSupported()) {
+                    activeKernel = PlayerKernel.IJK
+                    softDecodePreferred = true
+                    forceAvcOnly = false
+                }
+                val label = StreamFailover.describe(next)
+                PlayerDiagLog.w(
+                    "failover[$reason] → stream $label attempt=$playbackFailoverAttempts " +
+                        "kernel=$activeKernel soft=$softDecodePreferred avcOnly=$forceAvcOnly " +
+                        "userMax=${userMax}p effective=${effectiveMax}p",
+                )
+                startPositionMs = positionMs.coerceAtLeast(0L)
+                Toast.makeText(
+                    this,
+                    getString(R.string.player_failover_stream, label),
+                    Toast.LENGTH_SHORT,
+                ).show()
+                loadCurrent()
+                return true
+            }
+        }
+
+        return tryDecodeRecovery(stream, positionMs, reason)
+    }
+
     /**
      * @return true 表示已发起兼容重试。
      */
@@ -1711,8 +1898,10 @@ class PlayerActivity : AppCompatActivity() {
         positionMs: Long,
         reason: String,
     ): Boolean {
+        if (playbackFailoverAttempts >= StreamFailover.MAX_ATTEMPTS) return false
         val nextStage = blackScreenRecoveryStage + 1
         if (nextStage > 2) return false
+        playbackFailoverAttempts++
         blackScreenRecoveryStage = nextStage
         when (nextStage) {
             1 -> {
@@ -1748,7 +1937,7 @@ class PlayerActivity : AppCompatActivity() {
         PlayerDiagLog.w(
             "recover[$reason] → stage=$blackScreenRecoveryStage kernel=$activeKernel " +
                 "soft=$softDecodePreferred media3=$videoCodecMode avcOnly=$forceAvcOnly " +
-                "prevCodec=${stream.codec.ifBlank { "?" }}",
+                "attempt=$playbackFailoverAttempts prevCodec=${stream.codec.ifBlank { "?" }}",
         )
         startPositionMs = positionMs.coerceAtLeast(0L)
         Toast.makeText(this, R.string.player_retry_compat, Toast.LENGTH_SHORT).show()
@@ -1989,6 +2178,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun releasePlayer(save: Boolean = true) {
         progressJob?.cancel()
         firstFrameWatchJob?.cancel()
+        stallWatchJob?.cancel()
         if (save) saveProgress(force = true)
         binding.playerView.player = null
         player?.release()

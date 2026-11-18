@@ -12,6 +12,7 @@ import com.hongguo.watch.data.model.Series
 import com.hongguo.watch.data.model.SeriesDetail
 import com.hongguo.watch.data.model.SeriesSource
 import com.hongguo.watch.data.model.StreamInfo
+import com.hongguo.watch.upstream.Rendition
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -91,6 +92,40 @@ class ContentRepository(
             avcOnly = avcOnly,
         )
     }
+
+    /** 取流并带回完整阶梯，供播放失败自动切流。 */
+    suspend fun streamSelection(
+        seriesId: String,
+        episodeId: String,
+        preferAvc: Boolean = true,
+        avcOnly: Boolean = false,
+        maxHeight: Int? = null,
+        excludeKeys: Set<String> = emptySet(),
+    ): StreamSelection = withContext(Dispatchers.IO) {
+        appSource.fetchStreamSelection(
+            seriesId = seriesId,
+            episodeId = episodeId,
+            maxHeight = maxHeight ?: settings.maxQualityNow(),
+            preferAvc = preferAvc,
+            avcOnly = avcOnly,
+            excludeKeys = excludeKeys,
+        )
+    }
+
+    /** 已有阶梯时本地再选（不联网）。 */
+    fun selectFromLadder(
+        renditions: List<Rendition>,
+        maxHeight: Int,
+        preferAvc: Boolean = true,
+        avcOnly: Boolean = false,
+        excludeKeys: Set<String> = emptySet(),
+    ): StreamSelection = appSource.selectFromLadder(
+        renditions = renditions,
+        maxHeight = maxHeight,
+        preferAvc = preferAvc,
+        avcOnly = avcOnly,
+        excludeKeys = excludeKeys,
+    )
 
     /**
      * 相关季列表。优先 App plan 接口；失败时用标题 stem 搜索作降级列表（不保证可自动连播）。

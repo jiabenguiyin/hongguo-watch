@@ -138,6 +138,8 @@
     <string name="quality">清晰度</string>
     <string name="quality_sheet_title">清晰度（默认 480p）</string>
     <string name="player_retry_compat">画面异常，正在切换兼容解码…</string>
+    <string name="player_failover_stream">播放异常，正在切换至 %1$s…</string>
+    <string name="player_stall_failed">缓冲超时，已尝试切换线路</string>
     <string name="player_black_diag_hint">仍无画面，已尝试上传诊断日志</string>
     <string name="upload_diagnostics">上传诊断日志</string>
     <string name="decode_test_entry">解码自检（本地片）</string>

@@ -14,8 +14,10 @@ import com.hongguo.watch.player.PlayerDiagLog
 import com.hongguo.watch.upstream.DeviceRegister
 import com.hongguo.watch.upstream.LadderParseResult
 import com.hongguo.watch.upstream.MobilePlayback
+import com.hongguo.watch.upstream.Rendition
 import com.hongguo.watch.upstream.RequestScope
 import com.hongguo.watch.upstream.Signer
+import com.hongguo.watch.upstream.StreamFailover
 import com.hongguo.watch.upstream.VendorConstants
 import com.hongguo.watch.upstream.objects
 import com.hongguo.watch.upstream.str
@@ -459,13 +461,17 @@ class AppSourceClient(
         )
     }
 
-    fun fetchStream(
+    /**
+     * 取流 + 完整阶梯（供播放失败自动切流复用，避免每次重拉）。
+     */
+    fun fetchStreamSelection(
         seriesId: String,
         episodeId: String,
         maxHeight: Int,
         preferAvc: Boolean = true,
         avcOnly: Boolean = false,
-    ): StreamInfo {
+        excludeKeys: Set<String> = emptySet(),
+    ): StreamSelection {
         require(SERIES_ID.matches(seriesId.trim())) { "无效剧集 ID" }
         val vid = episodeId.trim()
         require(SERIES_ID.matches(vid)) { "无效分集 ID" }
@@ -480,27 +486,60 @@ class AppSourceClient(
         val capped = maxHeight.coerceIn(240, 1080)
         val parse = ladder.parseResult().let {
             if (it.diag.isEmpty() && ladder.renditions.isNotEmpty()) {
-                // 兼容旧构造：无 diag 时仍打摘要
                 LadderParseResult(ladder.renditions, emptyList())
             } else {
                 it
             }
         }
         PlayerDiagLog.logLadder(parse, capped, preferAvc = preferAvc, avcOnly = avcOnly)
-        // 优先 AVC；avcOnly 时硬性只要 H.264（Media3 黑屏回退用）。IJK 路径默认 avcOnly=false。
-        val selected = ladder.select(capped, preferAvc = preferAvc, avcOnly = avcOnly) {
-            true
-        } ?: run {
+        return selectFromLadder(
+            renditions = ladder.renditions,
+            maxHeight = capped,
+            preferAvc = preferAvc,
+            avcOnly = avcOnly,
+            excludeKeys = excludeKeys,
+        )
+    }
+
+    fun fetchStream(
+        seriesId: String,
+        episodeId: String,
+        maxHeight: Int,
+        preferAvc: Boolean = true,
+        avcOnly: Boolean = false,
+    ): StreamInfo = fetchStreamSelection(
+        seriesId = seriesId,
+        episodeId = episodeId,
+        maxHeight = maxHeight,
+        preferAvc = preferAvc,
+        avcOnly = avcOnly,
+    ).stream
+
+    /** 已有阶梯时本地再选一档（失败切流，不重新请求）。 */
+    fun selectFromLadder(
+        renditions: List<Rendition>,
+        maxHeight: Int,
+        preferAvc: Boolean = true,
+        avcOnly: Boolean = false,
+        excludeKeys: Set<String> = emptySet(),
+    ): StreamSelection {
+        val capped = maxHeight.coerceIn(240, 1080)
+        val selected = StreamFailover.pick(
+            renditions = renditions,
+            maxQuality = capped,
+            excludeKeys = excludeKeys,
+            preferAvc = preferAvc,
+            avcOnly = avcOnly,
+        ) ?: run {
             val msg = if (avcOnly) {
                 "没有可用的 AVC/H.264 清晰度（上限 ${maxHeight}p，已拒绝 HEVC/bytevc1）"
             } else {
                 "没有可播放清晰度（上限 ${maxHeight}p）"
             }
             PlayerDiagLog.e("fetchStream select failed: $msg")
-            throw IllegalStateException(msg)
+            throw NoPlayableRenditionException(msg, renditions)
         }
 
-        // 双保险：avcOnly 会话绝不能把 bytevc1/HEVC 交给 ExoPlayer
         if (avcOnly && !selected.isAvc) {
             PlayerDiagLog.e(
                 "avcOnly 选流异常：codec=${selected.codec.ifBlank { "?" }} q=${selected.quality}",
@@ -511,24 +550,29 @@ class AppSourceClient(
         }
 
         val qualityLabel = if (selected.quality > 0) {
-            "${selected.quality}p" + if (selected.quality > maxHeight) "（兼容）" else ""
+            "${selected.quality}p" + if (selected.quality > capped) "（兼容）" else ""
         } else {
             "auto"
         }
         PlayerDiagLog.i(
             "stream pick codec=${selected.codec.ifBlank { "?" }} " +
                 "q=${qualityLabel} avcOnly=$avcOnly preferAvc=$preferAvc " +
-                "ladder=${ladder.renditions.size} " +
-                "avcRungs=${ladder.renditions.count { it.isAvc }}",
+                "ladder=${renditions.size} " +
+                "avcRungs=${renditions.count { it.isAvc }} " +
+                "excluded=${excludeKeys.size}",
         )
-        return StreamInfo(
-            url = selected.url,
-            quality = qualityLabel,
-            isPreview = false,
-            referer = VIDEO_REFERER,
-            userAgent = VendorConstants.PLAYER_UA,
-            decryptionKey = selected.key,
-            codec = selected.codec,
+        return StreamSelection(
+            stream = StreamInfo(
+                url = selected.url,
+                quality = qualityLabel,
+                isPreview = false,
+                referer = VIDEO_REFERER,
+                userAgent = VendorConstants.PLAYER_UA,
+                decryptionKey = selected.key,
+                codec = selected.codec,
+            ),
+            renditions = renditions,
+            selectedKey = StreamFailover.key(selected),
         )
     }
 

@@ -29,8 +29,9 @@
         <item name="materialAlertDialogTitleTextStyle">@style/TextAppearance.HongguoWatch.DialogTitle</item>
         <item name="materialAlertDialogBodyTextStyle">@style/TextAppearance.HongguoWatch.DialogBody</item>
         <item name="dialogPreferredPadding">12dp</item>
-        <item name="android:windowMinWidthMajor">0dp</item>
-        <item name="android:windowMinWidthMinor">0dp</item>
+        <!-- 手表近全宽：避免系统默认窄弹窗两侧黑边过大 -->
+        <item name="android:windowMinWidthMajor">92%</item>
+        <item name="android:windowMinWidthMinor">92%</item>
     </style>
 
     <style name="TextAppearance.HongguoWatch.DialogTitle" parent="TextAppearance.MaterialComponents.Subtitle1">

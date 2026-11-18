@@ -8,7 +8,10 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
+import android.view.WindowManager
+import android.widget.Button
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -151,6 +154,17 @@ class SettingsActivity : AppCompatActivity() {
         return AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
     }
 
+    /** 弹窗近全宽（减圆角安全边），避免两侧黑边过大、底栏被裁。 */
+    private fun showWatchDialog(dialog: AlertDialog): AlertDialog {
+        dialog.show()
+        dialog.window?.let { window ->
+            val width = WatchUi.dialogContentWidthPx(this)
+            window.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT)
+            window.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)
+        }
+        return dialog
+    }
+
     private fun checkForUpdate() {
         if (updateChecking) return
         updateChecking = true
@@ -182,47 +196,93 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun showLatestDialog() {
-        watchDialogBuilder()
-            .setTitle(R.string.update_latest_title)
-            .setMessage(getString(R.string.update_latest, BuildConfig.VERSION_NAME))
-            .setPositiveButton(R.string.update_ok, null)
-            .show()
+        showWatchDialog(
+            watchDialogBuilder()
+                .setTitle(R.string.update_latest_title)
+                .setMessage(getString(R.string.update_latest, BuildConfig.VERSION_NAME))
+                .setPositiveButton(R.string.update_ok, null)
+                .create(),
+        )
     }
 
     private fun showUpdateAvailableDialog(result: UpdateChecker.Result) {
         val notes = result.body.ifBlank { "前往发布页查看说明。" }.take(280)
-        val message = getString(
-            R.string.update_available_body,
+        val pageUrl = result.htmlUrl.ifBlank { UpdateChecker.releasesPageUrl() }
+        val content = LayoutInflater.from(this).inflate(R.layout.dialog_update_available, null)
+        val titleView = content.findViewById<TextView>(R.id.updateTitle)
+        val metaView = content.findViewById<TextView>(R.id.updateMeta)
+        val notesScroll = content.findViewById<ScrollView>(R.id.updateNotesScroll)
+        val notesView = content.findViewById<TextView>(R.id.updateNotes)
+        val primaryButton = content.findViewById<Button>(R.id.updatePrimaryButton)
+        val secondaryButton = content.findViewById<Button>(R.id.updateSecondaryButton)
+        val tertiaryButton = content.findViewById<Button>(R.id.updateTertiaryButton)
+
+        titleView.text = getString(R.string.update_available_title, result.versionName)
+        metaView.text = getString(
+            R.string.update_available_meta,
             BuildConfig.VERSION_NAME,
             result.versionName,
-            notes,
         )
-        val pageUrl = result.htmlUrl.ifBlank { UpdateChecker.releasesPageUrl() }
-        val builder = watchDialogBuilder()
-            .setTitle(getString(R.string.update_available_title, result.versionName))
-            .setMessage(message)
-            .setNegativeButton(R.string.update_later, null)
-            .setNeutralButton(R.string.update_open_page) { _, _ -> openUrl(pageUrl) }
+        notesView.text = notes
+        // 说明过长时限高滚动，保证底部三键始终可见可点
+        notesScroll.post {
+            val maxNotes = WatchUi.updateNotesMaxHeightPx(this@SettingsActivity)
+            if (notesView.height > maxNotes) {
+                val lp = notesScroll.layoutParams
+                lp.height = maxNotes
+                notesScroll.layoutParams = lp
+            }
+        }
 
-        if (!result.apkUrl.isNullOrBlank()) {
-            val existing = UpdateApkInstaller.resolveLocalFile(
-                this,
-                result.apkName,
-                result.versionName,
-            )
-            if (existing.exists() && existing.length() > 0L) {
-                builder.setPositiveButton(R.string.update_install_apk) { _, _ ->
-                    installApk(existing)
+        val dialog = watchDialogBuilder()
+            .setView(content)
+            .setCancelable(true)
+            .create()
+
+        // 主：下载安装 / 立即安装；无 APK 时主键改打开发布页
+        when {
+            !result.apkUrl.isNullOrBlank() -> {
+                val existing = UpdateApkInstaller.resolveLocalFile(
+                    this,
+                    result.apkName,
+                    result.versionName,
+                )
+                if (existing.exists() && existing.length() > 0L) {
+                    primaryButton.setText(R.string.update_install_apk)
+                    primaryButton.setOnClickListener {
+                        dialog.dismiss()
+                        installApk(existing)
+                    }
+                } else {
+                    primaryButton.setText(R.string.update_download_apk)
+                    primaryButton.setOnClickListener {
+                        dialog.dismiss()
+                        startApkDownload(result)
+                    }
                 }
-            } else {
-                builder.setPositiveButton(R.string.update_download_apk) { _, _ ->
-                    startApkDownload(result)
+                tertiaryButton.visibility = View.VISIBLE
+                tertiaryButton.setOnClickListener {
+                    dialog.dismiss()
+                    openUrl(pageUrl)
                 }
             }
-        } else {
-            builder.setPositiveButton(R.string.update_open_page) { _, _ -> openUrl(pageUrl) }
+            else -> {
+                primaryButton.setText(R.string.update_open_page)
+                primaryButton.setOnClickListener {
+                    dialog.dismiss()
+                    openUrl(pageUrl)
+                }
+                tertiaryButton.visibility = View.GONE
+            }
         }
-        builder.show()
+        secondaryButton.setOnClickListener { dialog.dismiss() }
+
+        showWatchDialog(dialog)
+        // 再压一次宽高：自定义 view 后部分机型会回退到默认窄宽
+        dialog.window?.setLayout(
+            WatchUi.dialogContentWidthPx(this),
+            WindowManager.LayoutParams.WRAP_CONTENT,
+        )
     }
 
     private fun startApkDownload(result: UpdateChecker.Result) {
@@ -249,7 +309,7 @@ class SettingsActivity : AppCompatActivity() {
             }
             .setCancelable(false)
             .create()
-        dialog.show()
+        showWatchDialog(dialog)
 
         downloadJob = lifecycleScope.launch {
             val outcome = runCatching {
@@ -294,12 +354,14 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun showDownloadDoneDialog(apkFile: File) {
         val message = apkFile.name + "\n\n" + getString(R.string.update_signing_note)
-        watchDialogBuilder()
-            .setTitle(R.string.update_download_done)
-            .setMessage(message)
-            .setNegativeButton(R.string.update_later, null)
-            .setPositiveButton(R.string.update_install_apk) { _, _ -> installApk(apkFile) }
-            .show()
+        showWatchDialog(
+            watchDialogBuilder()
+                .setTitle(R.string.update_download_done)
+                .setMessage(message)
+                .setNegativeButton(R.string.update_later, null)
+                .setPositiveButton(R.string.update_install_apk) { _, _ -> installApk(apkFile) }
+                .create(),
+        )
     }
 
     private fun uploadDiagnostics() {
@@ -313,17 +375,22 @@ class SettingsActivity : AppCompatActivity() {
                 withContext(Dispatchers.IO) { DiagUploader.upload(report) }
             }
             outcome.onSuccess { result ->
-                watchDialogBuilder()
-                    .setTitle(R.string.diag_uploaded_title)
-                    .setMessage(getString(R.string.diag_uploaded_body, result.url))
-                    .setNegativeButton(R.string.update_ok, null)
-                    .setPositiveButton(R.string.diag_copy_link) { _, _ ->
-                        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        cm.setPrimaryClip(ClipData.newPlainText("diag", result.url))
-                        Toast.makeText(this@SettingsActivity, R.string.update_ok, Toast.LENGTH_SHORT)
-                            .show()
-                    }
-                    .show()
+                showWatchDialog(
+                    watchDialogBuilder()
+                        .setTitle(R.string.diag_uploaded_title)
+                        .setMessage(getString(R.string.diag_uploaded_body, result.url))
+                        .setNegativeButton(R.string.update_ok, null)
+                        .setPositiveButton(R.string.diag_copy_link) { _, _ ->
+                            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            cm.setPrimaryClip(ClipData.newPlainText("diag", result.url))
+                            Toast.makeText(
+                                this@SettingsActivity,
+                                R.string.update_ok,
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                        .create(),
+                )
             }.onFailure { err ->
                 Toast.makeText(
                     this@SettingsActivity,

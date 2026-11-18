@@ -160,9 +160,10 @@
     <string name="update_latest_title">已是最新</string>
     <string name="update_latest">当前已是最新版本（%1$s）</string>
     <string name="update_available_title">发现新版本 %1$s</string>
+    <string name="update_available_meta">当前 %1$s\n最新 %2$s</string>
     <string name="update_available_body">当前 %1$s\n最新 %2$s\n\n%3$s</string>
     <string name="update_open_page">打开发布页</string>
-    <string name="update_download_apk">下载安装包</string>
+    <string name="update_download_apk">下载安装</string>
     <string name="update_install_apk">立即安装</string>
     <string name="update_later">稍后</string>
     <string name="update_ok">好的</string>

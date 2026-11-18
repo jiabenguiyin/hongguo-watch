@@ -125,6 +125,30 @@ object WatchUi {
         ).roundToInt()
     }
 
+    /**
+     * 手表弹窗可用宽度：屏幕宽减去两侧圆角安全边，避免窄面板 + 底栏按钮被裁。
+     */
+    fun dialogContentWidthPx(context: Context): Int {
+        val metrics = context.resources.displayMetrics
+        return WatchDialogLayout.contentWidthPx(
+            screenWidthPx = metrics.widthPixels,
+            edgeInsetPx = edgeInsetPx(context),
+            minWidthPx = dp(context, 200f),
+        )
+    }
+
+    /**
+     * 更新说明区最大高度：为标题/元信息/三键预留空间，保证按钮始终可见。
+     */
+    fun updateNotesMaxHeightPx(context: Context): Int {
+        val metrics = context.resources.displayMetrics
+        return WatchDialogLayout.notesMaxHeightPx(
+            screenHeightPx = metrics.heightPixels,
+            reservedPx = dp(context, 220f),
+            minHeightPx = dp(context, 72f),
+        )
+    }
+
     fun episodeColumns(context: Context): Int {
         val w = widthDp(context)
         return when {

@@ -325,6 +325,17 @@
                     android:textColor="@color/text_primary"
                     android:textSize="@dimen/watch_body" />
             </LinearLayout>
+
+            <TextView
+                android:id="@+id/qqGroupLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center"
+                android:paddingVertical="6dp"
+                android:text="@string/qq_group"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/watch_meta" />
         </LinearLayout>
     </ScrollView>
 </LinearLayout>

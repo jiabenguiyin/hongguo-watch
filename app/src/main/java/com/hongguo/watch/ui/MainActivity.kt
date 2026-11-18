@@ -51,6 +51,8 @@ class MainActivity : AppCompatActivity() {
      */
     private var listGeneration = 0
     private var listJob: Job? = null
+    /** 当前列表加载指示器；与 [ListLoadingPolicy] 对齐，避免双圈。 */
+    private var listLoading = ListLoadingPolicy.Indicator.NONE
 
     private val container get() = (application as HongguoWatchApp).container
     private val repo get() = container.repository
@@ -91,10 +93,12 @@ class MainActivity : AppCompatActivity() {
             }
         }
         binding.swipeRefresh.setOnRefreshListener {
+            // 用户下拉：只用 SwipeRefresh 圈，立刻藏中心 ProgressBar
+            applyListLoading(ListLoadingPolicy.Indicator.REFRESH)
             when (mode) {
-                Mode.HOME -> if (lastQuery.isNotBlank()) runSearch() else showHome(forceReload = true)
-                Mode.HISTORY -> showHistory()
-                Mode.FAVORITES -> showFavorites()
+                Mode.HOME -> if (lastQuery.isNotBlank()) runSearch(fromSwipe = true) else showHome(forceReload = true, fromSwipe = true)
+                Mode.HISTORY -> showHistory(fromSwipe = true)
+                Mode.FAVORITES -> showFavorites(fromSwipe = true)
             }
         }
         binding.tabHome.setOnClickListener { showHome() }
@@ -165,7 +169,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showHome(forceReload: Boolean = false) {
+    private fun showHome(forceReload: Boolean = false, fromSwipe: Boolean = false) {
         // 历史/收藏 → 首页：必须立刻清空共用 adapter，否则推荐标题下会闪历史行
         val switchingToHome = mode != Mode.HOME
         mode = Mode.HOME
@@ -176,9 +180,16 @@ class MainActivity : AppCompatActivity() {
         binding.categoryScroll.visibility = View.VISIBLE
         binding.pageSubtitle.visibility = View.GONE
         binding.brandTitle.text = getString(R.string.app_name)
-        binding.loading.visibility = View.VISIBLE
         binding.emptyView.visibility = View.GONE
         val clear = ListTabPolicy.shouldClearHomeAdapter(switchingToHome, forceReload)
+        val hadContent = adapter.itemCount > 0
+        applyListLoading(
+            ListLoadingPolicy.choose(
+                swipeRefreshing = fromSwipe || binding.swipeRefresh.isRefreshing,
+                clearingList = clear,
+                hasVisibleContent = hadContent && !clear,
+            ),
+        )
         val token = beginListLoad(clearAdapter = clear)
         // 先清空再改 hint，避免 notifyDataSetChanged 把旧历史行刷成「进」
         adapter.showResumeHint = false
@@ -208,11 +219,42 @@ class MainActivity : AppCompatActivity() {
                 ).show()
             } finally {
                 if (token == listGeneration) {
-                    binding.loading.visibility = View.GONE
-                    binding.swipeRefresh.isRefreshing = false
+                    applyListLoading(ListLoadingPolicy.Indicator.NONE)
                 }
             }
         }
+    }
+
+    /** 同一时刻只亮一种加载指示器（中心圈 / 下拉圈 / 无）。 */
+    private fun applyListLoading(indicator: ListLoadingPolicy.Indicator) {
+        listLoading = indicator
+        when (indicator) {
+            ListLoadingPolicy.Indicator.NONE -> {
+                binding.loading.visibility = View.GONE
+                if (binding.swipeRefresh.isRefreshing) {
+                    binding.swipeRefresh.isRefreshing = false
+                }
+            }
+            ListLoadingPolicy.Indicator.CENTER -> {
+                binding.loading.visibility = View.VISIBLE
+                if (binding.swipeRefresh.isRefreshing) {
+                    binding.swipeRefresh.isRefreshing = false
+                }
+            }
+            ListLoadingPolicy.Indicator.REFRESH -> {
+                binding.loading.visibility = View.GONE
+                if (!binding.swipeRefresh.isRefreshing) {
+                    binding.swipeRefresh.isRefreshing = true
+                }
+            }
+        }
+    }
+
+    /** 列表已有内容时藏中心遮罩，避免「有行还叠大圈」。 */
+    private fun hideCenterLoadingIfContentVisible() {
+        if (adapter.itemCount <= 0) return
+        val next = ListLoadingPolicy.afterContentShown(listLoading)
+        if (next != listLoading) applyListLoading(next)
     }
 
     /** 切换列表内容源时调用：作废首页 feed 与进行中的列表协程。 */
@@ -338,6 +380,7 @@ class MainActivity : AppCompatActivity() {
                 fresh.map { HomeRow.Item(it) }
             }
             adapter.appendItems(rows)
+            hideCenterLoadingIfContentVisible()
         } else {
             feedItems.clear()
             feedItems += fresh
@@ -365,6 +408,8 @@ class MainActivity : AppCompatActivity() {
                 cat.isRank -> getString(R.string.empty_rank)
                 else -> getString(R.string.empty_category)
             }
+            // 首屏有内容后立刻关中心圈；续页填不满时不再叠大圈
+            if (!empty) hideCenterLoadingIfContentVisible()
         }
     }
 
@@ -410,8 +455,8 @@ class MainActivity : AppCompatActivity() {
         binding.searchInput.setText("")
         highlightCategoryChips()
         scrollSelectedChipIntoView()
-        binding.loading.visibility = View.VISIBLE
         binding.emptyView.visibility = View.GONE
+        applyListLoading(ListLoadingPolicy.Indicator.CENTER)
         val token = beginListLoad(clearAdapter = true)
         listJob = lifecycleScope.launch {
             try {
@@ -434,8 +479,7 @@ class MainActivity : AppCompatActivity() {
                 }
             } finally {
                 if (token == listGeneration) {
-                    binding.loading.visibility = View.GONE
-                    binding.swipeRefresh.isRefreshing = false
+                    applyListLoading(ListLoadingPolicy.Indicator.NONE)
                 }
             }
         }
@@ -501,10 +545,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun runSearch() {
+    private fun runSearch(fromSwipe: Boolean = false) {
         val query = binding.searchInput.text?.toString().orEmpty().trim()
         if (query.isEmpty()) {
             Toast.makeText(this, R.string.search_hint, Toast.LENGTH_SHORT).show()
+            applyListLoading(ListLoadingPolicy.Indicator.NONE)
             return
         }
         hideKeyboard()
@@ -514,8 +559,14 @@ class MainActivity : AppCompatActivity() {
         binding.searchRow.visibility = View.VISIBLE
         binding.categoryScroll.visibility = View.GONE
         binding.pageSubtitle.visibility = View.GONE
-        binding.loading.visibility = View.VISIBLE
         binding.emptyView.visibility = View.GONE
+        applyListLoading(
+            ListLoadingPolicy.choose(
+                swipeRefreshing = fromSwipe || binding.swipeRefresh.isRefreshing,
+                clearingList = true,
+                hasVisibleContent = false,
+            ),
+        )
         adapter.showResumeHint = false
         val token = beginListLoad(clearAdapter = true)
         listJob = lifecycleScope.launch {
@@ -541,14 +592,13 @@ class MainActivity : AppCompatActivity() {
                 ).show()
             } finally {
                 if (token == listGeneration) {
-                    binding.loading.visibility = View.GONE
-                    binding.swipeRefresh.isRefreshing = false
+                    applyListLoading(ListLoadingPolicy.Indicator.NONE)
                 }
             }
         }
     }
 
-    private fun showHistory() {
+    private fun showHistory(fromSwipe: Boolean = false) {
         mode = Mode.HISTORY
         highlightTabs(history = true)
         hideKeyboard()
@@ -557,8 +607,14 @@ class MainActivity : AppCompatActivity() {
         binding.pageSubtitle.visibility = View.VISIBLE
         binding.pageSubtitle.text = getString(R.string.history_subtitle)
         binding.brandTitle.text = getString(R.string.tab_history)
-        binding.loading.visibility = View.VISIBLE
         binding.emptyView.visibility = View.GONE
+        applyListLoading(
+            ListLoadingPolicy.choose(
+                swipeRefreshing = fromSwipe || binding.swipeRefresh.isRefreshing,
+                clearingList = true,
+                hasVisibleContent = false,
+            ),
+        )
         // 立刻清空 + 作废首页 feed，避免推荐残留/异步回写；再开续播 hint
         val token = beginListLoad(clearAdapter = true)
         adapter.showResumeHint = true
@@ -595,8 +651,7 @@ class MainActivity : AppCompatActivity() {
                 binding.emptyView.text = getString(R.string.empty_history)
             } finally {
                 if (token == listGeneration) {
-                    binding.loading.visibility = View.GONE
-                    binding.swipeRefresh.isRefreshing = false
+                    applyListLoading(ListLoadingPolicy.Indicator.NONE)
                 }
             }
         }
@@ -624,7 +679,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showFavorites() {
+    private fun showFavorites(fromSwipe: Boolean = false) {
         mode = Mode.FAVORITES
         highlightTabs(favorites = true)
         hideKeyboard()
@@ -633,8 +688,14 @@ class MainActivity : AppCompatActivity() {
         binding.pageSubtitle.visibility = View.VISIBLE
         binding.pageSubtitle.text = getString(R.string.favorites_subtitle)
         binding.brandTitle.text = getString(R.string.tab_favorites)
-        binding.loading.visibility = View.VISIBLE
         binding.emptyView.visibility = View.GONE
+        applyListLoading(
+            ListLoadingPolicy.choose(
+                swipeRefreshing = fromSwipe || binding.swipeRefresh.isRefreshing,
+                clearingList = true,
+                hasVisibleContent = false,
+            ),
+        )
         // 立刻清空，避免首页/历史行串进收藏；收藏行不显示行内 ♡（favorited=null）
         val token = beginListLoad(clearAdapter = true)
         adapter.showResumeHint = false
@@ -664,8 +725,7 @@ class MainActivity : AppCompatActivity() {
                 binding.emptyView.text = getString(R.string.empty_favorites)
             } finally {
                 if (token == listGeneration) {
-                    binding.loading.visibility = View.GONE
-                    binding.swipeRefresh.isRefreshing = false
+                    applyListLoading(ListLoadingPolicy.Indicator.NONE)
                 }
             }
         }

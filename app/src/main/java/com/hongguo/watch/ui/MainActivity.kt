@@ -8,10 +8,12 @@ import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -19,17 +21,22 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
+import com.hongguo.watch.data.cache.VideoCacheEntry
+import com.hongguo.watch.data.cache.VideoCacheManager
 import com.hongguo.watch.data.model.HomeCategory
 import com.hongguo.watch.data.model.Series
 import com.hongguo.watch.data.model.SeriesSource
 import com.hongguo.watch.databinding.ActivityMainBinding
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var adapter: SeriesListAdapter
+    private lateinit var offlineAdapter: OfflineCacheAdapter
     private var mode = Mode.HOME
     private var librarySegment = LibrarySegment.FAVORITES
     private var homeNav = HomeNav.RECOMMEND
@@ -84,6 +91,11 @@ class MainActivity : AppCompatActivity() {
             onDiscoveryClick = { openSeries(it) },
             onHeaderAction = { refreshHotBatch() },
         ) { openSeries(it) }
+        offlineAdapter = OfflineCacheAdapter(
+            onPlay = { playOfflineEntry(it) },
+            onDelete = { confirmDeleteOfflineEntry(it) },
+            onClearAll = { confirmClearOfflineCache() },
+        )
         binding.seriesList.layoutManager = LinearLayoutManager(this)
         binding.seriesList.adapter = adapter
         binding.seriesList.itemAnimator = null
@@ -134,8 +146,23 @@ class MainActivity : AppCompatActivity() {
         binding.segmentHistory.setOnClickListener {
             showLibrary(segment = LibrarySegment.HISTORY)
         }
+        binding.segmentOffline.setOnClickListener {
+            showLibrary(segment = LibrarySegment.OFFLINE)
+        }
 
-        showHome()
+        if (intent.getBooleanExtra(EXTRA_OPEN_LIBRARY_OFFLINE, false)) {
+            showLibrary(segment = LibrarySegment.OFFLINE)
+        } else {
+            showHome()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_OPEN_LIBRARY_OFFLINE, false)) {
+            showLibrary(segment = LibrarySegment.OFFLINE)
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -261,6 +288,7 @@ class MainActivity : AppCompatActivity() {
         val switchingToHome = mode != Mode.HOME
         mode = Mode.HOME
         highlightBottomTabs(home = true)
+        useSeriesAdapter()
         if (homeNav == HomeNav.SEARCH && !forceReload && !switchingToHome) {
             applyHomeChrome()
             highlightHomeNav()
@@ -934,26 +962,164 @@ class MainActivity : AppCompatActivity() {
         binding.homeNavScroll.visibility = View.GONE
         binding.searchRow.visibility = View.GONE
         binding.categoryScroll.visibility = View.GONE
-        binding.pageSubtitle.visibility = View.GONE
         binding.librarySegmentRow.visibility = View.VISIBLE
-        binding.libraryCacheHook.visibility = View.VISIBLE
-        refreshLibraryCacheHook()
         highlightLibrarySegment(librarySegment)
         binding.brandTitle.text = getString(R.string.tab_library)
         when (librarySegment) {
-            LibrarySegment.HISTORY -> loadHistoryList(fromSwipe)
-            LibrarySegment.FAVORITES -> loadFavoritesList(fromSwipe)
+            LibrarySegment.HISTORY -> {
+                binding.pageSubtitle.visibility = View.GONE
+                binding.libraryCacheHook.visibility = View.VISIBLE
+                refreshLibraryCacheHook()
+                useSeriesAdapter()
+                loadHistoryList(fromSwipe)
+            }
+            LibrarySegment.FAVORITES -> {
+                binding.pageSubtitle.visibility = View.GONE
+                binding.libraryCacheHook.visibility = View.VISIBLE
+                refreshLibraryCacheHook()
+                useSeriesAdapter()
+                loadFavoritesList(fromSwipe)
+            }
+            LibrarySegment.OFFLINE -> {
+                binding.libraryCacheHook.visibility = View.GONE
+                binding.pageSubtitle.visibility = View.VISIBLE
+                binding.pageSubtitle.text = getString(R.string.offline_subtitle)
+                useOfflineAdapter()
+                loadOfflineCacheList(fromSwipe)
+            }
         }
     }
 
-    /** T-57 钩子：展示占用；点按提示完整离线列表尚未落地。 */
+    /** 收藏/历史顶栏摘要；点按进入离线段。 */
     private fun refreshLibraryCacheHook() {
-        val used = com.hongguo.watch.data.cache.VideoCacheManager.formatBytes(
-            container.videoCache.usedBytes(),
+        val summary = container.videoCache.spaceSummary()
+        binding.libraryCacheHook.text = getString(
+            R.string.library_cache_hook,
+            "${summary.usedLabel}/${summary.budgetLabel}",
         )
-        binding.libraryCacheHook.text = getString(R.string.library_cache_hook, used)
+        binding.libraryCacheHook.contentDescription = getString(R.string.library_cache_hook_hint)
         binding.libraryCacheHook.setOnClickListener {
-            Toast.makeText(this, R.string.library_cache_hook_hint, Toast.LENGTH_LONG).show()
+            showLibrary(segment = LibrarySegment.OFFLINE)
+        }
+    }
+
+    private fun useSeriesAdapter() {
+        if (binding.seriesList.adapter !== adapter) {
+            binding.seriesList.adapter = adapter
+        }
+    }
+
+    private fun useOfflineAdapter() {
+        if (binding.seriesList.adapter !== offlineAdapter) {
+            binding.seriesList.adapter = offlineAdapter
+        }
+    }
+
+    private fun loadOfflineCacheList(fromSwipe: Boolean) {
+        binding.emptyView.visibility = View.GONE
+        applyListLoading(
+            ListLoadingPolicy.choose(
+                swipeRefreshing = fromSwipe || binding.swipeRefresh.isRefreshing,
+                clearingList = true,
+                hasVisibleContent = offlineAdapter.itemCount > 1,
+            ),
+        )
+        val token = beginListLoad(clearAdapter = false)
+        binding.seriesList.scrollToPosition(0)
+        listJob = lifecycleScope.launch {
+            try {
+                val summary = withContext(Dispatchers.IO) { container.videoCache.spaceSummary() }
+                val entries = withContext(Dispatchers.IO) { container.videoCache.listReady() }
+                if (token != listGeneration || mode != Mode.LIBRARY ||
+                    librarySegment != LibrarySegment.OFFLINE
+                ) {
+                    return@launch
+                }
+                useOfflineAdapter()
+                offlineAdapter.submit(summary, entries)
+                // 空态写在列表头内，避免盖住占用进度
+                binding.emptyView.visibility = View.GONE
+            } finally {
+                if (token == listGeneration) {
+                    applyListLoading(ListLoadingPolicy.Indicator.NONE)
+                }
+            }
+        }
+    }
+
+    private fun playOfflineEntry(entry: VideoCacheEntry) {
+        startActivity(
+            Intent(this, PlayerActivity::class.java).apply {
+                putExtra(PlayerActivity.EXTRA_SERIES_ID, entry.seriesId)
+                putExtra(PlayerActivity.EXTRA_SERIES_TITLE, entry.seriesTitle)
+                putExtra(PlayerActivity.EXTRA_EPISODE_ID, entry.episodeId)
+                putExtra(PlayerActivity.EXTRA_EPISODE_NUMBER, entry.episodeNumber)
+                putExtra(PlayerActivity.EXTRA_SOURCE, SeriesSource.APP.name)
+            },
+        )
+    }
+
+    private fun confirmDeleteOfflineEntry(entry: VideoCacheEntry) {
+        val size = VideoCacheManager.formatBytes(entry.sizeBytes)
+        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
+            .setTitle(R.string.offline_delete_confirm_title)
+            .setMessage(
+                getString(
+                    R.string.offline_delete_confirm_body,
+                    entry.seriesTitle.ifBlank { entry.seriesId },
+                    entry.episodeNumber,
+                    size,
+                ),
+            )
+            .setPositiveButton(R.string.offline_delete) { _, _ ->
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) {
+                        container.videoCache.remove(entry.seriesId, entry.episodeId)
+                    }
+                    Toast.makeText(this@MainActivity, R.string.offline_deleted, Toast.LENGTH_SHORT)
+                        .show()
+                    if (mode == Mode.LIBRARY && librarySegment == LibrarySegment.OFFLINE) {
+                        loadOfflineCacheList(fromSwipe = false)
+                    }
+                    refreshLibraryCacheHook()
+                }
+            }
+            .setNegativeButton(R.string.update_cancel, null)
+            .create()
+        showWatchDialog(dialog)
+    }
+
+    private fun confirmClearOfflineCache() {
+        val used = container.videoCache.formatUsedLabel()
+        if (container.videoCache.listReady().isEmpty()) {
+            Toast.makeText(this, R.string.offline_empty, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
+            .setTitle(R.string.offline_clear_confirm_title)
+            .setMessage(getString(R.string.offline_clear_confirm_body, used))
+            .setPositiveButton(R.string.clear_video_cache) { _, _ ->
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) { container.videoCache.clearAll() }
+                    Toast.makeText(this@MainActivity, R.string.video_cache_cleared, Toast.LENGTH_SHORT)
+                        .show()
+                    if (mode == Mode.LIBRARY && librarySegment == LibrarySegment.OFFLINE) {
+                        loadOfflineCacheList(fromSwipe = false)
+                    }
+                    refreshLibraryCacheHook()
+                }
+            }
+            .setNegativeButton(R.string.update_cancel, null)
+            .create()
+        showWatchDialog(dialog)
+    }
+
+    private fun showWatchDialog(dialog: AlertDialog) {
+        dialog.show()
+        dialog.window?.let { window ->
+            val width = WatchUi.dialogContentWidthPx(this)
+            window.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT)
+            window.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)
         }
     }
 
@@ -1104,18 +1270,19 @@ class MainActivity : AppCompatActivity() {
     private fun highlightLibrarySegment(segment: LibrarySegment) {
         val favorites = segment == LibrarySegment.FAVORITES
         val history = segment == LibrarySegment.HISTORY
+        val offline = segment == LibrarySegment.OFFLINE
         val active = ContextCompat.getColor(this, R.color.text_primary)
         val muted = ContextCompat.getColor(this, R.color.text_secondary)
-        binding.segmentFavorites.setTextColor(if (favorites) active else muted)
-        binding.segmentHistory.setTextColor(if (history) active else muted)
-        binding.segmentFavorites.setBackgroundResource(
-            if (favorites) R.drawable.bg_top_tab_active else R.drawable.bg_top_tab_idle,
-        )
-        binding.segmentHistory.setBackgroundResource(
-            if (history) R.drawable.bg_top_tab_active else R.drawable.bg_top_tab_idle,
-        )
-        binding.segmentFavorites.paint.isFakeBoldText = favorites
-        binding.segmentHistory.paint.isFakeBoldText = history
+        fun style(view: TextView, selected: Boolean) {
+            view.setTextColor(if (selected) active else muted)
+            view.setBackgroundResource(
+                if (selected) R.drawable.bg_top_tab_active else R.drawable.bg_top_tab_idle,
+            )
+            view.paint.isFakeBoldText = selected
+        }
+        style(binding.segmentFavorites, favorites)
+        style(binding.segmentHistory, history)
+        style(binding.segmentOffline, offline)
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -1133,11 +1300,17 @@ class MainActivity : AppCompatActivity() {
                 ): Boolean {
                     if (mode != Mode.LIBRARY) return false
                     if (abs(velocityX) < abs(velocityY) || abs(velocityX) < 800f) return false
-                    // 左滑 → 观看历史；右滑 → 我的收藏（与分段左右顺序一致）
+                    // 左滑下一段、右滑上一段：收藏 → 历史 → 离线
+                    val order = listOf(
+                        LibrarySegment.FAVORITES,
+                        LibrarySegment.HISTORY,
+                        LibrarySegment.OFFLINE,
+                    )
+                    val index = order.indexOf(librarySegment).coerceAtLeast(0)
                     val target = if (velocityX < 0) {
-                        LibrarySegment.HISTORY
+                        order[(index + 1) % order.size]
                     } else {
-                        LibrarySegment.FAVORITES
+                        order[(index - 1 + order.size) % order.size]
                     }
                     if (target == librarySegment) return false
                     showLibrary(segment = target)
@@ -1227,9 +1400,10 @@ class MainActivity : AppCompatActivity() {
 
     private enum class Mode { HOME, LIBRARY }
 
-    private enum class LibrarySegment { FAVORITES, HISTORY }
+    private enum class LibrarySegment { FAVORITES, HISTORY, OFFLINE }
 
     companion object {
+        const val EXTRA_OPEN_LIBRARY_OFFLINE = "open_library_offline"
         private const val SEARCH_CHIP_ALL = "all"
         private const val SEARCH_CHIP_SHORT = "short"
         private const val SEARCH_CHIP_COMIC = "comic"

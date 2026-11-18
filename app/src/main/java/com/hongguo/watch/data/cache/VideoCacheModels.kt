@@ -38,3 +38,19 @@ enum class VideoCachePriority {
     /** 可选预取下一集 */
     NEXT,
 }
+
+/** 离线列表头 / 设置页空间摘要。 */
+data class VideoCacheSpaceSummary(
+    val usedBytes: Long,
+    val budgetBytes: Long,
+    val freeBytes: Long,
+    val entryCount: Int,
+) {
+    val usedLabel: String get() = VideoCacheManager.formatBytes(usedBytes)
+    val budgetLabel: String get() = VideoCacheManager.formatBytes(budgetBytes)
+    val freeLabel: String get() = VideoCacheManager.formatBytes(freeBytes.coerceAtLeast(0L))
+    /** 0–100，相对预算占用。 */
+    val usedPercentOfBudget: Int =
+        if (budgetBytes <= 0L) 0
+        else ((usedBytes * 100L) / budgetBytes).toInt().coerceIn(0, 100)
+}

@@ -120,26 +120,48 @@ object WatchUi {
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
         }
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            )
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         controller.hide(WindowInsetsCompat.Type.systemBars())
         controller.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
     }
 
+    /**
+     * 手表安全边距。小屏沉浸式时**忽略** systemBars inset——
+     * 系统栏已隐藏，若仍按其高度 padding，底 Tab 会被挤出可视区。
+     */
     fun applySafePadding(view: View, extraBottom: Int = 0) {
         val inset = edgeInsetPx(view.context)
         // 圆屏顶部也按满 inset，避免返回/标题贴圆弧
         val topFactor = if (useRoundLayout(view.context)) 1f else 0.5f
+        val compact = isCompactWatch(view.context)
         ViewCompat.setOnApplyWindowInsetsListener(view) { v, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val bars = if (compact) {
+                // 沉浸式：只吃左右手势提示等非系统栏，避免顶/底虚高
+                insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+            } else {
+                insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            }
             v.setPadding(
                 max(inset, bars.left),
                 max((inset * topFactor).roundToInt(), bars.top),
                 max(inset, bars.right),
-                max(inset, bars.bottom) + extraBottom,
+                max(inset, if (compact) 0 else bars.bottom) + extraBottom,
             )
             insets
         }
         view.requestApplyInsets()
+        // 立即按 edge inset 落一版，避免首帧仍用系统栏旧 padding
+        val top = (inset * topFactor).roundToInt()
+        view.setPadding(inset, top, inset, inset + extraBottom)
     }
 }

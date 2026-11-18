@@ -12,7 +12,9 @@
     <string name="empty_category">该分类暂时没有内容</string>
     <string name="empty_rank">榜单暂时没有内容\n下拉刷新重试</string>
     <string name="rank_meta">全%1$d集 · %2$s</string>
-    <string name="rank_header_hint">按热播顺序 · 非个性化</string>
+    <string name="rank_header_hint">按热播 · 非个性化</string>
+    <string name="history_cleared">历史已清除</string>
+    <string name="cache_cleared">缓存已清除</string>
     <string name="empty_history">暂无观看历史\n看过的剧会显示在这里</string>
     <string name="empty_favorites">暂无收藏\n在详情页点♡即可加入</string>
     <string name="empty_search_result">没有搜到相关短剧</string>

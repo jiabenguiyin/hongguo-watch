@@ -13,10 +13,11 @@
     <dimen name="watch_cover_w">42dp</dimen>
     <dimen name="watch_cover_h">56dp</dimen>
     <dimen name="watch_rank_w">22dp</dimen>
-    <dimen name="watch_chip_pad_h">8dp</dimen>
-    <dimen name="watch_chip_pad_v">5dp</dimen>
+    <dimen name="watch_chip_pad_h">9dp</dimen>
+    <dimen name="watch_chip_pad_v">6dp</dimen>
+    <dimen name="watch_chip_min_h">36dp</dimen>
     <dimen name="watch_episode_h">40dp</dimen>
-    <dimen name="watch_tab_h">42dp</dimen>
+    <dimen name="watch_tab_h">44dp</dimen>
     <dimen name="watch_mini_progress_h">2dp</dimen>
     <dimen name="watch_safe_inset_min">8dp</dimen>
 </resources>

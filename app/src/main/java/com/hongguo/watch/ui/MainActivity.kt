@@ -31,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private var categoriesReady: Boolean = false
     private var selectedCategoryId: String = HomeCategory.ID_RECOMMEND
     private var categoryChipViews: List<TextView> = emptyList()
+    private var lastRoundLayout: Boolean = false
 
     private val container get() = (application as HongguoWatchApp).container
     private val repo get() = container.repository
@@ -39,22 +40,17 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        WatchUi.applySafePadding(binding.mainRoot, extraBottom = 0)
-        // 圆屏列表底部多留一点，避免末行贴底栏/圆弧
-        val listBottom = if (WatchUi.useRoundLayout(this)) WatchUi.dp(this, 14f) else WatchUi.dp(this, 6f)
-        binding.seriesList.setPadding(
-            binding.seriesList.paddingLeft,
-            binding.seriesList.paddingTop,
-            binding.seriesList.paddingRight,
-            listBottom,
-        )
-        val emptyPad = if (WatchUi.useRoundLayout(this)) WatchUi.dp(this, 28f) else WatchUi.dp(this, 20f)
-        binding.emptyView.setPadding(emptyPad, binding.emptyView.paddingTop, emptyPad, binding.emptyView.paddingBottom)
+        // 必须在 setContentView 之后：否则系统栏藏不住，底 Tab 会被挤扁
+        if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
+        applyWatchChrome()
 
         adapter = SeriesListAdapter { openSeries(it) }
         binding.seriesList.layoutManager = LinearLayoutManager(this)
         binding.seriesList.adapter = adapter
         binding.seriesList.itemAnimator = null
+
+        binding.swipeRefresh.setColorSchemeResources(R.color.accent)
+        binding.swipeRefresh.setProgressBackgroundColorSchemeResource(R.color.bg_elevated)
 
         binding.searchButton.setOnClickListener { runSearch() }
         binding.searchInput.setOnEditorActionListener { _, actionId, _ ->
@@ -83,12 +79,51 @@ class MainActivity : AppCompatActivity() {
         showHome()
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
+    }
+
     override fun onResume() {
         super.onResume()
+        if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
+        val round = WatchUi.useRoundLayout(this)
+        if (round != lastRoundLayout) {
+            applyWatchChrome()
+            renderCategoryChips(categories)
+        }
         when (mode) {
             Mode.HISTORY -> showHistory()
             Mode.FAVORITES -> showFavorites()
             Mode.HOME -> if (lastQuery.isBlank()) showHome()
+        }
+    }
+
+    /** 圆/方屏边距与空态留白；设置页改圆屏适配后回首页会重算。 */
+    private fun applyWatchChrome() {
+        lastRoundLayout = WatchUi.useRoundLayout(this)
+        WatchUi.applySafePadding(binding.mainRoot, extraBottom = 0)
+        val listBottom = if (lastRoundLayout) WatchUi.dp(this, 14f) else WatchUi.dp(this, 6f)
+        binding.seriesList.setPadding(
+            binding.seriesList.paddingLeft,
+            binding.seriesList.paddingTop,
+            binding.seriesList.paddingRight,
+            listBottom,
+        )
+        val emptyPad = if (lastRoundLayout) WatchUi.dp(this, 28f) else WatchUi.dp(this, 20f)
+        binding.emptyView.setPadding(
+            emptyPad,
+            binding.emptyView.paddingTop,
+            emptyPad,
+            binding.emptyView.paddingBottom,
+        )
+        // 小屏压缩搜索行高度，给列表多挤出一行
+        if (WatchUi.isCompactWatch(this)) {
+            val h = WatchUi.dp(this, 40f)
+            binding.searchInput.layoutParams = binding.searchInput.layoutParams.apply { height = h }
+            binding.searchButton.layoutParams = binding.searchButton.layoutParams.apply { height = h }
+            binding.searchInput.requestLayout()
+            binding.searchButton.requestLayout()
         }
     }
 
@@ -201,10 +236,11 @@ class MainActivity : AppCompatActivity() {
         // 圆屏分类条两端留白，避免首尾芯片贴圆弧被裁
         val endPad = if (round) WatchUi.dp(this, 10f) else WatchUi.dp(this, 2f)
         binding.categoryScroll.setPadding(endPad, 0, endPad, 0)
-        val padH = if (compact) WatchUi.dp(this, 7f) else resources.getDimensionPixelSize(R.dimen.watch_chip_pad_h)
-        val padV = if (compact) WatchUi.dp(this, 4f) else resources.getDimensionPixelSize(R.dimen.watch_chip_pad_v)
+        val padH = if (compact) WatchUi.dp(this, 8f) else resources.getDimensionPixelSize(R.dimen.watch_chip_pad_h)
+        val padV = if (compact) WatchUi.dp(this, 5f) else resources.getDimensionPixelSize(R.dimen.watch_chip_pad_v)
         val gap = WatchUi.dp(this, if (compact) 3f else 4f)
         val textSp = if (compact) 10f else 11f
+        val chipMinH = resources.getDimensionPixelSize(R.dimen.watch_chip_min_h)
         categoryChipViews = items.map { cat ->
             TextView(this).apply {
                 text = cat.label
@@ -213,8 +249,10 @@ class MainActivity : AppCompatActivity() {
                 setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
                 background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_quality_chip)
                 isSelected = cat.id == selectedCategoryId
-                // 榜单芯片略加强视觉区分：短标签本身已够；选中态靠背景
-                minHeight = WatchUi.dp(this@MainActivity, 28f)
+                // 触控热区 ≥36dp，避免圆屏/粗指难点
+                minHeight = chipMinH
+                gravity = android.view.Gravity.CENTER
+                includeFontPadding = false
                 setOnClickListener { selectCategory(cat) }
                 val lp = android.widget.LinearLayout.LayoutParams(
                     android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -278,6 +316,9 @@ class MainActivity : AppCompatActivity() {
                 binding.emptyView.text =
                     if (page.items.isEmpty()) getString(R.string.empty_search_result) else ""
             } catch (e: Exception) {
+                adapter.submit(emptyList())
+                binding.emptyView.visibility = View.VISIBLE
+                binding.emptyView.text = e.message ?: getString(R.string.error_network)
                 Toast.makeText(
                     this@MainActivity,
                     e.message ?: getString(R.string.error_network),
@@ -300,6 +341,7 @@ class MainActivity : AppCompatActivity() {
         binding.pageSubtitle.text = getString(R.string.history_subtitle)
         binding.brandTitle.text = getString(R.string.tab_history)
         binding.loading.visibility = View.VISIBLE
+        binding.emptyView.visibility = View.GONE
         adapter.showResumeHint = true
         lifecycleScope.launch {
             try {
@@ -342,6 +384,7 @@ class MainActivity : AppCompatActivity() {
         binding.pageSubtitle.text = getString(R.string.favorites_subtitle)
         binding.brandTitle.text = getString(R.string.tab_favorites)
         binding.loading.visibility = View.VISIBLE
+        binding.emptyView.visibility = View.GONE
         adapter.showResumeHint = false
         lifecycleScope.launch {
             try {

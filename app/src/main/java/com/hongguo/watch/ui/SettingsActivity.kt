@@ -6,6 +6,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import coil.imageLoader
 import com.hongguo.watch.HongguoWatchApp
+import com.hongguo.watch.R
 import com.hongguo.watch.data.SettingsStore
 import com.hongguo.watch.databinding.ActivitySettingsBinding
 import kotlinx.coroutines.flow.first
@@ -21,6 +22,7 @@ class SettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivitySettingsBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
         WatchUi.applySafePadding(binding.settingsRoot)
 
         binding.backButton.setOnClickListener { finish() }
@@ -53,7 +55,7 @@ class SettingsActivity : AppCompatActivity() {
         binding.clearHistoryButton.setOnClickListener {
             lifecycleScope.launch {
                 container.repository.clearHistory()
-                Toast.makeText(this@SettingsActivity, "历史已清除", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@SettingsActivity, R.string.history_cleared, Toast.LENGTH_SHORT).show()
             }
         }
         binding.clearCacheButton.setOnClickListener {
@@ -66,9 +68,19 @@ class SettingsActivity : AppCompatActivity() {
                         child.deleteRecursively()
                     }
                 }
-                Toast.makeText(this@SettingsActivity, "缓存已清除", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@SettingsActivity, R.string.cache_cleared, Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
     }
 
     private fun pickQuality(height: Int) {

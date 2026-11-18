@@ -1,13 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<TextView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/sectionTitle"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:ellipsize="end"
-    android:maxLines="1"
-    android:paddingTop="6dp"
-    android:paddingBottom="2dp"
+    android:orientation="vertical"
     android:paddingHorizontal="2dp"
-    android:textColor="@color/text_secondary"
-    android:textSize="@dimen/watch_meta"
-    android:textStyle="bold" />
+    android:paddingTop="6dp"
+    android:paddingBottom="2dp">
+
+    <TextView
+        android:id="@+id/sectionTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/text_secondary"
+        android:textSize="@dimen/watch_meta"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/sectionSubtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="1dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/text_secondary"
+        android:textSize="10sp"
+        android:visibility="gone" />
+</LinearLayout>

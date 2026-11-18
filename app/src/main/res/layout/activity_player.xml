@@ -445,10 +445,10 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:layout_marginHorizontal="10dp"
+            android:layout_marginHorizontal="14dp"
             android:background="@drawable/bg_panel"
             android:orientation="vertical"
-            android:padding="10dp"
+            android:padding="12dp"
             android:visibility="gone">
 
             <TextView
@@ -511,10 +511,10 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:layout_marginHorizontal="10dp"
+            android:layout_marginHorizontal="14dp"
             android:background="@drawable/bg_panel"
             android:orientation="vertical"
-            android:padding="10dp"
+            android:padding="12dp"
             android:visibility="gone">
 
             <TextView
@@ -525,6 +525,7 @@
                 android:textColor="@color/text_primary"
                 android:textSize="@dimen/watch_body" />
 
+            <!-- 两行排布，保证手表小屏触控 ≥40dp -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -535,13 +536,13 @@
                     android:id="@+id/speed075"
                     android:layout_width="0dp"
                     android:layout_height="44dp"
-                    android:layout_marginEnd="2dp"
+                    android:layout_marginEnd="3dp"
                     android:layout_weight="1"
                     android:background="@drawable/bg_quality_chip"
                     android:gravity="center"
                     android:text="0.75x"
                     android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_meta"
+                    android:textSize="@dimen/watch_body"
                     android:textStyle="bold" />
 
                 <TextView
@@ -554,46 +555,53 @@
                     android:gravity="center"
                     android:text="1.0x"
                     android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_meta"
+                    android:textSize="@dimen/watch_body"
                     android:textStyle="bold" />
 
                 <TextView
                     android:id="@+id/speed125"
                     android:layout_width="0dp"
                     android:layout_height="44dp"
-                    android:layout_marginHorizontal="2dp"
+                    android:layout_marginStart="3dp"
                     android:layout_weight="1"
                     android:background="@drawable/bg_quality_chip"
                     android:gravity="center"
                     android:text="1.25x"
                     android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_meta"
+                    android:textSize="@dimen/watch_body"
                     android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal">
 
                 <TextView
                     android:id="@+id/speed150"
                     android:layout_width="0dp"
                     android:layout_height="44dp"
-                    android:layout_marginHorizontal="2dp"
+                    android:layout_marginEnd="3dp"
                     android:layout_weight="1"
                     android:background="@drawable/bg_quality_chip"
                     android:gravity="center"
                     android:text="1.5x"
                     android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_meta"
+                    android:textSize="@dimen/watch_body"
                     android:textStyle="bold" />
 
                 <TextView
                     android:id="@+id/speed200"
                     android:layout_width="0dp"
                     android:layout_height="44dp"
-                    android:layout_marginStart="2dp"
+                    android:layout_marginStart="3dp"
                     android:layout_weight="1"
                     android:background="@drawable/bg_quality_chip"
                     android:gravity="center"
                     android:text="2.0x"
                     android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_meta"
+                    android:textSize="@dimen/watch_body"
                     android:textStyle="bold" />
             </LinearLayout>
         </LinearLayout>

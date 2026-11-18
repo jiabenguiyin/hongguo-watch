@@ -54,7 +54,8 @@ class SettingsActivity : AppCompatActivity() {
         WatchUi.applySafePadding(binding.settingsRoot)
 
         binding.backButton.setOnClickListener { finish() }
-        binding.versionLabel.text = "当前版本 ${BuildConfig.VERSION_NAME}（${BuildConfig.VERSION_CODE}）"
+        binding.versionLabel.text =
+            getString(R.string.setting_version_status, BuildConfig.VERSION_NAME)
 
         lifecycleScope.launch {
             binding.wifiOnlySwitch.isChecked = container.settings.wifiOnly.first()
@@ -391,17 +392,28 @@ class SettingsActivity : AppCompatActivity() {
         binding.quality480.isSelected = currentQuality == 480
         binding.quality720.isSelected = currentQuality == 720
         binding.quality1080.isSelected = currentQuality == 1080
+        binding.qualityStatus.text = getString(R.string.setting_quality_status, currentQuality)
     }
 
     private fun refreshKernelChips() {
         binding.kernelAuto.isSelected = currentKernel == PlayerKernel.AUTO
         binding.kernelMedia3.isSelected = currentKernel == PlayerKernel.MEDIA3
         binding.kernelIjk.isSelected = currentKernel == PlayerKernel.IJK
+        binding.kernelStatus.text = when (currentKernel) {
+            PlayerKernel.AUTO -> getString(R.string.setting_kernel_status_auto)
+            PlayerKernel.MEDIA3 -> getString(R.string.setting_kernel_status_media3)
+            PlayerKernel.IJK -> getString(R.string.setting_kernel_status_ijk)
+        }
     }
 
     private fun refreshDecodeChips() {
         binding.decodeAuto.isSelected = currentDecode == DecodePath.AUTO
         binding.decodeHw.isSelected = currentDecode == DecodePath.HARDWARE
         binding.decodeSw.isSelected = currentDecode == DecodePath.SOFTWARE
+        binding.decodeStatus.text = when (currentDecode) {
+            DecodePath.AUTO -> getString(R.string.setting_decode_status_auto)
+            DecodePath.HARDWARE -> getString(R.string.setting_decode_status_hw)
+            DecodePath.SOFTWARE -> getString(R.string.setting_decode_status_sw)
+        }
     }
 }

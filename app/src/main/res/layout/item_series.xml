@@ -60,6 +60,16 @@
             android:maxLines="1"
             android:textColor="@color/text_secondary"
             android:textSize="@dimen/watch_meta" />
+
+        <ProgressBar
+            android:id="@+id/watchProgress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="3dp"
+            android:layout_marginTop="4dp"
+            android:max="100"
+            android:progressDrawable="@drawable/mini_progress"
+            android:visibility="gone" />
     </LinearLayout>
 
     <ImageButton

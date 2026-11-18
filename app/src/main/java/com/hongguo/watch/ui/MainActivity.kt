@@ -55,6 +55,9 @@ class MainActivity : AppCompatActivity() {
     private var listJob: Job? = null
     /** 当前列表加载指示器；与 [ListLoadingPolicy] 对齐，避免双圈。 */
     private var listLoading = ListLoadingPolicy.Indicator.NONE
+    /** 搜索发现品类芯片：全部 / 短剧 / 漫剧 / 爱情 / 古装。 */
+    private var searchChipId: String = SEARCH_CHIP_ALL
+    private var hotBatchOffset: Int = 0
 
     private val container get() = (application as HongguoWatchApp).container
     private val repo get() = container.repository
@@ -71,6 +74,9 @@ class MainActivity : AppCompatActivity() {
             onFavoriteClick = { series, currentlyFavorited ->
                 toggleHistoryFavorite(series, currentlyFavorited)
             },
+            onHotWordClick = { openSeries(it) },
+            onDiscoveryClick = { openSeries(it) },
+            onHeaderAction = { refreshHotBatch() },
         ) { openSeries(it) }
         binding.seriesList.layoutManager = LinearLayoutManager(this)
         binding.seriesList.adapter = adapter
@@ -100,7 +106,7 @@ class MainActivity : AppCompatActivity() {
             when (mode) {
                 Mode.HOME -> when {
                     homeNav == HomeNav.SEARCH && lastQuery.isNotBlank() -> runSearch(fromSwipe = true)
-                    homeNav == HomeNav.SEARCH -> applyListLoading(ListLoadingPolicy.Indicator.NONE)
+                    homeNav == HomeNav.SEARCH -> showSearchDiscovery(fromSwipe = true)
                     else -> showHome(forceReload = true, fromSwipe = true)
                 }
                 Mode.HISTORY -> showHistory(fromSwipe = true)
@@ -117,6 +123,8 @@ class MainActivity : AppCompatActivity() {
         binding.tabSettings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
+        binding.segmentFavorites.setOnClickListener { showFavorites() }
+        binding.segmentHistory.setOnClickListener { showHistory() }
 
         showHome()
     }
@@ -193,11 +201,9 @@ class MainActivity : AppCompatActivity() {
         when (nav) {
             HomeNav.SEARCH -> {
                 adapter.showResumeHint = false
-                beginListLoad(clearAdapter = true)
-                applyListLoading(ListLoadingPolicy.Indicator.NONE)
-                binding.emptyView.visibility = View.VISIBLE
-                binding.emptyView.text = getString(R.string.empty_search)
+                binding.librarySegmentRow.visibility = View.GONE
                 binding.searchInput.requestFocus()
+                showSearchDiscovery()
             }
             HomeNav.RECOMMEND, HomeNav.RANK, HomeNav.CATEGORY -> {
                 selectedCategoryId = HomeNavPolicy.resolveSelectedCategoryId(
@@ -352,11 +358,19 @@ class MainActivity : AppCompatActivity() {
         binding.homeNavScroll.visibility =
             if (HomeNavPolicy.showHomeNavChrome(home)) View.VISIBLE else View.GONE
         binding.brandRow.visibility = View.VISIBLE
+        binding.librarySegmentRow.visibility = View.GONE
         binding.searchRow.visibility =
             if (home && HomeNavPolicy.showSearchRow(homeNav)) View.VISIBLE else View.GONE
         binding.categoryScroll.visibility =
-            if (home && HomeNavPolicy.showSubChips(homeNav)) View.VISIBLE else View.GONE
+            if (home && (HomeNavPolicy.showSubChips(homeNav) || homeNav == HomeNav.SEARCH)) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
         binding.pageSubtitle.visibility = View.GONE
+        if (home && homeNav == HomeNav.SEARCH) {
+            renderSearchChips()
+        }
     }
 
     private fun highlightHomeNav() {
@@ -688,8 +702,7 @@ class MainActivity : AppCompatActivity() {
     private fun runSearch(fromSwipe: Boolean = false) {
         val query = binding.searchInput.text?.toString().orEmpty().trim()
         if (query.isEmpty()) {
-            Toast.makeText(this, R.string.search_hint, Toast.LENGTH_SHORT).show()
-            applyListLoading(ListLoadingPolicy.Indicator.NONE)
+            showSearchDiscovery(fromSwipe = fromSwipe)
             return
         }
         hideKeyboard()
@@ -739,6 +752,166 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun showSearchDiscovery(fromSwipe: Boolean = false) {
+        mode = Mode.HOME
+        homeNav = HomeNav.SEARCH
+        lastQuery = ""
+        highlightBottomTabs(home = true)
+        highlightHomeNav()
+        applyHomeChrome()
+        binding.searchRow.visibility = View.VISIBLE
+        binding.emptyView.visibility = View.GONE
+        adapter.showResumeHint = false
+        applyListLoading(
+            ListLoadingPolicy.choose(
+                swipeRefreshing = fromSwipe || binding.swipeRefresh.isRefreshing,
+                clearingList = true,
+                hasVisibleContent = false,
+            ),
+        )
+        val token = beginListLoad(clearAdapter = true)
+        listJob = lifecycleScope.launch {
+            try {
+                ensureCategories(token)
+                if (token != listGeneration || mode != Mode.HOME || homeNav != HomeNav.SEARCH) {
+                    return@launch
+                }
+                renderSearchChips()
+                val rankKey = rankKeyForSearchChip(searchChipId)
+                val hotPage = repo.rank(
+                    rankKey = rankKey,
+                    page = 1,
+                    offset = hotBatchOffset,
+                    sessionId = "",
+                )
+                val discoverPage = when (searchChipId) {
+                    SEARCH_CHIP_COMIC -> repo.rank(
+                        rankKey = "hot-comic-drama",
+                        page = 1,
+                        offset = 0,
+                        sessionId = "",
+                    )
+                    SEARCH_CHIP_ROMANCE, SEARCH_CHIP_COSTUME -> {
+                        val genre = genreCategoryForChip(searchChipId)
+                        if (genre != null) {
+                            repo.category(
+                                filters = genre.filters,
+                                withSelector = false,
+                                offset = 0,
+                                sessionId = "",
+                            )
+                        } else {
+                            repo.recommend(page = 1, offset = 0, sessionId = "")
+                        }
+                    }
+                    else -> repo.recommend(page = 1, offset = 0, sessionId = "")
+                }
+                if (token != listGeneration || mode != Mode.HOME || homeNav != HomeNav.SEARCH) {
+                    return@launch
+                }
+                val hotItems = hotPage.items.take(8)
+                val discoverItems = discoverPage.items.take(12)
+                val rows = mutableListOf<HomeRow>()
+                rows += HomeRow.Header(
+                    title = getString(R.string.hot_search),
+                    actionLabel = getString(R.string.hot_search_refresh),
+                    onAction = { refreshHotBatch() },
+                )
+                rows += hotItems.mapIndexed { index, series ->
+                    HomeRow.SearchHotWord(
+                        rank = index + 1 + (hotBatchOffset % 50).coerceAtMost(20),
+                        title = series.title,
+                        series = series,
+                    )
+                }
+                if (discoverItems.isNotEmpty()) {
+                    rows += HomeRow.Header(title = getString(R.string.discovery_picks))
+                    rows += HomeRow.SearchDiscoveryStrip(discoverItems)
+                }
+                adapter.submit(rows)
+                val empty = rows.none { it is HomeRow.SearchHotWord || it is HomeRow.SearchDiscoveryStrip }
+                binding.emptyView.visibility = if (empty) View.VISIBLE else View.GONE
+                binding.emptyView.text = getString(R.string.empty_search)
+            } catch (e: Exception) {
+                if (token != listGeneration || mode != Mode.HOME) return@launch
+                adapter.submit(emptyList())
+                binding.emptyView.visibility = View.VISIBLE
+                binding.emptyView.text = e.message ?: getString(R.string.error_network)
+            } finally {
+                if (token == listGeneration) {
+                    applyListLoading(ListLoadingPolicy.Indicator.NONE)
+                }
+            }
+        }
+    }
+
+    private fun refreshHotBatch() {
+        if (mode != Mode.HOME || homeNav != HomeNav.SEARCH) return
+        hotBatchOffset += 8
+        showSearchDiscovery()
+    }
+
+    private fun renderSearchChips() {
+        val chips = listOf(
+            SEARCH_CHIP_ALL to getString(R.string.chip_all),
+            SEARCH_CHIP_SHORT to getString(R.string.chip_short),
+            SEARCH_CHIP_COMIC to getString(R.string.chip_comic),
+            SEARCH_CHIP_ROMANCE to getString(R.string.chip_romance),
+            SEARCH_CHIP_COSTUME to getString(R.string.chip_costume),
+        )
+        binding.categoryRow.removeAllViews()
+        binding.categoryScroll.visibility = View.VISIBLE
+        val compact = WatchUi.isCompactWatch(this)
+        val padH = if (compact) WatchUi.dp(this, 8f) else resources.getDimensionPixelSize(R.dimen.watch_chip_pad_h)
+        val padV = if (compact) WatchUi.dp(this, 5f) else resources.getDimensionPixelSize(R.dimen.watch_chip_pad_v)
+        val gap = WatchUi.dp(this, if (compact) 3f else 4f)
+        val textSp = if (compact) 10f else 11f
+        val chipMinH = resources.getDimensionPixelSize(R.dimen.watch_chip_min_h)
+        chips.forEach { (id, label) ->
+            val view = TextView(this).apply {
+                text = label
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, textSp)
+                setPadding(padH, padV, padH, padV)
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
+                background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_quality_chip)
+                isSelected = id == searchChipId
+                minHeight = chipMinH
+                gravity = android.view.Gravity.CENTER
+                includeFontPadding = false
+                setOnClickListener {
+                    if (searchChipId == id) return@setOnClickListener
+                    searchChipId = id
+                    hotBatchOffset = 0
+                    renderSearchChips()
+                    showSearchDiscovery()
+                }
+                val lp = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                )
+                lp.marginEnd = gap
+                binding.categoryRow.addView(this, lp)
+            }
+        }
+        categoryChipViews = emptyList()
+        visibleChipCategories = emptyList()
+    }
+
+    private fun rankKeyForSearchChip(chipId: String): String = when (chipId) {
+        SEARCH_CHIP_COMIC -> "hot-comic-drama"
+        SEARCH_CHIP_SHORT -> "hot-real-drama"
+        else -> "hot-drama"
+    }
+
+    private fun genreCategoryForChip(chipId: String): HomeCategory? {
+        val needle = when (chipId) {
+            SEARCH_CHIP_ROMANCE -> "爱情"
+            SEARCH_CHIP_COSTUME -> "古装"
+            else -> return null
+        }
+        return HomeNavPolicy.genreCategories(categories).firstOrNull { it.label.contains(needle) }
+    }
+
     private fun showHistory(fromSwipe: Boolean = false) {
         mode = Mode.HISTORY
         highlightBottomTabs(history = true)
@@ -746,8 +919,9 @@ class MainActivity : AppCompatActivity() {
         binding.homeNavScroll.visibility = View.GONE
         binding.searchRow.visibility = View.GONE
         binding.categoryScroll.visibility = View.GONE
-        binding.pageSubtitle.visibility = View.VISIBLE
-        binding.pageSubtitle.text = getString(R.string.history_subtitle)
+        binding.pageSubtitle.visibility = View.GONE
+        binding.librarySegmentRow.visibility = View.VISIBLE
+        highlightLibrarySegment(history = true)
         binding.brandTitle.text = getString(R.string.tab_history)
         binding.emptyView.visibility = View.GONE
         applyListLoading(
@@ -776,12 +950,15 @@ class MainActivity : AppCompatActivity() {
                             id = it.seriesId,
                             title = it.seriesTitle,
                             cover = com.hongguo.watch.data.CoverUrls.normalize(it.cover),
-                            description = getString(R.string.progress_meta, it.episodeNumber, percent),
+                            description = "",
                             episodeCount = 0,
                             source = runCatching { SeriesSource.valueOf(it.source) }
                                 .getOrDefault(SeriesSource.APP),
                         ),
                         favorited = it.seriesId in favoritedIds,
+                        progressPercent = percent,
+                        watchedEpisode = it.episodeNumber,
+                        totalEpisodes = null,
                     )
                 }
                 if (token != listGeneration || mode != Mode.HISTORY) return@launch
@@ -826,8 +1003,9 @@ class MainActivity : AppCompatActivity() {
         binding.homeNavScroll.visibility = View.GONE
         binding.searchRow.visibility = View.GONE
         binding.categoryScroll.visibility = View.GONE
-        binding.pageSubtitle.visibility = View.VISIBLE
-        binding.pageSubtitle.text = getString(R.string.favorites_subtitle)
+        binding.pageSubtitle.visibility = View.GONE
+        binding.librarySegmentRow.visibility = View.VISIBLE
+        highlightLibrarySegment(favorites = true)
         binding.brandTitle.text = getString(R.string.tab_favorites)
         binding.emptyView.visibility = View.GONE
         applyListLoading(
@@ -844,17 +1022,29 @@ class MainActivity : AppCompatActivity() {
             try {
                 val favorites = repo.favoritesWithResolvedEpisodeTotals()
                 if (token != listGeneration || mode != Mode.FAVORITES) return@launch
-                val rows = favorites.map {
+                val historyMap = repo.recentHistory().associateBy { it.seriesId }
+                val rows = favorites.map { fav ->
+                    val history = historyMap[fav.seriesId]
+                    val percent = if (history != null && history.durationMs > 0) {
+                        ((history.positionMs * 100) / history.durationMs).toInt().coerceIn(0, 100)
+                    } else if (history != null && fav.episodeCount > 0) {
+                        ((history.episodeNumber * 100) / fav.episodeCount).coerceIn(0, 100)
+                    } else {
+                        null
+                    }
                     HomeRow.Item(
-                        Series(
-                            id = it.seriesId,
-                            title = it.seriesTitle,
-                            cover = com.hongguo.watch.data.CoverUrls.normalize(it.cover),
-                            description = if (it.episodeCount > 0) "全${it.episodeCount}集" else "",
-                            episodeCount = it.episodeCount,
-                            source = runCatching { SeriesSource.valueOf(it.source) }
+                        series = Series(
+                            id = fav.seriesId,
+                            title = fav.seriesTitle,
+                            cover = com.hongguo.watch.data.CoverUrls.normalize(fav.cover),
+                            description = "",
+                            episodeCount = fav.episodeCount,
+                            source = runCatching { SeriesSource.valueOf(fav.source) }
                                 .getOrDefault(SeriesSource.APP),
                         ),
+                        progressPercent = percent,
+                        watchedEpisode = history?.episodeNumber,
+                        totalEpisodes = fav.episodeCount.takeIf { it > 0 },
                     )
                 }
                 if (token != listGeneration || mode != Mode.FAVORITES) return@launch
@@ -868,6 +1058,21 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun highlightLibrarySegment(favorites: Boolean = false, history: Boolean = false) {
+        val active = ContextCompat.getColor(this, R.color.text_primary)
+        val muted = ContextCompat.getColor(this, R.color.text_secondary)
+        binding.segmentFavorites.setTextColor(if (favorites) active else muted)
+        binding.segmentHistory.setTextColor(if (history) active else muted)
+        binding.segmentFavorites.setBackgroundResource(
+            if (favorites) R.drawable.bg_top_tab_active else R.drawable.bg_top_tab_idle,
+        )
+        binding.segmentHistory.setBackgroundResource(
+            if (history) R.drawable.bg_top_tab_active else R.drawable.bg_top_tab_idle,
+        )
+        binding.segmentFavorites.paint.isFakeBoldText = favorites
+        binding.segmentHistory.paint.isFakeBoldText = history
     }
 
     private fun openSeries(series: Series) {
@@ -900,6 +1105,10 @@ class MainActivity : AppCompatActivity() {
                         putExtra(DetailActivity.EXTRA_COVER, series.cover)
                         putExtra(DetailActivity.EXTRA_INTRO, series.description)
                         putExtra(DetailActivity.EXTRA_SOURCE, series.source.name)
+                        putStringArrayListExtra(
+                            DetailActivity.EXTRA_TAGS,
+                            ArrayList(series.tags),
+                        )
                     },
                 )
             }
@@ -936,4 +1145,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private enum class Mode { HOME, HISTORY, FAVORITES }
+
+    companion object {
+        private const val SEARCH_CHIP_ALL = "all"
+        private const val SEARCH_CHIP_SHORT = "short"
+        private const val SEARCH_CHIP_COMIC = "comic"
+        private const val SEARCH_CHIP_ROMANCE = "romance"
+        private const val SEARCH_CHIP_COSTUME = "costume"
+    }
 }

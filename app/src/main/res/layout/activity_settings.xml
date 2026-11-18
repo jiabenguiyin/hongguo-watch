@@ -55,92 +55,162 @@
                 android:layout_height="wrap_content"
                 android:background="@drawable/bg_setting_block"
                 android:orientation="vertical"
-                android:padding="8dp">
+                android:paddingVertical="4dp">
 
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/wifiOnlySwitch"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="48dp"
-                    android:text="@string/wifi_only"
-                    android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_body" />
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="8dp">
 
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/roundAdaptSwitch"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:text="@string/round_adapt"
-                    android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_body" />
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_settings_wifi" />
 
-                <TextView
-                    android:id="@+id/roundAdaptHint"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/round_adapt_hint"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="@dimen/watch_meta" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="@string/max_quality"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="@dimen/watch_meta" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/wifiOnlySwitch"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginStart="10dp"
+                        android:layout_weight="1"
+                        android:text="@string/wifi_only"
+                        android:textColor="@color/text_primary"
+                        android:textSize="@dimen/watch_body" />
+                </LinearLayout>
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:orientation="horizontal">
+                    android:gravity="center_vertical"
+                    android:minHeight="48dp"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="4dp">
 
-                    <TextView
-                        android:id="@+id/quality480"
-                        android:layout_width="0dp"
-                        android:layout_height="44dp"
-                        android:layout_marginEnd="4dp"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_quality_chip"
-                        android:gravity="center"
-                        android:text="480p"
-                        android:textColor="@color/text_primary"
-                        android:textSize="@dimen/watch_body"
-                        android:textStyle="bold" />
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_settings_round" />
 
-                    <TextView
-                        android:id="@+id/quality720"
+                    <LinearLayout
                         android:layout_width="0dp"
-                        android:layout_height="44dp"
-                        android:layout_marginHorizontal="2dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
                         android:layout_weight="1"
-                        android:background="@drawable/bg_quality_chip"
-                        android:gravity="center"
-                        android:text="720p"
-                        android:textColor="@color/text_primary"
-                        android:textSize="@dimen/watch_body"
-                        android:textStyle="bold" />
+                        android:orientation="vertical">
 
-                    <TextView
-                        android:id="@+id/quality1080"
-                        android:layout_width="0dp"
-                        android:layout_height="44dp"
-                        android:layout_marginStart="4dp"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_quality_chip"
-                        android:gravity="center"
-                        android:text="1080p"
-                        android:textColor="@color/text_primary"
-                        android:textSize="@dimen/watch_body"
-                        android:textStyle="bold" />
+                        <androidx.appcompat.widget.SwitchCompat
+                            android:id="@+id/roundAdaptSwitch"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="36dp"
+                            android:text="@string/round_adapt"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_body" />
+
+                        <TextView
+                            android:id="@+id/roundAdaptHint"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/round_adapt_hint"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="@dimen/watch_meta" />
+                    </LinearLayout>
                 </LinearLayout>
 
-                <!-- 保留 Spinner 兼容旧绑定；隐藏，逻辑已切到芯片 -->
-                <Spinner
-                    android:id="@+id/qualitySpinner"
-                    android:layout_width="0dp"
-                    android:layout_height="0dp"
-                    android:visibility="gone" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="8dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="8dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <ImageView
+                            android:layout_width="22dp"
+                            android:layout_height="22dp"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_settings_quality" />
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="10dp"
+                            android:layout_weight="1"
+                            android:text="@string/max_quality"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_body" />
+
+                        <TextView
+                            android:id="@+id/qualityStatus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="@dimen/watch_meta" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/quality480"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_marginEnd="4dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_quality_chip"
+                            android:gravity="center"
+                            android:text="480p"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_meta"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/quality720"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_marginHorizontal="2dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_quality_chip"
+                            android:gravity="center"
+                            android:text="720p"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_meta"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/quality1080"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_marginStart="4dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_quality_chip"
+                            android:gravity="center"
+                            android:text="1080p"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_meta"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <Spinner
+                        android:id="@+id/qualitySpinner"
+                        android:layout_width="0dp"
+                        android:layout_height="0dp"
+                        android:visibility="gone" />
+                </LinearLayout>
             </LinearLayout>
 
             <LinearLayout
@@ -149,165 +219,289 @@
                 android:layout_marginTop="8dp"
                 android:background="@drawable/bg_setting_block"
                 android:orientation="vertical"
-                android:padding="8dp">
+                android:paddingVertical="4dp">
 
-                <Button
+                <LinearLayout
                     android:id="@+id/checkUpdateButton"
                     android:layout_width="match_parent"
-                    android:layout_height="44dp"
-                    android:backgroundTint="@color/accent"
-                    android:minHeight="0dp"
-                    android:text="@string/check_update"
-                    android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_body" />
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="8dp">
 
-                <TextView
-                    android:id="@+id/versionLabel"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="@dimen/watch_meta" />
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_settings_update" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:layout_weight="1"
+                        android:text="@string/check_update"
+                        android:textColor="@color/text_primary"
+                        android:textSize="@dimen/watch_body" />
+
+                    <TextView
+                        android:id="@+id/versionLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="@dimen/watch_meta" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:text="@string/setting_chevron"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="16sp" />
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/signingNote"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:layout_marginBottom="6dp"
+                    android:paddingHorizontal="8dp"
+                    android:paddingBottom="4dp"
                     android:lineSpacingExtra="1dp"
                     android:text="@string/update_signing_note"
                     android:textColor="@color/text_secondary"
                     android:textSize="@dimen/watch_meta" />
 
-                <Button
+                <LinearLayout
                     android:id="@+id/uploadDiagButton"
                     android:layout_width="match_parent"
-                    android:layout_height="44dp"
-                    android:layout_marginBottom="6dp"
-                    android:backgroundTint="@color/episode_normal"
-                    android:minHeight="0dp"
-                    android:text="@string/upload_diagnostics"
-                    android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_body" />
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="8dp">
 
-                <Button
-                    android:id="@+id/decodeTestButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="44dp"
-                    android:layout_marginBottom="6dp"
-                    android:backgroundTint="@color/episode_normal"
-                    android:minHeight="0dp"
-                    android:text="@string/decode_test_entry"
-                    android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_body" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="4dp"
-                    android:text="@string/player_kernel_label"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="@dimen/watch_meta" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="6dp"
-                    android:orientation="horizontal">
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_settings_diag" />
 
                     <TextView
-                        android:id="@+id/kernelAuto"
                         android:layout_width="0dp"
-                        android:layout_height="40dp"
-                        android:layout_marginEnd="2dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
                         android:layout_weight="1"
-                        android:background="@drawable/bg_quality_chip"
-                        android:gravity="center"
-                        android:text="@string/player_kernel_auto"
+                        android:text="@string/upload_diagnostics"
                         android:textColor="@color/text_primary"
-                        android:textSize="@dimen/watch_meta" />
+                        android:textSize="@dimen/watch_body" />
 
                     <TextView
-                        android:id="@+id/kernelMedia3"
-                        android:layout_width="0dp"
-                        android:layout_height="40dp"
-                        android:layout_marginHorizontal="2dp"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_quality_chip"
-                        android:gravity="center"
-                        android:text="@string/player_kernel_media3"
-                        android:textColor="@color/text_primary"
-                        android:textSize="@dimen/watch_meta" />
-
-                    <TextView
-                        android:id="@+id/kernelIjk"
-                        android:layout_width="0dp"
-                        android:layout_height="40dp"
-                        android:layout_marginStart="2dp"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_quality_chip"
-                        android:gravity="center"
-                        android:text="@string/player_kernel_ijk"
-                        android:textColor="@color/text_primary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/setting_diag_status"
+                        android:textColor="@color/text_secondary"
                         android:textSize="@dimen/watch_meta" />
                 </LinearLayout>
 
-                <TextView
+                <LinearLayout
+                    android:id="@+id/decodeTestButton"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="4dp"
-                    android:text="@string/decode_path_label"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="@dimen/watch_meta" />
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="8dp">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_settings_decode" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:layout_weight="1"
+                        android:text="@string/decode_test_entry"
+                        android:textColor="@color/text_primary"
+                        android:textSize="@dimen/watch_body" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/setting_chevron"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="16sp" />
+                </LinearLayout>
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="6dp"
-                    android:orientation="horizontal">
+                    android:orientation="vertical"
+                    android:paddingHorizontal="8dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="6dp">
 
-                    <TextView
-                        android:id="@+id/decodeAuto"
-                        android:layout_width="0dp"
-                        android:layout_height="40dp"
-                        android:layout_marginEnd="2dp"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_quality_chip"
-                        android:gravity="center"
-                        android:text="@string/decode_path_auto"
-                        android:textColor="@color/text_primary"
-                        android:textSize="@dimen/watch_meta" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
 
-                    <TextView
-                        android:id="@+id/decodeHw"
-                        android:layout_width="0dp"
-                        android:layout_height="40dp"
-                        android:layout_marginHorizontal="2dp"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_quality_chip"
-                        android:gravity="center"
-                        android:text="@string/decode_path_hw"
-                        android:textColor="@color/text_primary"
-                        android:textSize="@dimen/watch_meta" />
+                        <ImageView
+                            android:layout_width="22dp"
+                            android:layout_height="22dp"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_settings_kernel" />
 
-                    <TextView
-                        android:id="@+id/decodeSw"
-                        android:layout_width="0dp"
-                        android:layout_height="40dp"
-                        android:layout_marginStart="2dp"
-                        android:layout_weight="1"
-                        android:background="@drawable/bg_quality_chip"
-                        android:gravity="center"
-                        android:text="@string/decode_path_sw"
-                        android:textColor="@color/text_primary"
-                        android:textSize="@dimen/watch_meta" />
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="10dp"
+                            android:layout_weight="1"
+                            android:text="@string/player_kernel_label"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_body" />
+
+                        <TextView
+                            android:id="@+id/kernelStatus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="@dimen/watch_meta" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/kernelAuto"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginEnd="2dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_quality_chip"
+                            android:gravity="center"
+                            android:text="@string/player_kernel_auto"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_meta" />
+
+                        <TextView
+                            android:id="@+id/kernelMedia3"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginHorizontal="2dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_quality_chip"
+                            android:gravity="center"
+                            android:text="@string/player_kernel_media3"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_meta" />
+
+                        <TextView
+                            android:id="@+id/kernelIjk"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginStart="2dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_quality_chip"
+                            android:gravity="center"
+                            android:text="@string/player_kernel_ijk"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_meta" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="8dp"
+                    android:paddingBottom="6dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <ImageView
+                            android:layout_width="22dp"
+                            android:layout_height="22dp"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_settings_decode" />
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="10dp"
+                            android:layout_weight="1"
+                            android:text="@string/decode_path_label"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_body" />
+
+                        <TextView
+                            android:id="@+id/decodeStatus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="@dimen/watch_meta" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/decodeAuto"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginEnd="2dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_quality_chip"
+                            android:gravity="center"
+                            android:text="@string/decode_path_auto"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_meta" />
+
+                        <TextView
+                            android:id="@+id/decodeHw"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginHorizontal="2dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_quality_chip"
+                            android:gravity="center"
+                            android:text="@string/decode_path_hw"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_meta" />
+
+                        <TextView
+                            android:id="@+id/decodeSw"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginStart="2dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_quality_chip"
+                            android:gravity="center"
+                            android:text="@string/decode_path_sw"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_meta" />
+                    </LinearLayout>
                 </LinearLayout>
 
                 <Button
                     android:id="@+id/clearHistoryButton"
                     android:layout_width="match_parent"
                     android:layout_height="44dp"
+                    android:layout_marginHorizontal="8dp"
                     android:backgroundTint="@color/episode_normal"
                     android:minHeight="0dp"
                     android:text="@string/clear_history"
@@ -318,7 +512,9 @@
                     android:id="@+id/clearCacheButton"
                     android:layout_width="match_parent"
                     android:layout_height="44dp"
+                    android:layout_marginHorizontal="8dp"
                     android:layout_marginTop="6dp"
+                    android:layout_marginBottom="8dp"
                     android:backgroundTint="@color/episode_normal"
                     android:minHeight="0dp"
                     android:text="@string/clear_cache"

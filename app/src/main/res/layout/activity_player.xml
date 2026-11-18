@@ -164,13 +164,13 @@
         android:textSize="@dimen/watch_meta"
         android:visibility="gone" />
 
-    <!-- 锁定：右侧小解锁钮，不盖画面；手势由代码吞掉 -->
+    <!-- 锁定：左侧小解锁钮（与 lock 同侧），不盖画面；手势由代码吞掉 -->
     <ImageButton
         android:id="@+id/unlockButton"
         android:layout_width="48dp"
         android:layout_height="48dp"
-        android:layout_gravity="end|center_vertical"
-        android:layout_marginEnd="14dp"
+        android:layout_gravity="start|center_vertical"
+        android:layout_marginStart="14dp"
         android:background="@drawable/bg_lock_chip"
         android:contentDescription="@string/cd_unlock"
         android:padding="11dp"
@@ -256,7 +256,7 @@
                 android:src="@drawable/ic_rotate" />
         </LinearLayout>
 
-        <!-- 中区：点按显隐 · 右侧锁定（稿面靠右） -->
+        <!-- 中区：左侧锁定 · 点按显隐（手表习惯靠左） -->
         <LinearLayout
             android:id="@+id/midControls"
             android:layout_width="match_parent"
@@ -265,15 +265,6 @@
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingHorizontal="10dp">
-
-            <View
-                android:id="@+id/controlsMidTap"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:background="@android:color/transparent"
-                android:clickable="true"
-                android:focusable="true" />
 
             <ImageButton
                 android:id="@+id/lockButton"
@@ -284,6 +275,15 @@
                 android:padding="11dp"
                 android:scaleType="centerInside"
                 android:src="@drawable/ic_lock" />
+
+            <View
+                android:id="@+id/controlsMidTap"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@android:color/transparent"
+                android:clickable="true"
+                android:focusable="true" />
         </LinearLayout>
 
         <LinearLayout

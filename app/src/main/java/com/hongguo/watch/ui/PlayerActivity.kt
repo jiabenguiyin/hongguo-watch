@@ -8,6 +8,8 @@ import android.media.AudioManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -45,6 +47,7 @@ import com.hongguo.watch.databinding.ActivityPlayerBinding
 import com.hongguo.watch.player.DecodePath
 import com.hongguo.watch.player.IjkPlayerEngine
 import com.hongguo.watch.player.PlayerDiagLog
+import com.hongguo.watch.player.PlayerGestureArbiter
 import com.hongguo.watch.player.PlayerGestureZones
 import com.hongguo.watch.player.PlayerKernel
 import com.hongguo.watch.player.VideoAspectHelper
@@ -128,8 +131,9 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var episodeAdapter: EpisodeAdapter
     private lateinit var audioManager: AudioManager
     private lateinit var scaleDetector: ScaleGestureDetector
-    /** 单击显隐 / 双击播停 / 长按临时加速。 */
+    /** 单击显隐 / 双击播停（内置长按已关；长按加速自管）。 */
     private lateinit var tapDetector: GestureDetector
+    private val gestureHandler = Handler(Looper.getMainLooper())
     private var touchSlop = 0
     private var downX = 0f
     private var downY = 0f
@@ -143,6 +147,8 @@ class PlayerActivity : AppCompatActivity() {
     private var volumeStart = 0
     private var gestureConsumedClick = false
     private var scaling = false
+    /** 待决长按加速（手指基本不动）。 */
+    private var longPressArmed = false
     /** 长按临时加速中；松手恢复 [currentSpeed]（与倍速面板一致）。 */
     private var speedBoostActive = false
     private var speedBeforeBoost = 1.0f
@@ -155,6 +161,15 @@ class PlayerActivity : AppCompatActivity() {
     private enum class GestureMode { NONE, SEEK, BRIGHTNESS, VOLUME }
 
     private var gestureMode = GestureMode.NONE
+
+    private val longPressRunnable = Runnable {
+        if (!longPressArmed || locked || scaling || gestureMode != GestureMode.NONE) {
+            longPressArmed = false
+            return@Runnable
+        }
+        longPressArmed = false
+        startSpeedBoost()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -189,6 +204,8 @@ class PlayerActivity : AppCompatActivity() {
                     if (locked) return false
                     scaling = true
                     gestureConsumedClick = true
+                    cancelLongPressArm()
+                    endSpeedBoost()
                     gestureMode = GestureMode.NONE
                     scrubbing = false
                     adjustingBrightness = false
@@ -397,7 +414,7 @@ class PlayerActivity : AppCompatActivity() {
                 override fun onDown(e: MotionEvent): Boolean = true
 
                 override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                    if (locked) return false
+                    if (locked || gestureMode != GestureMode.NONE || scaling) return false
                     if (binding.sheetScrim.visibility == View.VISIBLE) {
                         closeSheets()
                     } else {
@@ -408,21 +425,31 @@ class PlayerActivity : AppCompatActivity() {
                 }
 
                 override fun onDoubleTap(e: MotionEvent): Boolean {
-                    if (locked) return false
+                    if (locked || gestureMode != GestureMode.NONE || scaling) return false
                     togglePlayPauseGesture()
                     gestureConsumedClick = true
                     return true
                 }
-
-                override fun onLongPress(e: MotionEvent) {
-                    if (locked || scaling || gestureMode != GestureMode.NONE) return
-                    startSpeedBoost()
-                }
             },
-        )
+        ).also { it.setIsLongpressEnabled(false) }
         val listener = View.OnTouchListener { _, event -> handleGesture(event) }
         binding.gestureLayer.setOnTouchListener(listener)
         binding.controlsMidTap.setOnTouchListener(listener)
+    }
+
+    private fun armLongPress() {
+        cancelLongPressArm()
+        if (locked) return
+        longPressArmed = true
+        gestureHandler.postDelayed(
+            longPressRunnable,
+            ViewConfiguration.getLongPressTimeout().toLong(),
+        )
+    }
+
+    private fun cancelLongPressArm() {
+        longPressArmed = false
+        gestureHandler.removeCallbacks(longPressRunnable)
     }
 
     /** 圆盘：加大侧栏内收；锁定/解锁芯片靠左并与 midControls 左边距对齐。 */
@@ -558,6 +585,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun handleGesture(event: MotionEvent): Boolean {
         if (locked) {
+            cancelLongPressArm()
             // 吞掉亮度/音量/进度；点空白：有解锁钮则藏、无则唤出；真正解锁只靠小按钮
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -581,23 +609,30 @@ class PlayerActivity : AppCompatActivity() {
 
         val wasScaling = scaling
         scaleDetector.onTouchEvent(event)
-        // 双指缩放期间不走亮度/音量/进度，避免误触
-        if (scaling || wasScaling || event.pointerCount > 1) {
+        // 双指 / 缩放独占：取消长按与滑动，不启动 seek/亮度
+        if (scaling || wasScaling || PlayerGestureArbiter.isMultiTouch(event.pointerCount)) {
+            cancelLongPressArm()
             endSpeedBoost()
-            if (event.actionMasked == MotionEvent.ACTION_UP ||
-                event.actionMasked == MotionEvent.ACTION_CANCEL
-            ) {
-                gestureMode = GestureMode.NONE
-                scrubbing = false
-                adjustingBrightness = false
-                adjustingVolume = false
-                binding.brightnessMeter.visibility = View.GONE
-                binding.volumeMeter.visibility = View.GONE
-                if (!scaling) scheduleHideControls()
+            when (event.actionMasked) {
+                MotionEvent.ACTION_POINTER_DOWN,
+                MotionEvent.ACTION_UP,
+                MotionEvent.ACTION_CANCEL,
+                -> {
+                    gestureMode = GestureMode.NONE
+                    scrubbing = false
+                    adjustingBrightness = false
+                    adjustingVolume = false
+                    binding.brightnessMeter.visibility = View.GONE
+                    binding.volumeMeter.visibility = View.GONE
+                    if (event.actionMasked != MotionEvent.ACTION_POINTER_DOWN && !scaling) {
+                        scheduleHideControls()
+                    }
+                }
             }
             return true
         }
 
+        val slop = touchSlop.toFloat()
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = event.x
@@ -611,7 +646,7 @@ class PlayerActivity : AppCompatActivity() {
                 scrubStartPos = activePosition()
                 brightnessStart = currentBrightness()
                 volumeStart = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                // 单击/双击/长按：交给 GestureDetector（与滑动分区并存）
+                armLongPress()
                 tapDetector.onTouchEvent(event)
                 return true
             }
@@ -619,14 +654,17 @@ class PlayerActivity : AppCompatActivity() {
                 val dx = event.x - downX
                 val dy = event.y - downY
                 if (gestureMode == GestureMode.NONE) {
-                    if (abs(dx) > touchSlop * 1.5f || abs(dy) > touchSlop * 1.5f) {
+                    if (PlayerGestureArbiter.shouldClaimSwipe(dx, dy, slop)) {
+                        cancelLongPressArm()
                         endSpeedBoost()
                         gestureMode = classifyGesture(downContentX, dx, dy)
                         gestureConsumedClick = true
                         hideControlsJob?.cancel()
+                    } else if (PlayerGestureArbiter.shouldCancelLongPress(dx, dy, slop)) {
+                        cancelLongPressArm()
                     }
                 }
-                // 仍喂给 tapDetector，超 touchSlop 时取消待决长按
+                // 未认领滑动时继续喂给 tapDetector（单击/双击）；认领后不再喂
                 if (gestureMode == GestureMode.NONE) {
                     tapDetector.onTouchEvent(event)
                 }
@@ -673,8 +711,10 @@ class PlayerActivity : AppCompatActivity() {
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 val boosting = speedBoostActive
+                val claimed = gestureMode
+                cancelLongPressArm()
                 endSpeedBoost()
-                when (gestureMode) {
+                when (claimed) {
                     GestureMode.SEEK -> {
                         val duration = activeDuration().takeIf { it > 0 }
                         if (duration != null) {
@@ -1794,6 +1834,7 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         playerForeground = false
+        cancelLongPressArm()
         playGeneration++
         playJob?.cancel()
         hideControlsJob?.cancel()

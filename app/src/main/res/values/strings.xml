@@ -62,7 +62,16 @@
     <string name="clear_cache">清除缓存</string>
     <string name="wifi_only">仅 Wi‑Fi 播放</string>
     <string name="round_adapt">圆屏适配</string>
-    <string name="round_adapt_hint">加大安全边距，锁/倍速内收避开裁切。默认跟随圆屏检测，也可强制开启。</string>
+    <string name="round_adapt_hint">加大安全边距，锁/倍速内收避开裁切。默认跟随圆屏检测，也可强制开启。普通方屏大圆角也会自动内收，避免顶栏/底栏被裁。</string>
+    <string name="check_update">检查更新</string>
+    <string name="checking_update">正在检查更新…</string>
+    <string name="update_latest">当前已是最新版本（%1$s）</string>
+    <string name="update_available_title">发现新版本 %1$s</string>
+    <string name="update_available_body">当前 %1$s\n最新 %2$s\n\n%3$s</string>
+    <string name="update_open_page">打开发布页</string>
+    <string name="update_download_apk">下载安装包</string>
+    <string name="update_later">稍后</string>
+    <string name="update_check_failed">检查更新失败：%1$s</string>
     <string name="max_quality">清晰度上限</string>
     <string name="quality_480">480p（默认，省电）</string>
     <string name="quality_720">720p</string>

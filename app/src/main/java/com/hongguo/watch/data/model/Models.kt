@@ -49,6 +49,9 @@ data class CatalogPage(
     val hasMore: Boolean = false,
     /** 首次拉分类落地页时带回的可选分类（题材等）。 */
     val categories: List<HomeCategory> = emptyList(),
+    /** 服务端续页游标（推荐/榜单/分类）。 */
+    val nextOffset: Int = 0,
+    val sessionId: String = "",
 )
 
 data class Episode(

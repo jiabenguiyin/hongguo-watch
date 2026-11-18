@@ -3,7 +3,6 @@ package com.hongguo.watch.data
 import com.hongguo.watch.data.model.RelatedWork
 import com.hongguo.watch.data.model.Series
 import com.hongguo.watch.data.model.SeriesSource
-import com.hongguo.watch.upstream.cleanUrl
 import com.hongguo.watch.upstream.objects
 import com.hongguo.watch.upstream.str
 import org.json.JSONObject
@@ -145,8 +144,5 @@ object RelatedWorks {
         return rows.singleOrNull()
     }
 
-    private fun safeCover(value: String): String {
-        val url = cleanUrl(value)
-        return if (url.startsWith("http://") || url.startsWith("https://")) url else ""
-    }
+    private fun safeCover(value: String): String = CoverUrls.normalize(value)
 }

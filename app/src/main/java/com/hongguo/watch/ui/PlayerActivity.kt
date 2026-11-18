@@ -22,6 +22,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
@@ -55,6 +56,7 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var binding: ActivityPlayerBinding
     private var player: ExoPlayer? = null
     private var progressJob: Job? = null
+    private var playJob: Job? = null
     private var hideControlsJob: Job? = null
     private var hintJob: Job? = null
     private var seasonJob: Job? = null
@@ -62,6 +64,9 @@ class PlayerActivity : AppCompatActivity() {
     private var userSeeking = false
     private var controlsVisible = true
     private var locked = false
+    /** 递增以作废过期的取流结果（快速切集 / 退后台）。 */
+    private var playGeneration = 0
+    private var playerForeground = false
 
     private val repo get() = (application as HongguoWatchApp).container.repository
     private val settings get() = (application as HongguoWatchApp).container.settings
@@ -101,6 +106,7 @@ class PlayerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityPlayerBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        playerForeground = true
         WatchUi.applyImmersive(this)
         WatchUi.applySafePadding(binding.playerRoot)
 
@@ -121,6 +127,8 @@ class PlayerActivity : AppCompatActivity() {
 
         touchSlop = ViewConfiguration.get(this).scaledTouchSlop
         binding.playerView.useController = false
+        // TextureView + 保留最后一帧，减轻 OEM SurfaceView 黑屏
+        binding.playerView.setKeepContentOnPlayerReset(true)
         applyRoundPlayerChrome()
         bindControls()
         bindSheets()
@@ -174,9 +182,13 @@ class PlayerActivity : AppCompatActivity() {
         }
         binding.playPauseButton.setOnClickListener {
             val p = player ?: return@setOnClickListener
-            if (p.isPlaying) p.pause() else p.play()
+            if (p.isPlaying) {
+                p.pause()
+                saveProgress(force = true)
+            } else {
+                p.play()
+            }
             updatePlayPause()
-            saveProgress()
             scheduleHideControls()
         }
         binding.retryButton.setOnClickListener { loadCurrent() }
@@ -208,7 +220,7 @@ class PlayerActivity : AppCompatActivity() {
                     if (duration > 0) p.seekTo(duration * bar.progress / 1000)
                 }
                 userSeeking = false
-                saveProgress()
+                saveProgress(force = true)
                 scheduleHideControls()
             }
         })
@@ -253,13 +265,18 @@ class PlayerActivity : AppCompatActivity() {
             binding.volumeMeter.layoutParams = lp
         }
         val round = WatchUi.useRoundLayout(this)
-        val sidePad = if (round) {
-            WatchUi.edgeInsetPx(this).coerceAtLeast(WatchUi.dp(this, 14f))
-        } else {
-            WatchUi.dp(this, 10f)
+        val cornerSafe = WatchUi.needsCornerSafeInset(this)
+        val sidePad = when {
+            round -> WatchUi.edgeInsetPx(this).coerceAtLeast(WatchUi.dp(this, 14f))
+            cornerSafe -> WatchUi.dp(this, 12f)
+            else -> WatchUi.dp(this, 10f)
         }
         binding.midControls.setPadding(sidePad, 0, sidePad, 0)
-        val bottomPad = if (round) WatchUi.dp(this, 12f) else WatchUi.dp(this, 8f)
+        val bottomPad = when {
+            round -> WatchUi.dp(this, 12f)
+            cornerSafe -> WatchUi.dp(this, 10f)
+            else -> WatchUi.dp(this, 8f)
+        }
         binding.bottomButtons.setPadding(
             bottomPad,
             binding.bottomButtons.paddingTop,
@@ -268,13 +285,21 @@ class PlayerActivity : AppCompatActivity() {
         )
         val seasonLp = binding.seasonBanner.layoutParams as? android.widget.FrameLayout.LayoutParams
         if (seasonLp != null) {
-            val h = if (round) WatchUi.edgeInsetPx(this) else WatchUi.dp(this, 14f)
+            val h = when {
+                round -> WatchUi.edgeInsetPx(this)
+                cornerSafe -> WatchUi.dp(this, 16f)
+                else -> WatchUi.dp(this, 14f)
+            }
             seasonLp.marginStart = h
             seasonLp.marginEnd = h
             binding.seasonBanner.layoutParams = seasonLp
         }
-        // 圆屏：顶栏左右再内收一点，返回钮不贴圆弧
-        val topPad = if (round) WatchUi.dp(this, 6f) else WatchUi.dp(this, 2f)
+        // 圆屏 / 大圆角方屏：顶栏左右再内收，返回钮不贴圆弧
+        val topPad = when {
+            round -> WatchUi.dp(this, 6f)
+            cornerSafe -> WatchUi.dp(this, 4f)
+            else -> WatchUi.dp(this, 2f)
+        }
         binding.topBar.setPadding(
             topPad,
             binding.topBar.paddingTop,
@@ -377,7 +402,7 @@ class PlayerActivity : AppCompatActivity() {
                         if (duration != null) {
                             val target = duration * binding.seekBar.progress / 1000
                             player?.seekTo(target)
-                            saveProgress()
+                            saveProgress(force = true)
                         }
                         scrubbing = false
                         scheduleHideControls()
@@ -574,7 +599,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun switchEpisode(index: Int) {
         if (index !in episodeIds.indices) return
-        saveProgress()
+        saveProgress(force = true)
         episodeIndex = index
         startPositionMs = 0L
         seasonPrepared = false
@@ -587,14 +612,20 @@ class PlayerActivity : AppCompatActivity() {
     private fun loadCurrent() {
         val episodeId = episodeIds.getOrNull(episodeIndex) ?: return
         val episodeNumber = episodeNumbers.getOrNull(episodeIndex) ?: (episodeIndex + 1)
+        val requestedSeriesId = seriesId
+        val requestedIndex = episodeIndex
         binding.playerTitle.text = "$seriesTitle · 第${episodeNumber}集"
         binding.playerTitle.isSelected = true
         binding.retryButton.visibility = View.GONE
         binding.loadingBox.visibility = View.VISIBLE
         if (!locked) showControls(autoHide = false)
 
-        lifecycleScope.launch {
+        // 取消上一次取流，避免快速切集时旧结果覆盖当前集
+        playJob?.cancel()
+        val token = ++playGeneration
+        playJob = lifecycleScope.launch {
             if (settings.wifiOnlyNow() && !isWifi()) {
+                if (token != playGeneration) return@launch
                 Toast.makeText(this@PlayerActivity, R.string.error_wifi_only, Toast.LENGTH_LONG).show()
                 binding.retryButton.visibility = View.VISIBLE
                 binding.loadingBox.visibility = View.GONE
@@ -602,11 +633,18 @@ class PlayerActivity : AppCompatActivity() {
             }
             try {
                 currentQuality = settings.maxQualityNow()
+                if (token != playGeneration) return@launch
                 refreshQualityUi()
-                val stream = repo.stream(seriesId, episodeId)
+                val stream = repo.stream(requestedSeriesId, episodeId)
+                if (token != playGeneration) return@launch
+                if (!playerForeground) return@launch
+                if (seriesId != requestedSeriesId || episodeIndex != requestedIndex) return@launch
+                if (episodeIds.getOrNull(episodeIndex) != episodeId) return@launch
                 binding.playerNotice.visibility = if (stream.isPreview) View.VISIBLE else View.GONE
                 playStream(stream, startPositionMs)
             } catch (e: Exception) {
+                if (token != playGeneration) return@launch
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Toast.makeText(
                     this@PlayerActivity,
                     e.message ?: getString(R.string.error_no_play_url),
@@ -620,10 +658,16 @@ class PlayerActivity : AppCompatActivity() {
 
     @OptIn(UnstableApi::class)
     private suspend fun playStream(stream: StreamInfo, positionMs: Long) {
+        val token = playGeneration
+        if (!playerForeground || token != playGeneration) return
         releasePlayer(save = false)
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(1_500, 8_000, 1_000, 1_500)
             .build()
+        // 解码失败时回退（部分表端硬解花屏/黑屏仍有声）
+        val renderersFactory = DefaultRenderersFactory(this)
+            .setEnableDecoderFallback(true)
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
 
         val key = stream.decryptionKey
         val exo = if (key != null) {
@@ -633,12 +677,17 @@ class PlayerActivity : AppCompatActivity() {
                     UpstreamStreamInfo(stream.url, key, stream.quality),
                 ).prepare()
             }
+            if (!playerForeground || token != playGeneration) {
+                remote.close()
+                return
+            }
             remoteVideo = remote
-            ExoPlayer.Builder(this)
+            ExoPlayer.Builder(this, renderersFactory)
                 .setMediaSourceFactory(ProgressiveMediaSource.Factory { VideoDataSource(remote) })
                 .setLoadControl(loadControl)
                 .build()
         } else {
+            if (!playerForeground || token != playGeneration) return
             val factory = DefaultHttpDataSource.Factory()
                 .setUserAgent(stream.userAgent ?: "HongguoWatch/0.1")
                 .setAllowCrossProtocolRedirects(true)
@@ -649,10 +698,16 @@ class PlayerActivity : AppCompatActivity() {
                         if (!stream.referer.isNullOrBlank()) put("Referer", stream.referer)
                     },
                 )
-            ExoPlayer.Builder(this)
+            ExoPlayer.Builder(this, renderersFactory)
                 .setMediaSourceFactory(DefaultMediaSourceFactory(factory))
                 .setLoadControl(loadControl)
                 .build()
+        }
+        if (!playerForeground || token != playGeneration) {
+            exo.release()
+            remoteVideo?.close()
+            remoteVideo = null
+            return
         }
 
         exo.addListener(object : Player.Listener {
@@ -662,7 +717,7 @@ class PlayerActivity : AppCompatActivity() {
                     if (playbackState == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
                 if (playbackState == Player.STATE_READY && !locked) scheduleHideControls()
                 if (playbackState == Player.STATE_ENDED) {
-                    saveProgress()
+                    saveProgress(force = true)
                     if (episodeIndex < episodeIds.lastIndex) {
                         switchEpisode(episodeIndex + 1)
                     } else {
@@ -677,7 +732,7 @@ class PlayerActivity : AppCompatActivity() {
                     if (!locked) scheduleHideControls()
                 } else {
                     hideControlsJob?.cancel()
-                    saveProgress()
+                    saveProgress(force = true)
                 }
             }
 
@@ -716,12 +771,14 @@ class PlayerActivity : AppCompatActivity() {
     private fun startProgressLoop() {
         progressJob?.cancel()
         progressJob = lifecycleScope.launch {
+            var ticks = 0
             while (isActive) {
                 updateSeekUi()
                 maybePrepareSeason()
                 delay(500)
-                if (isActive) saveProgress()
-                delay(1_000)
+                ticks++
+                // ~8s 写一次历史（500ms×16）；暂停/退出另有 force 落盘
+                if (ticks % 16 == 0 && isActive) saveProgress(force = false)
             }
         }
     }
@@ -830,10 +887,15 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    private fun saveProgress() {
+    private var lastHistoryWriteMs = 0L
+
+    private fun saveProgress(force: Boolean = false) {
         val p = player ?: return
         val episodeId = episodeIds.getOrNull(episodeIndex) ?: return
         val episodeNumber = episodeNumbers.getOrNull(episodeIndex) ?: (episodeIndex + 1)
+        val now = System.currentTimeMillis()
+        if (!force && now - lastHistoryWriteMs < 5_000L) return
+        lastHistoryWriteMs = now
         val position = p.currentPosition.coerceAtLeast(0L)
         val duration = p.duration.takeIf { it > 0 } ?: 0L
         lifecycleScope.launch {
@@ -859,7 +921,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun releasePlayer(save: Boolean = true) {
         progressJob?.cancel()
-        if (save) saveProgress()
+        if (save) saveProgress(force = true)
         binding.playerView.player = null
         player?.release()
         player = null
@@ -867,15 +929,29 @@ class PlayerActivity : AppCompatActivity() {
         remoteVideo = null
     }
 
+    override fun onStart() {
+        super.onStart()
+        playerForeground = true
+    }
+
     override fun onStop() {
-        super.onStop()
+        playerForeground = false
+        // 作废进行中的取流，避免退后台后仍 prepare/play
+        playGeneration++
+        playJob?.cancel()
+        playJob = null
         player?.pause()
-        saveProgress()
-        // 退后台取消未完成跨季（对照 hongguoTV）
+        saveProgress(force = true)
+        // 退后台取消未完成跨季
         seasonGeneration++
+        seasonJob?.cancel()
+        super.onStop()
     }
 
     override fun onDestroy() {
+        playerForeground = false
+        playGeneration++
+        playJob?.cancel()
         hideControlsJob?.cancel()
         hintJob?.cancel()
         seasonJob?.cancel()

@@ -12,26 +12,48 @@ android {
         applicationId = "com.hongguo.watch"
         minSdk = 24
         targetSdk = 34
-        versionCode = 7
-        versionName = "0.4.1"
+        versionCode = 8
+        versionName = "0.4.2"
         resourceConfigurations += listOf("zh", "en")
     }
 
     signingConfigs {
-        // MVP 侧载：默认用 debug 密钥签名；正式分发请换成自有 keystore。
         getByName("debug")
+        // 正式签名：仅走环境变量 / 本地 signing/keystore.properties，禁止静默回退 debug，
+        // 避免「看似 release、实则 debug 证书」导致日后换钥升级冲突。
         create("release") {
-            val releaseStore = System.getenv("WATCH_RELEASE_STORE_FILE")
-            if (!releaseStore.isNullOrBlank()) {
-                storeFile = file(releaseStore)
-                storePassword = System.getenv("WATCH_RELEASE_STORE_PASSWORD")
-                keyAlias = System.getenv("WATCH_RELEASE_KEY_ALIAS")
-                keyPassword = System.getenv("WATCH_RELEASE_KEY_PASSWORD")
-            } else {
-                storeFile = signingConfigs.getByName("debug").storeFile
-                storePassword = signingConfigs.getByName("debug").storePassword
-                keyAlias = signingConfigs.getByName("debug").keyAlias
-                keyPassword = signingConfigs.getByName("debug").keyPassword
+            val propsFile = rootProject.file("signing/keystore.properties")
+            val props = mutableMapOf<String, String>()
+            if (propsFile.isFile) {
+                propsFile.readLines()
+                    .map { line -> line.trim() }
+                    .filter { line -> line.isNotEmpty() && !line.startsWith("#") && line.contains("=") }
+                    .forEach { line ->
+                        val idx = line.indexOf('=')
+                        val k = line.substring(0, idx).trim()
+                        val v = line.substring(idx + 1).trim()
+                        if (k.isNotEmpty()) props[k] = v
+                    }
+            }
+            fun prop(env: String, key: String): String? {
+                val fromEnv = System.getenv(env)
+                if (!fromEnv.isNullOrBlank()) return fromEnv
+                return props[key]?.takeIf { value -> value.isNotBlank() }
+            }
+
+            val storePath = prop("WATCH_RELEASE_STORE_FILE", "storeFile")
+            val storePass = prop("WATCH_RELEASE_STORE_PASSWORD", "storePassword")
+            val alias = prop("WATCH_RELEASE_KEY_ALIAS", "keyAlias")
+            val keyPass = prop("WATCH_RELEASE_KEY_PASSWORD", "keyPassword")
+            if (!storePath.isNullOrBlank() &&
+                !storePass.isNullOrBlank() &&
+                !alias.isNullOrBlank() &&
+                !keyPass.isNullOrBlank()
+            ) {
+                storeFile = rootProject.file(storePath)
+                storePassword = storePass
+                keyAlias = alias
+                keyPassword = keyPass
             }
         }
     }
@@ -40,7 +62,18 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("release")
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null) {
+                signingConfig = releaseSigning
+            } else {
+                // 未配置正式密钥时不产出「假 release」；assembleRelease 会因缺 signingConfig 失败。
+                // 侧载验证请用 assembleDebug。配置步骤见 signing/README.md。
+                logger.warn(
+                    "hongguo-watch: release signing not configured " +
+                        "(WATCH_RELEASE_* or signing/keystore.properties). " +
+                        "assembleRelease requires a real keystore — see signing/README.md",
+                )
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -107,4 +140,6 @@ dependencies {
     implementation("io.coil-kt:coil:2.6.0")
 
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    testImplementation("junit:junit:4.13.2")
 }

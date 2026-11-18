@@ -50,14 +50,15 @@ object WatchUi {
                 ) == Configuration.UI_MODE_TYPE_WATCH
     }
 
-    /** API 23+ 圆屏；方屏圆角机也可通过短边近似判定。 */
+    /**
+     * 自动圆屏检测。仅信任系统 [Configuration.isScreenRound]；
+     * **不再**把极小正方屏近似成圆盘——CD12 Max 等方屏大圆角机会被误判，
+     * 导致默认边距过大或布局错位。方屏大圆角改走 [needsCornerSafeInset]。
+     * 设置里「圆屏适配」仍可强制开/关。
+     */
     fun isRoundScreen(context: Context): Boolean {
         val config = context.resources.configuration
-        if (Build.VERSION.SDK_INT >= 23 && config.isScreenRound) return true
-        // 部分华强北圆盘 ROM 未标 isScreenRound，近似：近正方形且极小
-        val w = widthDp(context)
-        val h = heightDp(context)
-        return isCompactWatch(context) && absDiff(w, h) <= 24 && min(w, h) <= 320
+        return Build.VERSION.SDK_INT >= 23 && config.isScreenRound
     }
 
     /**
@@ -67,29 +68,53 @@ object WatchUi {
         return roundAdaptOverride ?: isRoundScreen(context)
     }
 
-    private fun absDiff(a: Int, b: Int): Int = if (a >= b) a - b else b - a
+    /**
+     * 普通方屏但大圆角（如 CD12 Max / 华强北方表）：四角仍会裁切 chrome，
+     * 不能只靠「圆屏适配」开关。
+     */
+    fun needsCornerSafeInset(context: Context): Boolean = isCompactWatch(context)
 
     /**
-     * 圆盘内接安全边：约 0.12～0.15×短边，避免四角裁切；
-     * 方屏仍用较轻边距。
+     * 安全边：
+     * - 圆屏适配开：约 0.14×短边
+     * - 小屏方表（大圆角）：约 0.09×短边，避免顶栏/底 Tab 被圆角吃掉
+     * - 手机/大屏：轻边距
      */
     fun edgeInsetPx(context: Context): Int {
         val metrics = context.resources.displayMetrics
         val edge = min(metrics.widthPixels, metrics.heightPixels)
         val round = useRoundLayout(context)
-        val ratio = if (round) 0.14f else 0.04f
+        val cornerSafe = !round && needsCornerSafeInset(context)
+        val ratio = when {
+            round -> 0.14f
+            // CD12 Max 等方屏大圆角：四角内切约需短边 10%+
+            cornerSafe -> 0.10f
+            else -> 0.04f
+        }
         val preferred = (edge * ratio).roundToInt()
-        val minDp = if (round) 20f else 8f
-        val maxDp = if (round) 48f else 18f
+        val minDp = when {
+            round -> 20f
+            cornerSafe -> 16f
+            else -> 8f
+        }
+        val maxDp = when {
+            round -> 48f
+            cornerSafe -> 32f
+            else -> 18f
+        }
         val minPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, minDp, metrics).roundToInt()
         val maxPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, maxDp, metrics).roundToInt()
         return preferred.coerceIn(minPx, maxPx)
     }
 
-    /** 圆屏侧栏（亮度/音量条）额外内收，避免贴圆弧。 */
+    /** 圆屏 / 大圆角方屏侧栏额外内收，避免贴圆弧。 */
     fun sideMeterMarginPx(context: Context): Int {
         val base = edgeInsetPx(context)
-        return if (useRoundLayout(context)) (base * 0.85f).roundToInt() else dp(context, 6f)
+        return when {
+            useRoundLayout(context) -> (base * 0.85f).roundToInt()
+            needsCornerSafeInset(context) -> (base * 0.7f).roundToInt().coerceAtLeast(dp(context, 8f))
+            else -> dp(context, 6f)
+        }
     }
 
     fun dp(context: Context, value: Float): Int {
@@ -141,8 +166,12 @@ object WatchUi {
      */
     fun applySafePadding(view: View, extraBottom: Int = 0) {
         val inset = edgeInsetPx(view.context)
-        // 圆屏顶部也按满 inset，避免返回/标题贴圆弧
-        val topFactor = if (useRoundLayout(view.context)) 1f else 0.5f
+        // 圆屏 / 大圆角方屏顶部按满 inset，避免品牌名与搜索钮被四角裁切
+        val topFactor = when {
+            useRoundLayout(view.context) -> 1f
+            needsCornerSafeInset(view.context) -> 0.95f
+            else -> 0.5f
+        }
         val compact = isCompactWatch(view.context)
         ViewCompat.setOnApplyWindowInsetsListener(view) { v, insets ->
             val bars = if (compact) {

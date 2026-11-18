@@ -442,6 +442,16 @@ class PlayerActivity : AppCompatActivity() {
             topPad,
             binding.topBar.paddingBottom,
         )
+        // 锁定/解锁芯片靠右：圆屏加大边距，避开圆弧裁切
+        val lockPad = when {
+            round -> WatchUi.edgeInsetPx(this).coerceAtLeast(WatchUi.dp(this, 16f))
+            cornerSafe -> WatchUi.dp(this, 14f)
+            else -> WatchUi.dp(this, 12f)
+        }
+        (binding.unlockButton.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
+            lp.marginEnd = lockPad
+            binding.unlockButton.layoutParams = lp
+        }
     }
 
     private fun setLocked(value: Boolean) {
@@ -912,7 +922,9 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun refreshSpeedUi() {
         currentSpeed = SettingsStore.normalizeSpeed(currentSpeed)
-        binding.speedLabel.text = SettingsStore.formatSpeed(currentSpeed)
+        val label = SettingsStore.formatSpeed(currentSpeed)
+        binding.speedButton.text = label
+        binding.speedLabel.text = label
         binding.speed075.isSelected = currentSpeed == 0.75f
         binding.speed100.isSelected = currentSpeed == 1.0f
         binding.speed125.isSelected = currentSpeed == 1.25f
@@ -981,7 +993,7 @@ class PlayerActivity : AppCompatActivity() {
         val episodeNumber = episodeNumbers.getOrNull(episodeIndex) ?: (episodeIndex + 1)
         val requestedSeriesId = seriesId
         val requestedIndex = episodeIndex
-        binding.playerTitle.text = "$seriesTitle · 第${episodeNumber}集"
+        binding.playerTitle.text = getString(R.string.playing_now, seriesTitle, episodeNumber)
         binding.playerTitle.isSelected = true
         binding.retryButton.visibility = View.GONE
         setLoadingIndicator(visible = true, immediate = true)
@@ -1458,7 +1470,6 @@ class PlayerActivity : AppCompatActivity() {
         binding.playPauseButton.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
         binding.playPauseButton.contentDescription =
             getString(if (playing) R.string.cd_pause else R.string.cd_play)
-        binding.playPauseButton.isSelected = true
         binding.prevButton.isEnabled = episodeIndex > 0
         binding.nextButton.isEnabled = episodeIndex < episodeIds.lastIndex || nextSeasonWork != null
         binding.prevButton.alpha = if (binding.prevButton.isEnabled) 1f else 0.35f

@@ -97,9 +97,6 @@ class SettingsActivity : AppCompatActivity() {
 
         binding.checkUpdateButton.setOnClickListener { checkForUpdate() }
         binding.uploadDiagButton.setOnClickListener { uploadDiagnostics() }
-        binding.decodeTestButton.setOnClickListener {
-            startActivity(Intent(this, DecodeTestActivity::class.java))
-        }
 
         binding.clearHistoryButton.setOnClickListener {
             lifecycleScope.launch {

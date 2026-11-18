@@ -11,11 +11,19 @@ class EpisodeAdapter(
 ) : RecyclerView.Adapter<EpisodeAdapter.Holder>() {
     private val items = mutableListOf<Episode>()
     private var selectedId: String? = null
+    private var gridMode: Boolean = false
 
-    fun submit(episodes: List<Episode>, selectedId: String? = null) {
+    fun submit(episodes: List<Episode>, selectedId: String? = null, gridMode: Boolean = this.gridMode) {
         items.clear()
         items.addAll(episodes)
         this.selectedId = selectedId
+        this.gridMode = gridMode
+        notifyDataSetChanged()
+    }
+
+    fun setGridMode(gridMode: Boolean) {
+        if (this.gridMode == gridMode) return
+        this.gridMode = gridMode
         notifyDataSetChanged()
     }
 
@@ -34,6 +42,23 @@ class EpisodeAdapter(
         private val binding: ItemEpisodeBinding,
     ) : RecyclerView.ViewHolder(binding.root) {
         fun bind(episode: Episode) {
+            val density = binding.root.resources.displayMetrics.density
+            val cell = (40f * density).toInt()
+            val gap = (6f * density).toInt()
+            val lp = (binding.root.layoutParams as? RecyclerView.LayoutParams)
+                ?: RecyclerView.LayoutParams(cell, cell)
+            if (gridMode) {
+                lp.width = ViewGroup.LayoutParams.MATCH_PARENT
+                lp.height = cell
+                lp.marginEnd = gap / 2
+                lp.bottomMargin = gap
+            } else {
+                lp.width = cell
+                lp.height = cell
+                lp.marginEnd = gap
+                lp.bottomMargin = 0
+            }
+            binding.root.layoutParams = lp
             binding.episodeNumber.text = episode.number.toString()
             binding.episodeNumber.isSelected = episode.id == selectedId
             binding.root.setOnClickListener { onClick(episode) }

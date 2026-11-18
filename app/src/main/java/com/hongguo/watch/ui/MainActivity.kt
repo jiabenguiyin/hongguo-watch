@@ -1,9 +1,12 @@
 package com.hongguo.watch.ui
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.util.TypedValue
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -22,11 +25,13 @@ import com.hongguo.watch.data.model.SeriesSource
 import com.hongguo.watch.databinding.ActivityMainBinding
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var adapter: SeriesListAdapter
     private var mode = Mode.HOME
+    private var librarySegment = LibrarySegment.FAVORITES
     private var homeNav = HomeNav.RECOMMEND
     private var lastQuery: String = ""
     private var categories: List<HomeCategory> =
@@ -49,7 +54,7 @@ class MainActivity : AppCompatActivity() {
     private var feedRankBase = 0
     /**
      * 列表内容世代：切 Tab / 搜索 / 分类时递增。
-     * 防止首页 feed 异步结果污染历史/收藏 adapter。
+     * 防止首页 feed 异步结果污染库（收藏/历史）adapter。
      */
     private var listGeneration = 0
     private var listJob: Job? = null
@@ -58,6 +63,7 @@ class MainActivity : AppCompatActivity() {
     /** 搜索发现品类芯片：全部 / 短剧 / 漫剧 / 爱情 / 古装。 */
     private var searchChipId: String = SEARCH_CHIP_ALL
     private var hotBatchOffset: Int = 0
+    private lateinit var librarySegmentGesture: GestureDetector
 
     private val container get() = (application as HongguoWatchApp).container
     private val repo get() = container.repository
@@ -87,6 +93,7 @@ class MainActivity : AppCompatActivity() {
                 maybeLoadMoreFeed()
             }
         })
+        setupLibrarySegmentSwipe()
 
         binding.swipeRefresh.setColorSchemeResources(R.color.accent)
         binding.swipeRefresh.setProgressBackgroundColorSchemeResource(R.color.bg_elevated)
@@ -109,8 +116,7 @@ class MainActivity : AppCompatActivity() {
                     homeNav == HomeNav.SEARCH -> showSearchDiscovery(fromSwipe = true)
                     else -> showHome(forceReload = true, fromSwipe = true)
                 }
-                Mode.HISTORY -> showHistory(fromSwipe = true)
-                Mode.FAVORITES -> showFavorites(fromSwipe = true)
+                Mode.LIBRARY -> showLibrary(fromSwipe = true)
             }
         }
         binding.navRecommend.setOnClickListener { selectHomeNav(HomeNav.RECOMMEND) }
@@ -118,13 +124,16 @@ class MainActivity : AppCompatActivity() {
         binding.navCategory.setOnClickListener { selectHomeNav(HomeNav.CATEGORY) }
         binding.navSearch.setOnClickListener { selectHomeNav(HomeNav.SEARCH) }
         binding.tabHome.setOnClickListener { showHome() }
-        binding.tabHistory.setOnClickListener { showHistory() }
-        binding.tabFavorites.setOnClickListener { showFavorites() }
+        binding.tabLibrary.setOnClickListener { showLibrary() }
         binding.tabSettings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-        binding.segmentFavorites.setOnClickListener { showFavorites() }
-        binding.segmentHistory.setOnClickListener { showHistory() }
+        binding.segmentFavorites.setOnClickListener {
+            showLibrary(segment = LibrarySegment.FAVORITES)
+        }
+        binding.segmentHistory.setOnClickListener {
+            showLibrary(segment = LibrarySegment.HISTORY)
+        }
 
         showHome()
     }
@@ -143,8 +152,7 @@ class MainActivity : AppCompatActivity() {
             if (mode == Mode.HOME) renderSubChips()
         }
         when (mode) {
-            Mode.HISTORY -> showHistory()
-            Mode.FAVORITES -> showFavorites()
+            Mode.LIBRARY -> showLibrary()
             Mode.HOME -> if (homeNav != HomeNav.SEARCH || lastQuery.isBlank()) {
                 if (homeNav != HomeNav.SEARCH) showHome()
             }
@@ -530,15 +538,16 @@ class MainActivity : AppCompatActivity() {
             feedRankBase = 0
             val rows = mutableListOf<HomeRow>()
             if (cat.isRecommend) {
-                val banner = HomeNavPolicy.bannerSeries(fresh)
-                if (banner != null) {
-                    rows += HomeRow.Banner(banner, pageIndex = 0, pageCount = 3)
+                val banners = HomeNavPolicy.bannerSeriesList(fresh)
+                if (banners.isNotEmpty()) {
+                    rows += HomeRow.Banner(banners, pageIndex = 0)
                 }
                 rows += HomeRow.Header(
                     title = getString(R.string.section_for_you),
                     showMore = true,
                 )
-                rows += HomeNavPolicy.listSeriesAfterBanner(fresh).map { HomeRow.Item(it) }
+                rows += HomeNavPolicy.listSeriesAfterBanner(fresh, banners.size)
+                    .map { HomeRow.Item(it) }
             } else {
                 rows += HomeRow.Header(
                     title = cat.label,
@@ -912,17 +921,28 @@ class MainActivity : AppCompatActivity() {
         return HomeNavPolicy.genreCategories(categories).firstOrNull { it.label.contains(needle) }
     }
 
-    private fun showHistory(fromSwipe: Boolean = false) {
-        mode = Mode.HISTORY
-        highlightBottomTabs(history = true)
+    private fun showLibrary(
+        fromSwipe: Boolean = false,
+        segment: LibrarySegment = librarySegment,
+    ) {
+        mode = Mode.LIBRARY
+        librarySegment = segment
+        highlightBottomTabs(library = true)
         hideKeyboard()
         binding.homeNavScroll.visibility = View.GONE
         binding.searchRow.visibility = View.GONE
         binding.categoryScroll.visibility = View.GONE
         binding.pageSubtitle.visibility = View.GONE
         binding.librarySegmentRow.visibility = View.VISIBLE
-        highlightLibrarySegment(history = true)
-        binding.brandTitle.text = getString(R.string.tab_history)
+        highlightLibrarySegment(librarySegment)
+        binding.brandTitle.text = getString(R.string.tab_library)
+        when (librarySegment) {
+            LibrarySegment.HISTORY -> loadHistoryList(fromSwipe)
+            LibrarySegment.FAVORITES -> loadFavoritesList(fromSwipe)
+        }
+    }
+
+    private fun loadHistoryList(fromSwipe: Boolean) {
         binding.emptyView.visibility = View.GONE
         applyListLoading(
             ListLoadingPolicy.choose(
@@ -937,7 +957,11 @@ class MainActivity : AppCompatActivity() {
         listJob = lifecycleScope.launch {
             try {
                 val history = repo.recentHistory()
-                if (token != listGeneration || mode != Mode.HISTORY) return@launch
+                if (token != listGeneration || mode != Mode.LIBRARY ||
+                    librarySegment != LibrarySegment.HISTORY
+                ) {
+                    return@launch
+                }
                 val favoritedIds = repo.favorites().map { it.seriesId }.toHashSet()
                 val rows = history.map {
                     val percent = if (it.durationMs > 0) {
@@ -961,7 +985,11 @@ class MainActivity : AppCompatActivity() {
                         totalEpisodes = null,
                     )
                 }
-                if (token != listGeneration || mode != Mode.HISTORY) return@launch
+                if (token != listGeneration || mode != Mode.LIBRARY ||
+                    librarySegment != LibrarySegment.HISTORY
+                ) {
+                    return@launch
+                }
                 adapter.submit(rows)
                 binding.seriesList.scrollToPosition(0)
                 binding.emptyView.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
@@ -976,7 +1004,7 @@ class MainActivity : AppCompatActivity() {
 
     /** 历史行 ♡：一键收藏/取消，不打断续播入口。总集数走详情接口，不用进度集号。 */
     private fun toggleHistoryFavorite(series: Series, @Suppress("UNUSED_PARAMETER") currentlyFavorited: Boolean) {
-        if (mode != Mode.HISTORY) return
+        if (mode != Mode.LIBRARY || librarySegment != LibrarySegment.HISTORY) return
         lifecycleScope.launch {
             val totalEpisodes = runCatching { repo.resolveEpisodeTotal(series.id) }.getOrDefault(0)
             val nowFavorited = repo.toggleFavorite(
@@ -986,7 +1014,7 @@ class MainActivity : AppCompatActivity() {
                 source = series.source,
                 episodeCount = totalEpisodes,
             )
-            if (mode != Mode.HISTORY) return@launch
+            if (mode != Mode.LIBRARY || librarySegment != LibrarySegment.HISTORY) return@launch
             adapter.setFavorited(series.id, nowFavorited)
             Toast.makeText(
                 this@MainActivity,
@@ -996,17 +1024,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showFavorites(fromSwipe: Boolean = false) {
-        mode = Mode.FAVORITES
-        highlightBottomTabs(favorites = true)
-        hideKeyboard()
-        binding.homeNavScroll.visibility = View.GONE
-        binding.searchRow.visibility = View.GONE
-        binding.categoryScroll.visibility = View.GONE
-        binding.pageSubtitle.visibility = View.GONE
-        binding.librarySegmentRow.visibility = View.VISIBLE
-        highlightLibrarySegment(favorites = true)
-        binding.brandTitle.text = getString(R.string.tab_favorites)
+    private fun loadFavoritesList(fromSwipe: Boolean) {
         binding.emptyView.visibility = View.GONE
         applyListLoading(
             ListLoadingPolicy.choose(
@@ -1021,7 +1039,11 @@ class MainActivity : AppCompatActivity() {
         listJob = lifecycleScope.launch {
             try {
                 val favorites = repo.favoritesWithResolvedEpisodeTotals()
-                if (token != listGeneration || mode != Mode.FAVORITES) return@launch
+                if (token != listGeneration || mode != Mode.LIBRARY ||
+                    librarySegment != LibrarySegment.FAVORITES
+                ) {
+                    return@launch
+                }
                 val historyMap = repo.recentHistory().associateBy { it.seriesId }
                 val rows = favorites.map { fav ->
                     val history = historyMap[fav.seriesId]
@@ -1047,7 +1069,11 @@ class MainActivity : AppCompatActivity() {
                         totalEpisodes = fav.episodeCount.takeIf { it > 0 },
                     )
                 }
-                if (token != listGeneration || mode != Mode.FAVORITES) return@launch
+                if (token != listGeneration || mode != Mode.LIBRARY ||
+                    librarySegment != LibrarySegment.FAVORITES
+                ) {
+                    return@launch
+                }
                 adapter.submit(rows)
                 binding.seriesList.scrollToPosition(0)
                 binding.emptyView.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
@@ -1060,7 +1086,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun highlightLibrarySegment(favorites: Boolean = false, history: Boolean = false) {
+    private fun highlightLibrarySegment(segment: LibrarySegment) {
+        val favorites = segment == LibrarySegment.FAVORITES
+        val history = segment == LibrarySegment.HISTORY
         val active = ContextCompat.getColor(this, R.color.text_primary)
         val muted = ContextCompat.getColor(this, R.color.text_secondary)
         binding.segmentFavorites.setTextColor(if (favorites) active else muted)
@@ -1075,9 +1103,48 @@ class MainActivity : AppCompatActivity() {
         binding.segmentHistory.paint.isFakeBoldText = history
     }
 
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupLibrarySegmentSwipe() {
+        librarySegmentGesture = GestureDetector(
+            this,
+            object : GestureDetector.SimpleOnGestureListener() {
+                override fun onDown(e: MotionEvent): Boolean = mode == Mode.LIBRARY
+
+                override fun onFling(
+                    e1: MotionEvent?,
+                    e2: MotionEvent,
+                    velocityX: Float,
+                    velocityY: Float,
+                ): Boolean {
+                    if (mode != Mode.LIBRARY) return false
+                    if (abs(velocityX) < abs(velocityY) || abs(velocityX) < 800f) return false
+                    // 左滑 → 观看历史；右滑 → 我的收藏（与分段左右顺序一致）
+                    val target = if (velocityX < 0) {
+                        LibrarySegment.HISTORY
+                    } else {
+                        LibrarySegment.FAVORITES
+                    }
+                    if (target == librarySegment) return false
+                    showLibrary(segment = target)
+                    return true
+                }
+            },
+        )
+        binding.seriesList.setOnTouchListener { _, event ->
+            if (mode != Mode.LIBRARY) return@setOnTouchListener false
+            librarySegmentGesture.onTouchEvent(event)
+            false
+        }
+        binding.librarySegmentRow.setOnTouchListener { _, event ->
+            if (mode != Mode.LIBRARY) return@setOnTouchListener false
+            librarySegmentGesture.onTouchEvent(event)
+            false
+        }
+    }
+
     private fun openSeries(series: Series) {
-        when (mode) {
-            Mode.HISTORY -> {
+        when {
+            mode == Mode.LIBRARY && librarySegment == LibrarySegment.HISTORY -> {
                 lifecycleScope.launch {
                     val history = repo.historyFor(series.id)
                     val intent = Intent(this@MainActivity, PlayerActivity::class.java).apply {
@@ -1097,7 +1164,7 @@ class MainActivity : AppCompatActivity() {
                     startActivity(intent)
                 }
             }
-            Mode.HOME, Mode.FAVORITES -> {
+            else -> {
                 startActivity(
                     Intent(this, DetailActivity::class.java).apply {
                         putExtra(DetailActivity.EXTRA_SERIES_ID, series.id)
@@ -1117,25 +1184,24 @@ class MainActivity : AppCompatActivity() {
 
     private fun highlightBottomTabs(
         home: Boolean = false,
-        history: Boolean = false,
-        favorites: Boolean = false,
+        library: Boolean = false,
     ) {
         val accent = ContextCompat.getColor(this, R.color.accent)
         val muted = ContextCompat.getColor(this, R.color.text_secondary)
         binding.tabHome.setTextColor(if (home) accent else muted)
-        binding.tabHistory.setTextColor(if (history) accent else muted)
-        binding.tabFavorites.setTextColor(if (favorites) accent else muted)
+        binding.tabLibrary.setTextColor(if (library) accent else muted)
         binding.tabSettings.setTextColor(muted)
-        binding.tabHome.setBackgroundResource(if (home) R.drawable.bg_tab_active else android.R.color.transparent)
-        binding.tabHistory.setBackgroundResource(if (history) R.drawable.bg_tab_active else android.R.color.transparent)
-        binding.tabFavorites.setBackgroundResource(if (favorites) R.drawable.bg_tab_active else android.R.color.transparent)
+        binding.tabHome.setBackgroundResource(
+            if (home) R.drawable.bg_tab_active else android.R.color.transparent,
+        )
+        binding.tabLibrary.setBackgroundResource(
+            if (library) R.drawable.bg_tab_active else android.R.color.transparent,
+        )
         binding.tabSettings.setBackgroundResource(android.R.color.transparent)
         binding.tabHome.paint.isFakeBoldText = home
-        binding.tabHistory.paint.isFakeBoldText = history
-        binding.tabFavorites.paint.isFakeBoldText = favorites
+        binding.tabLibrary.paint.isFakeBoldText = library
         binding.tabHome.invalidate()
-        binding.tabHistory.invalidate()
-        binding.tabFavorites.invalidate()
+        binding.tabLibrary.invalidate()
     }
 
     private fun hideKeyboard() {
@@ -1144,7 +1210,9 @@ class MainActivity : AppCompatActivity() {
         binding.searchInput.clearFocus()
     }
 
-    private enum class Mode { HOME, HISTORY, FAVORITES }
+    private enum class Mode { HOME, LIBRARY }
+
+    private enum class LibrarySegment { FAVORITES, HISTORY }
 
     companion object {
         private const val SEARCH_CHIP_ALL = "all"

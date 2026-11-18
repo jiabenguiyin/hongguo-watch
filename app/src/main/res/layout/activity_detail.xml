@@ -188,9 +188,23 @@
                     android:textStyle="bold" />
 
                 <TextView
+                    android:id="@+id/expandToggle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:background="@drawable/bg_control_button"
+                    android:gravity="center"
+                    android:paddingHorizontal="10dp"
+                    android:text="@string/episode_expand"
+                    android:textColor="@color/accent"
+                    android:textSize="@dimen/watch_meta"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <TextView
                     android:id="@+id/orderToggle"
                     android:layout_width="wrap_content"
                     android:layout_height="32dp"
+                    android:layout_marginStart="6dp"
                     android:background="@drawable/bg_control_button"
                     android:gravity="center"
                     android:paddingHorizontal="10dp"
@@ -213,6 +227,24 @@
                     android:textStyle="bold"
                     android:visibility="gone" />
             </LinearLayout>
+
+            <HorizontalScrollView
+                android:id="@+id/episodeRangeScroll"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:clipToPadding="false"
+                android:overScrollMode="never"
+                android:scrollbars="none"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/episodeRangeRow"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal" />
+            </HorizontalScrollView>
 
             <FrameLayout
                 android:layout_width="match_parent"

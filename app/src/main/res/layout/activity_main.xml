@@ -8,23 +8,121 @@
     android:paddingHorizontal="@dimen/watch_pad"
     android:paddingTop="@dimen/watch_pad_tight">
 
-    <TextView
-        android:id="@+id/brandTitle"
+    <LinearLayout
+        android:id="@+id/brandRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:ellipsize="end"
-        android:maxLines="1"
-        android:paddingBottom="2dp"
-        android:text="@string/app_name"
-        android:textColor="@color/accent"
-        android:textSize="@dimen/watch_title"
-        android:textStyle="bold" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingBottom="2dp">
+
+        <ImageView
+            android:id="@+id/brandIcon"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_brand_mark" />
+
+        <TextView
+            android:id="@+id/brandTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/app_name"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_title"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <HorizontalScrollView
+        android:id="@+id/homeNavScroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:clipToPadding="false"
+        android:overScrollMode="never"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/homeNavRow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingBottom="2dp">
+
+            <TextView
+                android:id="@+id/navRecommend"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_top_tab_active"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:minHeight="@dimen/watch_chip_min_h"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="6dp"
+                android:text="@string/nav_recommend"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/navRank"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/bg_top_tab_idle"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:minHeight="@dimen/watch_chip_min_h"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="6dp"
+                android:text="@string/nav_rank"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/navCategory"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/bg_top_tab_idle"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:minHeight="@dimen/watch_chip_min_h"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="6dp"
+                android:text="@string/nav_category"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/navSearch"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/bg_top_tab_idle"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:minHeight="@dimen/watch_chip_min_h"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="6dp"
+                android:text="@string/nav_search"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </HorizontalScrollView>
 
     <LinearLayout
         android:id="@+id/searchRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:layout_marginTop="4dp"
+        android:orientation="horizontal"
+        android:visibility="gone">
 
         <EditText
             android:id="@+id/searchInput"
@@ -62,7 +160,8 @@
         android:layout_marginTop="4dp"
         android:clipToPadding="false"
         android:overScrollMode="never"
-        android:scrollbars="none">
+        android:scrollbars="none"
+        android:visibility="gone">
 
         <LinearLayout
             android:id="@+id/categoryRow"

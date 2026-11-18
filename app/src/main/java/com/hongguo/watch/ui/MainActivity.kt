@@ -27,12 +27,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var adapter: SeriesListAdapter
     private var mode = Mode.HOME
+    private var homeNav = HomeNav.RECOMMEND
     private var lastQuery: String = ""
     private var categories: List<HomeCategory> =
         listOf(HomeCategory.recommend()) + HomeCategory.ranks()
     private var categoriesReady: Boolean = false
     private var selectedCategoryId: String = HomeCategory.ID_RECOMMEND
     private var categoryChipViews: List<TextView> = emptyList()
+    private var visibleChipCategories: List<HomeCategory> = emptyList()
     private var lastRoundLayout: Boolean = false
 
     /** 首页分类流分页状态（推荐 / 榜单 / 题材）。 */
@@ -96,11 +98,19 @@ class MainActivity : AppCompatActivity() {
             // 用户下拉：只用 SwipeRefresh 圈，立刻藏中心 ProgressBar
             applyListLoading(ListLoadingPolicy.Indicator.REFRESH)
             when (mode) {
-                Mode.HOME -> if (lastQuery.isNotBlank()) runSearch(fromSwipe = true) else showHome(forceReload = true, fromSwipe = true)
+                Mode.HOME -> when {
+                    homeNav == HomeNav.SEARCH && lastQuery.isNotBlank() -> runSearch(fromSwipe = true)
+                    homeNav == HomeNav.SEARCH -> applyListLoading(ListLoadingPolicy.Indicator.NONE)
+                    else -> showHome(forceReload = true, fromSwipe = true)
+                }
                 Mode.HISTORY -> showHistory(fromSwipe = true)
                 Mode.FAVORITES -> showFavorites(fromSwipe = true)
             }
         }
+        binding.navRecommend.setOnClickListener { selectHomeNav(HomeNav.RECOMMEND) }
+        binding.navRank.setOnClickListener { selectHomeNav(HomeNav.RANK) }
+        binding.navCategory.setOnClickListener { selectHomeNav(HomeNav.CATEGORY) }
+        binding.navSearch.setOnClickListener { selectHomeNav(HomeNav.SEARCH) }
         binding.tabHome.setOnClickListener { showHome() }
         binding.tabHistory.setOnClickListener { showHistory() }
         binding.tabFavorites.setOnClickListener { showFavorites() }
@@ -108,7 +118,6 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        renderCategoryChips(categories)
         showHome()
     }
 
@@ -123,12 +132,14 @@ class MainActivity : AppCompatActivity() {
         val round = WatchUi.useRoundLayout(this)
         if (round != lastRoundLayout) {
             applyWatchChrome()
-            renderCategoryChips(categories)
+            if (mode == Mode.HOME) renderSubChips()
         }
         when (mode) {
             Mode.HISTORY -> showHistory()
             Mode.FAVORITES -> showFavorites()
-            Mode.HOME -> if (lastQuery.isBlank()) showHome()
+            Mode.HOME -> if (homeNav != HomeNav.SEARCH || lastQuery.isBlank()) {
+                if (homeNav != HomeNav.SEARCH) showHome()
+            }
         }
     }
 
@@ -159,7 +170,6 @@ class MainActivity : AppCompatActivity() {
             emptyPad,
             binding.emptyView.paddingBottom,
         )
-        // 小屏压缩搜索行高度，给列表多挤出一行
         if (WatchUi.isCompactWatch(this)) {
             val h = WatchUi.dp(this, 40f)
             binding.searchInput.layoutParams = binding.searchInput.layoutParams.apply { height = h }
@@ -169,16 +179,85 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showHome(forceReload: Boolean = false, fromSwipe: Boolean = false) {
-        // 历史/收藏 → 首页：必须立刻清空共用 adapter，否则推荐标题下会闪历史行
-        val switchingToHome = mode != Mode.HOME
-        mode = Mode.HOME
-        highlightTabs(home = true)
+    private fun selectHomeNav(nav: HomeNav) {
+        if (mode != Mode.HOME) {
+            mode = Mode.HOME
+            highlightBottomTabs(home = true)
+        }
+        if (homeNav == nav && lastQuery.isBlank() && nav != HomeNav.SEARCH) return
+        homeNav = nav
         lastQuery = ""
         binding.searchInput.setText("")
-        binding.searchRow.visibility = View.VISIBLE
-        binding.categoryScroll.visibility = View.VISIBLE
-        binding.pageSubtitle.visibility = View.GONE
+        applyHomeChrome()
+        highlightHomeNav()
+        when (nav) {
+            HomeNav.SEARCH -> {
+                adapter.showResumeHint = false
+                beginListLoad(clearAdapter = true)
+                applyListLoading(ListLoadingPolicy.Indicator.NONE)
+                binding.emptyView.visibility = View.VISIBLE
+                binding.emptyView.text = getString(R.string.empty_search)
+                binding.searchInput.requestFocus()
+            }
+            HomeNav.RECOMMEND, HomeNav.RANK, HomeNav.CATEGORY -> {
+                selectedCategoryId = HomeNavPolicy.resolveSelectedCategoryId(
+                    nav,
+                    selectedCategoryId,
+                    categories,
+                )
+                renderSubChips()
+                binding.emptyView.visibility = View.GONE
+                applyListLoading(ListLoadingPolicy.Indicator.CENTER)
+                val token = beginListLoad(clearAdapter = true)
+                adapter.showResumeHint = false
+                listJob = lifecycleScope.launch {
+                    try {
+                        ensureCategories(token)
+                        if (token != listGeneration || mode != Mode.HOME) return@launch
+                        selectedCategoryId = HomeNavPolicy.resolveSelectedCategoryId(
+                            homeNav,
+                            selectedCategoryId,
+                            categories,
+                        )
+                        renderSubChips()
+                        if (homeNav == HomeNav.CATEGORY &&
+                            HomeNavPolicy.genreCategories(categories).isEmpty()
+                        ) {
+                            adapter.submit(emptyList())
+                            binding.emptyView.visibility = View.VISIBLE
+                            binding.emptyView.text = getString(R.string.empty_category)
+                            return@launch
+                        }
+                        loadSelectedCategory(token)
+                    } catch (e: Exception) {
+                        if (token != listGeneration || mode != Mode.HOME) return@launch
+                        showHomeError(e)
+                    } finally {
+                        if (token == listGeneration) {
+                            applyListLoading(ListLoadingPolicy.Indicator.NONE)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun showHome(forceReload: Boolean = false, fromSwipe: Boolean = false) {
+        val switchingToHome = mode != Mode.HOME
+        mode = Mode.HOME
+        highlightBottomTabs(home = true)
+        if (homeNav == HomeNav.SEARCH && !forceReload && !switchingToHome) {
+            applyHomeChrome()
+            highlightHomeNav()
+            return
+        }
+        if (homeNav == HomeNav.SEARCH) {
+            homeNav = HomeNav.RECOMMEND
+        }
+        lastQuery = ""
+        binding.searchInput.setText("")
+        applyHomeChrome()
+        highlightHomeNav()
         binding.brandTitle.text = getString(R.string.app_name)
         binding.emptyView.visibility = View.GONE
         val clear = ListTabPolicy.shouldClearHomeAdapter(switchingToHome, forceReload)
@@ -191,38 +270,49 @@ class MainActivity : AppCompatActivity() {
             ),
         )
         val token = beginListLoad(clearAdapter = clear)
-        // 先清空再改 hint，避免 notifyDataSetChanged 把旧历史行刷成「进」
         adapter.showResumeHint = false
         if (clear) binding.seriesList.scrollToPosition(0)
         listJob = lifecycleScope.launch {
             try {
-                if (forceReload || !categoriesReady) {
-                    categories = repo.homeCategories()
-                    if (token != listGeneration || mode != Mode.HOME) return@launch
-                    categoriesReady = true
-                    if (categories.none { it.id == selectedCategoryId }) {
-                        selectedCategoryId = HomeCategory.ID_RECOMMEND
-                    }
-                    renderCategoryChips(categories)
-                }
+                ensureCategories(token, force = forceReload)
                 if (token != listGeneration || mode != Mode.HOME) return@launch
+                selectedCategoryId = HomeNavPolicy.resolveSelectedCategoryId(
+                    homeNav,
+                    selectedCategoryId,
+                    categories,
+                )
+                renderSubChips()
                 loadSelectedCategory(token)
             } catch (e: Exception) {
                 if (token != listGeneration || mode != Mode.HOME) return@launch
-                adapter.submit(emptyList())
-                binding.emptyView.visibility = View.VISIBLE
-                binding.emptyView.text = e.message ?: getString(R.string.error_network)
-                Toast.makeText(
-                    this@MainActivity,
-                    e.message ?: getString(R.string.error_network),
-                    Toast.LENGTH_LONG,
-                ).show()
+                showHomeError(e)
             } finally {
                 if (token == listGeneration) {
                     applyListLoading(ListLoadingPolicy.Indicator.NONE)
                 }
             }
         }
+    }
+
+    private suspend fun ensureCategories(token: Int, force: Boolean = false) {
+        if (!force && categoriesReady) return
+        categories = repo.homeCategories()
+        if (token != listGeneration || mode != Mode.HOME) return
+        categoriesReady = true
+        if (categories.none { it.id == selectedCategoryId }) {
+            selectedCategoryId = HomeCategory.ID_RECOMMEND
+        }
+    }
+
+    private fun showHomeError(e: Exception) {
+        adapter.submit(emptyList())
+        binding.emptyView.visibility = View.VISIBLE
+        binding.emptyView.text = e.message ?: getString(R.string.error_network)
+        Toast.makeText(
+            this,
+            e.message ?: getString(R.string.error_network),
+            Toast.LENGTH_LONG,
+        ).show()
     }
 
     /** 同一时刻只亮一种加载指示器（中心圈 / 下拉圈 / 无）。 */
@@ -257,6 +347,35 @@ class MainActivity : AppCompatActivity() {
         if (next != listLoading) applyListLoading(next)
     }
 
+    private fun applyHomeChrome() {
+        val home = mode == Mode.HOME
+        binding.homeNavScroll.visibility =
+            if (HomeNavPolicy.showHomeNavChrome(home)) View.VISIBLE else View.GONE
+        binding.brandRow.visibility = View.VISIBLE
+        binding.searchRow.visibility =
+            if (home && HomeNavPolicy.showSearchRow(homeNav)) View.VISIBLE else View.GONE
+        binding.categoryScroll.visibility =
+            if (home && HomeNavPolicy.showSubChips(homeNav)) View.VISIBLE else View.GONE
+        binding.pageSubtitle.visibility = View.GONE
+    }
+
+    private fun highlightHomeNav() {
+        val active = ContextCompat.getColor(this, R.color.text_primary)
+        val muted = ContextCompat.getColor(this, R.color.text_secondary)
+        fun style(view: TextView, selected: Boolean) {
+            view.setTextColor(if (selected) active else muted)
+            view.setBackgroundResource(
+                if (selected) R.drawable.bg_top_tab_active else R.drawable.bg_top_tab_idle,
+            )
+            view.paint.isFakeBoldText = selected
+            view.invalidate()
+        }
+        style(binding.navRecommend, homeNav == HomeNav.RECOMMEND)
+        style(binding.navRank, homeNav == HomeNav.RANK)
+        style(binding.navCategory, homeNav == HomeNav.CATEGORY)
+        style(binding.navSearch, homeNav == HomeNav.SEARCH)
+    }
+
     /** 切换列表内容源时调用：作废首页 feed 与进行中的列表协程。 */
     private fun beginListLoad(clearAdapter: Boolean): Int {
         listJob?.cancel()
@@ -282,8 +401,15 @@ class MainActivity : AppCompatActivity() {
 
     private suspend fun loadSelectedCategory(listToken: Int = listGeneration) {
         if (mode != Mode.HOME || listToken != listGeneration) return
+        if (homeNav == HomeNav.SEARCH) return
         val cat = categories.firstOrNull { it.id == selectedCategoryId }
+            ?: when (homeNav) {
+                HomeNav.RANK -> HomeNavPolicy.rankCategories(categories).firstOrNull()
+                HomeNav.CATEGORY -> HomeNavPolicy.genreCategories(categories).firstOrNull()
+                else -> HomeCategory.recommend()
+            }
             ?: HomeCategory.recommend()
+        selectedCategoryId = cat.id
         highlightCategoryChips()
         scrollSelectedChipIntoView()
         resetFeedState()
@@ -291,7 +417,6 @@ class MainActivity : AppCompatActivity() {
         val page = fetchFeedPage(cat, page = 1, offset = 0, sessionId = "")
         if (!canMutateHomeFeed(listToken, feedToken)) return
         applyFeedPage(cat, page, append = false)
-        // 首屏若条数太少填不满可视区，用户无法上滑触发续页 → 自动连拉几页
         fillFeedUntilScrollable(cat, listToken, feedToken)
     }
 
@@ -325,6 +450,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun canMutateHomeFeed(listToken: Int, feedToken: Int): Boolean {
         return mode == Mode.HOME &&
+            homeNav != HomeNav.SEARCH &&
             listToken == listGeneration &&
             feedToken == feedGeneration
     }
@@ -355,8 +481,7 @@ class MainActivity : AppCompatActivity() {
         page: com.hongguo.watch.data.model.CatalogPage,
         append: Boolean,
     ) {
-        // 硬闸：离开首页后绝不再写共用 adapter；历史/收藏行不得混入推荐
-        if (mode != Mode.HOME) return
+        if (mode != Mode.HOME || homeNav == HomeNav.SEARCH) return
         val seen = feedItems.map { it.id }.toHashSet()
         val fresh = page.items.filter { it.id !in seen }
         if (append) {
@@ -365,7 +490,6 @@ class MainActivity : AppCompatActivity() {
             feedSession = page.sessionId.ifBlank { feedSession }
             feedPage = page.page
             if (fresh.isEmpty()) {
-                // 整页重复：游标能前进则保留 hasMore 以便再试，否则停
                 feedHasMore = page.hasMore && advanced
                 return
             }
@@ -377,6 +501,7 @@ class MainActivity : AppCompatActivity() {
                     HomeRow.Item(series, rank = startRank + index + 1)
                 }
             } else {
+                // 推荐 Banner 已占首条：续页全部进列表
                 fresh.map { HomeRow.Item(it) }
             }
             adapter.appendItems(rows)
@@ -390,14 +515,26 @@ class MainActivity : AppCompatActivity() {
             feedHasMore = page.hasMore
             feedRankBase = 0
             val rows = mutableListOf<HomeRow>()
-            rows += HomeRow.Header(
-                title = cat.label,
-                subtitle = if (cat.isRank) getString(R.string.rank_header_hint) else "",
-            )
-            rows += if (cat.isRank) {
-                fresh.mapIndexed { index, series -> HomeRow.Item(series, rank = index + 1) }
+            if (cat.isRecommend) {
+                val banner = HomeNavPolicy.bannerSeries(fresh)
+                if (banner != null) {
+                    rows += HomeRow.Banner(banner, pageIndex = 0, pageCount = 3)
+                }
+                rows += HomeRow.Header(
+                    title = getString(R.string.section_for_you),
+                    showMore = true,
+                )
+                rows += HomeNavPolicy.listSeriesAfterBanner(fresh).map { HomeRow.Item(it) }
             } else {
-                fresh.map { HomeRow.Item(it) }
+                rows += HomeRow.Header(
+                    title = cat.label,
+                    subtitle = if (cat.isRank) getString(R.string.rank_header_hint) else "",
+                )
+                rows += if (cat.isRank) {
+                    fresh.mapIndexed { index, series -> HomeRow.Item(series, rank = index + 1) }
+                } else {
+                    fresh.map { HomeRow.Item(it) }
+                }
             }
             adapter.submit(rows)
             binding.seriesList.scrollToPosition(0)
@@ -408,13 +545,12 @@ class MainActivity : AppCompatActivity() {
                 cat.isRank -> getString(R.string.empty_rank)
                 else -> getString(R.string.empty_category)
             }
-            // 首屏有内容后立刻关中心圈；续页填不满时不再叠大圈
             if (!empty) hideCenterLoadingIfContentVisible()
         }
     }
 
     private fun maybeLoadMoreFeed() {
-        if (mode != Mode.HOME || lastQuery.isNotBlank()) return
+        if (mode != Mode.HOME || homeNav == HomeNav.SEARCH || lastQuery.isNotBlank()) return
         if (!feedHasMore || feedLoadingMore) return
         val lm = binding.seriesList.layoutManager as? LinearLayoutManager ?: return
         val last = lm.findLastVisibleItemPosition()
@@ -423,7 +559,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadMoreFeed() {
-        if (mode != Mode.HOME || !feedHasMore || feedLoadingMore) return
+        if (mode != Mode.HOME || homeNav == HomeNav.SEARCH || !feedHasMore || feedLoadingMore) return
         val cat = categories.firstOrNull { it.id == selectedCategoryId } ?: return
         feedLoadingMore = true
         val listToken = listGeneration
@@ -438,7 +574,6 @@ class MainActivity : AppCompatActivity() {
                 applyFeedPage(cat, page, append = true)
             } catch (_: Exception) {
                 if (canMutateHomeFeed(listToken, feedToken)) {
-                    // 续页失败不清空已有列表；短暂停止自动续页，下拉可刷新
                     feedHasMore = false
                 }
             } finally {
@@ -448,7 +583,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun selectCategory(category: HomeCategory) {
-        if (mode != Mode.HOME) return
+        if (mode != Mode.HOME || homeNav == HomeNav.SEARCH) return
         if (selectedCategoryId == category.id && lastQuery.isBlank()) return
         selectedCategoryId = category.id
         lastQuery = ""
@@ -485,11 +620,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun renderCategoryChips(items: List<HomeCategory>) {
+    private fun renderSubChips() {
+        visibleChipCategories = HomeNavPolicy.chipsFor(homeNav, categories)
         binding.categoryRow.removeAllViews()
+        if (visibleChipCategories.isEmpty()) {
+            categoryChipViews = emptyList()
+            binding.categoryScroll.visibility = View.GONE
+            return
+        }
+        binding.categoryScroll.visibility = View.VISIBLE
         val compact = WatchUi.isCompactWatch(this)
         val round = WatchUi.useRoundLayout(this)
-        // 圆屏分类条两端留白，避免首尾芯片贴圆弧被裁
         val endPad = if (round) WatchUi.dp(this, 10f) else WatchUi.dp(this, 2f)
         binding.categoryScroll.setPadding(endPad, 0, endPad, 0)
         val padH = if (compact) WatchUi.dp(this, 8f) else resources.getDimensionPixelSize(R.dimen.watch_chip_pad_h)
@@ -497,7 +638,7 @@ class MainActivity : AppCompatActivity() {
         val gap = WatchUi.dp(this, if (compact) 3f else 4f)
         val textSp = if (compact) 10f else 11f
         val chipMinH = resources.getDimensionPixelSize(R.dimen.watch_chip_min_h)
-        categoryChipViews = items.map { cat ->
+        categoryChipViews = visibleChipCategories.map { cat ->
             TextView(this).apply {
                 text = cat.label
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, textSp)
@@ -505,7 +646,6 @@ class MainActivity : AppCompatActivity() {
                 setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_primary))
                 background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_quality_chip)
                 isSelected = cat.id == selectedCategoryId
-                // 触控热区 ≥36dp，避免圆屏/粗指难点
                 minHeight = chipMinH
                 gravity = android.view.Gravity.CENTER
                 includeFontPadding = false
@@ -523,13 +663,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun highlightCategoryChips() {
         categoryChipViews.forEachIndexed { index, view ->
-            val cat = categories.getOrNull(index) ?: return@forEachIndexed
+            val cat = visibleChipCategories.getOrNull(index) ?: return@forEachIndexed
             view.isSelected = cat.id == selectedCategoryId
         }
     }
 
     private fun scrollSelectedChipIntoView() {
-        val index = categories.indexOfFirst { it.id == selectedCategoryId }
+        val index = visibleChipCategories.indexOfFirst { it.id == selectedCategoryId }
         if (index < 0) return
         val child = binding.categoryRow.getChildAt(index) ?: return
         binding.categoryScroll.post {
@@ -554,11 +694,12 @@ class MainActivity : AppCompatActivity() {
         }
         hideKeyboard()
         mode = Mode.HOME
-        highlightTabs(home = true)
+        homeNav = HomeNav.SEARCH
+        highlightBottomTabs(home = true)
+        highlightHomeNav()
         lastQuery = query
+        applyHomeChrome()
         binding.searchRow.visibility = View.VISIBLE
-        binding.categoryScroll.visibility = View.GONE
-        binding.pageSubtitle.visibility = View.GONE
         binding.emptyView.visibility = View.GONE
         applyListLoading(
             ListLoadingPolicy.choose(
@@ -600,8 +741,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun showHistory(fromSwipe: Boolean = false) {
         mode = Mode.HISTORY
-        highlightTabs(history = true)
+        highlightBottomTabs(history = true)
         hideKeyboard()
+        binding.homeNavScroll.visibility = View.GONE
         binding.searchRow.visibility = View.GONE
         binding.categoryScroll.visibility = View.GONE
         binding.pageSubtitle.visibility = View.VISIBLE
@@ -615,7 +757,6 @@ class MainActivity : AppCompatActivity() {
                 hasVisibleContent = false,
             ),
         )
-        // 立刻清空 + 作废首页 feed，避免推荐残留/异步回写；再开续播 hint
         val token = beginListLoad(clearAdapter = true)
         adapter.showResumeHint = true
         binding.seriesList.scrollToPosition(0)
@@ -635,7 +776,6 @@ class MainActivity : AppCompatActivity() {
                             id = it.seriesId,
                             title = it.seriesTitle,
                             cover = com.hongguo.watch.data.CoverUrls.normalize(it.cover),
-                            // 进度只放 description；切勿把 episodeNumber（看到第几集）写入 episodeCount
                             description = getString(R.string.progress_meta, it.episodeNumber, percent),
                             episodeCount = 0,
                             source = runCatching { SeriesSource.valueOf(it.source) }
@@ -681,8 +821,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun showFavorites(fromSwipe: Boolean = false) {
         mode = Mode.FAVORITES
-        highlightTabs(favorites = true)
+        highlightBottomTabs(favorites = true)
         hideKeyboard()
+        binding.homeNavScroll.visibility = View.GONE
         binding.searchRow.visibility = View.GONE
         binding.categoryScroll.visibility = View.GONE
         binding.pageSubtitle.visibility = View.VISIBLE
@@ -696,13 +837,11 @@ class MainActivity : AppCompatActivity() {
                 hasVisibleContent = false,
             ),
         )
-        // 立刻清空，避免首页/历史行串进收藏；收藏行不显示行内 ♡（favorited=null）
         val token = beginListLoad(clearAdapter = true)
         adapter.showResumeHint = false
         binding.seriesList.scrollToPosition(0)
         listJob = lifecycleScope.launch {
             try {
-                // 用详情校正总集数，修复历史把进度集号误写入收藏的旧数据
                 val favorites = repo.favoritesWithResolvedEpisodeTotals()
                 if (token != listGeneration || mode != Mode.FAVORITES) return@launch
                 val rows = favorites.map {
@@ -767,7 +906,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun highlightTabs(
+    private fun highlightBottomTabs(
         home: Boolean = false,
         history: Boolean = false,
         favorites: Boolean = false,

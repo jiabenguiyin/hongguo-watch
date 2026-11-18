@@ -12,6 +12,9 @@ android {
         applicationId = "com.hongguo.watch"
         minSdk = 24
         targetSdk = 34
+        // main=#18 0.4.10/#19 0.4.11；本改版错开
+        versionCode = 18
+        versionName = "0.4.12"
         versionCode = 17
         versionName = "0.4.11"
         resourceConfigurations += listOf("zh", "en")

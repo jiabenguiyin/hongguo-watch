@@ -188,133 +188,144 @@
         android:layout_height="match_parent"
         android:orientation="vertical">
 
-        <!-- 时间+电量：随控件栏显隐；顶 padding 由 PlayerChromeInsets 避让系统栏 -->
+        <!--
+          顶栏满幅：背景铺到屏幕四边（含大圆角缺口），控件内容由 PlayerChromeInsets 内缩。
+          勿给 controlsOverlay 整体 padding，否则渐变会变成悬浮圆角卡片。
+        -->
         <LinearLayout
-            android:id="@+id/playerStatusStrip"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:orientation="horizontal"
-            android:paddingHorizontal="6dp"
-            android:paddingTop="2dp"
-            android:paddingBottom="2dp">
-
-            <TextView
-                android:id="@+id/statusClock"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:contentDescription="@string/cd_toolbar_clock"
-                android:fontFamily="sans-serif-medium"
-                android:shadowColor="#CC000000"
-                android:shadowDx="0"
-                android:shadowDy="1"
-                android:shadowRadius="2"
-                android:textColor="@color/text_primary"
-                android:textSize="@dimen/watch_meta"
-                android:textStyle="bold" />
-
-            <ImageView
-                android:id="@+id/statusBatteryIcon"
-                android:layout_width="14dp"
-                android:layout_height="9dp"
-                android:layout_marginStart="6dp"
-                android:contentDescription="@null"
-                android:importantForAccessibility="no"
-                android:src="@drawable/ic_battery" />
-
-            <TextView
-                android:id="@+id/statusBatteryText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="3dp"
-                android:fontFamily="sans-serif-medium"
-                android:shadowColor="#CC000000"
-                android:shadowDx="0"
-                android:shadowDy="1"
-                android:shadowRadius="2"
-                android:textColor="@color/text_primary"
-                android:textSize="@dimen/watch_meta"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/topBar"
+            android:id="@+id/topChrome"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="@drawable/bg_control_bar_top"
-            android:gravity="center_vertical"
-            android:minHeight="@dimen/watch_top_h"
-            android:orientation="horizontal"
-            android:paddingHorizontal="2dp"
-            android:paddingTop="2dp"
-            android:paddingBottom="8dp">
+            android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/backButton"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/bg_control_button"
-                android:gravity="center"
-                android:text="@string/back"
-                android:textColor="@color/text_primary"
-                android:textSize="18sp" />
-
-            <TextView
-                android:id="@+id/playerTitle"
-                android:layout_width="0dp"
+            <!-- 时间+电量：随控件栏显隐；顶 padding 由 PlayerChromeInsets 避让系统栏 -->
+            <LinearLayout
+                android:id="@+id/playerStatusStrip"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="4dp"
-                android:layout_marginEnd="4dp"
-                android:layout_weight="1"
-                android:ellipsize="marquee"
-                android:focusable="true"
-                android:focusableInTouchMode="true"
-                android:marqueeRepeatLimit="marquee_forever"
-                android:singleLine="true"
-                android:textColor="@color/text_primary"
-                android:textSize="@dimen/watch_meta"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/qualityButton"
-                android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:background="@drawable/bg_player_pill"
                 android:gravity="center"
-                android:minWidth="44dp"
-                android:paddingHorizontal="8dp"
-                android:text="480p"
-                android:textColor="@color/text_primary"
-                android:textSize="@dimen/watch_meta" />
+                android:orientation="horizontal"
+                android:paddingHorizontal="6dp"
+                android:paddingTop="2dp"
+                android:paddingBottom="2dp">
 
-            <!-- 离线下载改由详情页发起；保留 id 以免旧布局绑定断裂 -->
-            <TextView
-                android:id="@+id/cacheButton"
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:visibility="gone"
-                android:text="@string/cache_action" />
+                <TextView
+                    android:id="@+id/statusClock"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/cd_toolbar_clock"
+                    android:fontFamily="sans-serif-medium"
+                    android:shadowColor="#CC000000"
+                    android:shadowDx="0"
+                    android:shadowDy="1"
+                    android:shadowRadius="2"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_meta"
+                    android:textStyle="bold" />
 
-            <ImageButton
-                android:id="@+id/aspectButton"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:layout_marginStart="2dp"
-                android:background="@drawable/bg_control_button"
-                android:contentDescription="@string/cd_aspect"
-                android:padding="7dp"
-                android:scaleType="centerInside"
-                android:src="@drawable/ic_aspect" />
+                <ImageView
+                    android:id="@+id/statusBatteryIcon"
+                    android:layout_width="14dp"
+                    android:layout_height="9dp"
+                    android:layout_marginStart="6dp"
+                    android:contentDescription="@null"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_battery" />
 
-            <ImageButton
-                android:id="@+id/rotateButton"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:background="@drawable/bg_control_button"
-                android:contentDescription="@string/cd_rotate"
-                android:padding="7dp"
-                android:scaleType="centerInside"
-                android:src="@drawable/ic_rotate" />
+                <TextView
+                    android:id="@+id/statusBatteryText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="3dp"
+                    android:fontFamily="sans-serif-medium"
+                    android:shadowColor="#CC000000"
+                    android:shadowDx="0"
+                    android:shadowDy="1"
+                    android:shadowRadius="2"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_meta"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/topBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:minHeight="@dimen/watch_top_h"
+                android:orientation="horizontal"
+                android:paddingHorizontal="2dp"
+                android:paddingTop="2dp"
+                android:paddingBottom="8dp">
+
+                <TextView
+                    android:id="@+id/backButton"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="@drawable/bg_control_button"
+                    android:gravity="center"
+                    android:text="@string/back"
+                    android:textColor="@color/text_primary"
+                    android:textSize="18sp" />
+
+                <TextView
+                    android:id="@+id/playerTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:layout_marginEnd="4dp"
+                    android:layout_weight="1"
+                    android:ellipsize="marquee"
+                    android:focusable="true"
+                    android:focusableInTouchMode="true"
+                    android:marqueeRepeatLimit="marquee_forever"
+                    android:singleLine="true"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_meta"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/qualityButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:background="@drawable/bg_player_pill"
+                    android:gravity="center"
+                    android:minWidth="44dp"
+                    android:paddingHorizontal="8dp"
+                    android:text="480p"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_meta" />
+
+                <!-- 离线下载改由详情页发起；保留 id 以免旧布局绑定断裂 -->
+                <TextView
+                    android:id="@+id/cacheButton"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:visibility="gone"
+                    android:text="@string/cache_action" />
+
+                <ImageButton
+                    android:id="@+id/aspectButton"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_marginStart="2dp"
+                    android:background="@drawable/bg_control_button"
+                    android:contentDescription="@string/cd_aspect"
+                    android:padding="7dp"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_aspect" />
+
+                <ImageButton
+                    android:id="@+id/rotateButton"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="@drawable/bg_control_button"
+                    android:contentDescription="@string/cd_rotate"
+                    android:padding="7dp"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_rotate" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- 中区：左侧锁定 · 点按显隐（手表习惯靠左） -->

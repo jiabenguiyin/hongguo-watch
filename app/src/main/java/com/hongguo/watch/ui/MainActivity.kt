@@ -22,6 +22,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
+import com.hongguo.watch.data.UpdateApkInstaller
 import com.hongguo.watch.data.cache.VideoCacheEntry
 import com.hongguo.watch.data.cache.VideoCacheManager
 import com.hongguo.watch.data.model.HomeCategory
@@ -177,6 +178,10 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
+        // 版本跃迁 / 安装后残留：首页恢复时按需再扫（与 Application 冷启动互补）
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { UpdateApkInstaller.cleanupAfterVersionBumpIfNeeded(this@MainActivity) }
+        }
         val round = WatchUi.useRoundLayout(this)
         if (round != lastRoundLayout) {
             applyWatchChrome()

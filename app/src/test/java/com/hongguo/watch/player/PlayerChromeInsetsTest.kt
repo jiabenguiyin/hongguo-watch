@@ -70,4 +70,19 @@ class PlayerChromeInsetsTest {
         assertEquals(28, pad.right)
         assertTrue(pad.right >= pad.left)
     }
+
+    @Test
+    fun contentInsets_keepPositiveSafePaddingForCornerDevices() {
+        // 满幅背景仍要求控件有可点安全边（CD12 Max 大圆角）
+        val pad = PlayerChromeInsets.compute(
+            edgeInsetPx = 24,
+            topFactor = 0.95f,
+            system = Insets.NONE,
+        )
+        assertEquals(24, pad.left)
+        assertEquals(24, pad.right)
+        assertEquals(kotlin.math.round(24 * 0.95f).toInt(), pad.top)
+        assertEquals(24, pad.bottom)
+        assertTrue(pad.left > 0 && pad.bottom > 0)
+    }
 }

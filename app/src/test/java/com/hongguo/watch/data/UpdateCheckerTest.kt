@@ -86,6 +86,28 @@ class UpdateCheckerTest {
         assertEquals(0, UpdateApkInstaller.clearUpdatesDirectory(dir))
     }
 
+    @Test
+    fun clearOrphansOnlyTouchesUpdateLikeNames() {
+        val cache = tmp.newFolder("cache")
+        File(cache, "hongguo-watch-0.4.30.apk").writeText("apk")
+        File(cache, "update-0.4.31.apk.part").writeText("part")
+        File(cache, "coil-image.bin").writeText("img")
+        File(cache, "random.apk").writeText("other")
+        assertEquals(2, UpdateApkInstaller.clearOrphanUpdateFiles(cache))
+        assertFalse(File(cache, "hongguo-watch-0.4.30.apk").exists())
+        assertFalse(File(cache, "update-0.4.31.apk.part").exists())
+        assertTrue(File(cache, "coil-image.bin").exists())
+        assertTrue(File(cache, "random.apk").exists())
+    }
+
+    @Test
+    fun isUpdateArtifactRecognizesApkAndPart() {
+        assertTrue(UpdateApkInstaller.isUpdateArtifactName("a.apk"))
+        assertTrue(UpdateApkInstaller.isUpdateArtifactName("a.APK"))
+        assertTrue(UpdateApkInstaller.isUpdateArtifactName("a.apk.part"))
+        assertFalse(UpdateApkInstaller.isUpdateArtifactName("notes.txt"))
+    }
+
     private fun apk(name: String, url: String, size: Long): UpdateChecker.ApkAsset {
         return UpdateChecker.ApkAsset(name = name, url = url, size = size)
     }

@@ -52,6 +52,8 @@ class MainActivity : AppCompatActivity() {
     private var categoryChipViews: List<TextView> = emptyList()
     private var visibleChipCategories: List<HomeCategory> = emptyList()
     private var lastRoundLayout: Boolean = false
+    /** 进程内首次 onResume：与 Application 冷启动清盘汇合后再决定是否 toast。 */
+    private var startupApkCleanupDone = false
 
     /** 首页分类流分页状态（推荐 / 榜单 / 题材）。 */
     private val feedItems = mutableListOf<Series>()
@@ -178,9 +180,27 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
-        // 版本跃迁 / 安装后残留：首页恢复时按需再扫（与 Application 冷启动互补）
+        // 版本跃迁 / 安装后残留：首页恢复时再扫；仅当实际删掉更新包时 toast
         lifecycleScope.launch(Dispatchers.IO) {
-            runCatching { UpdateApkInstaller.cleanupAfterVersionBumpIfNeeded(this@MainActivity) }
+            runCatching {
+                if (!startupApkCleanupDone) {
+                    // 首次：无条件扫盘（与 Application 异步清盘经同一把锁汇合）
+                    startupApkCleanupDone = true
+                    UpdateApkInstaller.cleanupOnAppStart(this@MainActivity)
+                } else {
+                    UpdateApkInstaller.cleanupAfterVersionBumpIfNeeded(this@MainActivity)
+                }
+            }
+            val shouldToast = UpdateApkInstaller.consumeDeletedToast(this@MainActivity)
+            if (shouldToast) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        R.string.update_apk_auto_deleted,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
         }
         val round = WatchUi.useRoundLayout(this)
         if (round != lastRoundLayout) {

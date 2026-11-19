@@ -38,6 +38,7 @@
         android:clickable="true"
         android:focusable="true" />
 
+    <!-- 控件隐藏时贴物理底边；勿加 bottomMargin 圆角上浮（0.4.31 回归） -->
     <ProgressBar
         android:id="@+id/miniProgress"
         style="?android:attr/progressBarStyleHorizontal"
@@ -189,8 +190,8 @@
         android:orientation="vertical">
 
         <!--
-          顶栏满幅：背景铺到屏幕四边（含大圆角缺口），控件内容由 PlayerChromeInsets 内缩。
-          勿给 controlsOverlay 整体 padding，否则渐变会变成悬浮圆角卡片。
+          顶栏满幅贴物理顶边：背景由 topChrome 铺满；安全边只写到 status/顶栏钮等命中目标。
+          勿给 controlsOverlay / topChrome 整体 padding，否则渐变内浮留缝。
         -->
         <LinearLayout
             android:id="@+id/topChrome"
@@ -358,6 +359,7 @@
                 android:focusable="true" />
         </LinearLayout>
 
+        <!-- 底栏贴物理底边；paddingBottom 由代码清零，圆角安全边只垫 bottomButtons -->
         <LinearLayout
             android:id="@+id/bottomBar"
             android:layout_width="match_parent"
@@ -365,7 +367,7 @@
             android:background="@drawable/bg_control_bar_bottom"
             android:orientation="vertical"
             android:paddingTop="8dp"
-            android:paddingBottom="4dp">
+            android:paddingBottom="0dp">
 
             <TextView
                 android:id="@+id/playerNotice"

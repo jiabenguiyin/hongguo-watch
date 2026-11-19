@@ -10,13 +10,14 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * 播放器控件栏 WindowInsets：顶栏避让 statusBars / displayCutout，
- * 并叠圆屏 / 大圆角安全边。
+ * 播放器控件栏 WindowInsets：算出 statusBars / displayCutout / 圆角安全边，
+ * 交给可点控件吃；顶/底 chrome **背景**始终贴物理屏边。
  *
- * 布局约定（满幅美学）：
- * - 视频层 / [chromeOverlay] 本身 **不加** padding，顶/底渐变背景贴屏幕边；
- * - 安全边写在 [topChrome] / [bottomBar] 的 padding 上——Android 背景仍铺满 view，
- *   只有可点控件内缩，避免大圆角下出现「悬浮圆角卡片」空隙。
+ * 布局约定：
+ * - 视频层 / [chromeOverlay] / [topChrome] / [bottomBar] **不加** 安全边 padding，
+ *   渐变背景贴绝对顶/底，不整栏内浮；
+ * - [miniProgress] 贴真底（bottomMargin=0），不随圆角边上抬；
+ * - 安全边通过 [onApplied] 只写到命中目标（状态条/顶栏钮/底栏钮等）。
  */
 object PlayerChromeInsets {
     data class Padding(
@@ -59,8 +60,8 @@ object PlayerChromeInsets {
     }
 
     /**
-     * 视频与叠层容器满幅；顶/底 chrome 背景满幅，内容吃安全边。
-     * 手势 50/50 分区仍相对 videoRoot 内容区（此时即全屏宽）。
+     * 视频与叠层 / 顶底栏容器满幅贴边；进度条贴真底。
+     * 安全边只经 [onApplied] 交给命中目标，避免整栏内浮留黑缝。
      */
     fun install(
         videoRoot: View,
@@ -72,20 +73,21 @@ object PlayerChromeInsets {
     ) {
         videoRoot.setPadding(0, 0, 0, 0)
         chromeOverlay.setPadding(0, 0, 0, 0)
-        fun applyPadding(pad: Padding) {
-            // 背景铺满；padding 只内缩子控件（status / 返回 / 选集等）
-            // topChrome 底边不垫：与 mid 区衔接；左右/顶吃安全边，背景仍满幅
-            topChrome.setPadding(pad.left, pad.top, pad.right, 0)
-            // 保留 XML 的 paddingTop（进度条上方间距），底边改为系统/圆角安全边
-            val bottomTop = bottomBar.paddingTop.coerceAtLeast(0)
-            bottomBar.setPadding(pad.left, bottomTop, pad.right, pad.bottom)
+        // 保留 XML 顶间距（进度条上方呼吸），底/左右清零——背景贴物理底边
+        val bottomTop = bottomBar.paddingTop.coerceAtLeast(0)
+        fun applyEdgeFlush() {
+            topChrome.setPadding(0, 0, 0, 0)
+            bottomBar.setPadding(0, bottomTop, 0, 0)
             miniProgress?.let { progress ->
                 val lp = progress.layoutParams as? android.widget.FrameLayout.LayoutParams
-                if (lp != null) {
-                    lp.bottomMargin = pad.bottom
+                if (lp != null && lp.bottomMargin != 0) {
+                    lp.bottomMargin = 0
                     progress.layoutParams = lp
                 }
             }
+        }
+        fun applyPadding(pad: Padding) {
+            applyEdgeFlush()
             onApplied?.invoke(pad)
         }
         ViewCompat.setOnApplyWindowInsetsListener(chromeOverlay) { v, windowInsets ->
@@ -102,7 +104,7 @@ object PlayerChromeInsets {
             )
             windowInsets
         }
-        // 首帧：尚无 inset 回调时先用圆角边距，避免顶栏贴边闪一下
+        // 首帧：尚无 inset 回调时先用圆角边距，避免顶栏控件贴边闪一下
         val edge = WatchUi.edgeInsetPx(chromeOverlay.context)
         val factor = topFactor(
             roundLayout = WatchUi.useRoundLayout(chromeOverlay.context),

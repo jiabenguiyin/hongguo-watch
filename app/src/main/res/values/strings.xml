@@ -221,6 +221,7 @@
     <string name="update_install_permission">请允许安装未知应用后再试</string>
     <string name="update_install_failed">无法启动安装：%1$s</string>
     <string name="update_check_failed">检查更新失败：%1$s</string>
+    <string name="update_apk_auto_deleted">更新包已自动删除</string>
     <string name="max_quality">清晰度上限</string>
     <string name="quality_480">480p（默认，省电）</string>
     <string name="quality_720">720p</string>

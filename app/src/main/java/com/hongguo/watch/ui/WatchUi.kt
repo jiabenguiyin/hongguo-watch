@@ -160,6 +160,8 @@ object WatchUi {
 
     fun applyImmersive(activity: Activity) {
         val window = activity.window
+        // 与 fitsSystemWindows=false 一致：内容可画入系统栏区域，由各页自行 padding。
+        // 不使用 FLAG_LAYOUT_NO_LIMITS（会打乱 inset 与刘海避让）。
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT

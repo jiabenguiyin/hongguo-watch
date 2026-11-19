@@ -12,12 +12,14 @@ import com.hongguo.watch.data.model.SeriesSource
 import com.hongguo.watch.data.model.StreamInfo
 import com.hongguo.watch.player.PlayerDiagLog
 import com.hongguo.watch.upstream.DeviceRegister
+import com.hongguo.watch.upstream.EmptyPlaybackResponseException
 import com.hongguo.watch.upstream.LadderParseResult
 import com.hongguo.watch.upstream.MobilePlayback
 import com.hongguo.watch.upstream.Rendition
 import com.hongguo.watch.upstream.RequestScope
 import com.hongguo.watch.upstream.Signer
 import com.hongguo.watch.upstream.StreamFailover
+import com.hongguo.watch.upstream.StreamLadder
 import com.hongguo.watch.upstream.VendorConstants
 import com.hongguo.watch.upstream.objects
 import com.hongguo.watch.upstream.str
@@ -28,6 +30,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap
@@ -477,11 +480,10 @@ class AppSourceClient(
         require(SERIES_ID.matches(vid)) { "无效分集 ID" }
         ensureDevice()
 
-        val device = identityQuery()
         val ladder = RequestScope.withDeadline(
             System.nanoTime() + TimeUnit.SECONDS.toNanos(12),
         ) {
-            MobilePlayback.ladder(vid, device, client, MobilePlayback.signer, clock())
+            fetchMobileLadder(vid)
         }
         val capped = maxHeight.coerceIn(240, 1080)
         val parse = ladder.parseResult().let {
@@ -576,6 +578,36 @@ class AppSourceClient(
         )
     }
 
+    /**
+     * 取流：先走 v5 mobile-model（内部已换 host）；若各 host 仍空响应，
+     * 有界刷新一次匿名设备身份后再试（对照 drama / TV 空响应恢复）。
+     */
+    private fun fetchMobileLadder(vid: String): StreamLadder {
+        ensureDevice()
+        return try {
+            MobilePlayback.ladder(vid, identityQuery(), client, MobilePlayback.signer, clock())
+        } catch (empty: EmptyPlaybackResponseException) {
+            // ladder() 已扫完候选 host；再换发一次匿名身份后重试整轮。
+            RequestScope.ensureActive()
+            PlayerDiagLog.w("mobile-model empty → refresh device once (${empty.detail})")
+            try {
+                refreshDevice()
+            } catch (registration: Exception) {
+                RequestScope.ensureActive()
+                empty.addSuppressed(registration)
+                throw empty
+            }
+            RequestScope.ensureActive()
+            try {
+                MobilePlayback.ladder(vid, identityQuery(), client, MobilePlayback.signer, clock())
+            } catch (again: IOException) {
+                RequestScope.ensureActive()
+                again.addSuppressed(empty)
+                throw again
+            }
+        }
+    }
+
     @Synchronized
     private fun ensureDevice() {
         val existingId = prefs.getString(KEY_DEVICE_ID, "").orEmpty()
@@ -586,6 +618,23 @@ class AppSourceClient(
             }
             return
         }
+        registerDeviceLocked()
+    }
+
+    /** 强制换发匿名设备身份；仅在全 host 空响应后调用一次。 */
+    @Synchronized
+    private fun refreshDevice() {
+        prefs.edit()
+            .remove(KEY_DEVICE_ID)
+            .remove(KEY_IID)
+            .remove(KEY_CDID)
+            .apply()
+        registerDeviceLocked()
+        PlayerDiagLog.i("playback device refreshed")
+    }
+
+    @Synchronized
+    private fun registerDeviceLocked() {
         val body = DeviceRegister.payload(VendorConstants.device)
         val request = Request.Builder().url(DeviceRegister.url())
         DeviceRegister.headers(body, VendorConstants.device).forEach { (k, v) -> request.header(k, v) }

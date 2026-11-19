@@ -537,7 +537,12 @@ internal class Signer(
                 "x-gorgon" to gorgon(query, body, ts, (random() * 65536).toInt()),
                 "x-helios" to helios(ts), "x-medusa" to medusa(url, body, ts, if (mobileV5) values else null),
             )
-            if (mobileV5) headers.keys.retainAll(setOf("x-khronos", "x-helios", "x-medusa"))
+            // v5 播放头精简集：khronos/helios/medusa + 请求票与 stub（对齐现行 App 族取流）。
+            if (mobileV5) {
+                headers.keys.retainAll(
+                    setOf("x-khronos", "x-helios", "x-medusa", "x-ss-req-ticket"),
+                )
+            }
             if (body != null) {
                 headers["Content-Type"] = "application/json; charset=utf-8"
                 headers["x-ss-stub"] = digest("MD5", body).hex().uppercase()

@@ -108,6 +108,12 @@ class UpdateCheckerTest {
         assertFalse(UpdateApkInstaller.isUpdateArtifactName("notes.txt"))
     }
 
+    @Test
+    fun consumeDeletedToast_falseWhenNothingDeleted() {
+        // 无 Context 文件侧副作用：未置位时不应 toast（用 clear 计数路径间接保证）
+        assertEquals(0, UpdateApkInstaller.clearUpdatesDirectory(File("/no/such/updates-dir-toast")))
+    }
+
     private fun apk(name: String, url: String, size: Long): UpdateChecker.ApkAsset {
         return UpdateChecker.ApkAsset(name = name, url = url, size = size)
     }

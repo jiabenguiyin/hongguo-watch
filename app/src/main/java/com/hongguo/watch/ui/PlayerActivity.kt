@@ -105,6 +105,8 @@ class PlayerActivity : AppCompatActivity() {
     private var userSeeking = false
     private var controlsVisible = true
     private var locked = false
+    /** 最近一次 PlayerChromeInsets 算出的安全边（只喂命中目标，不垫整栏）。 */
+    private var chromeSafePad: PlayerChromeInsets.Padding? = null
     /** 锁定且解锁钮可见（可被点按；隐藏后点空白再唤出）。 */
     private var unlockChipVisible = false
     /** 递增以作废过期的取流结果（快速切集 / 退后台）。 */
@@ -353,7 +355,7 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    /** 视频全屏；顶/底 chrome 背景满幅，控件吃 statusBars / cutout / 圆角安全边。 */
+    /** 视频全屏；顶/底 chrome 背景贴物理边，安全边只写到可点控件。 */
     private fun installPlayerChromeInsets() {
         PlayerChromeInsets.install(
             videoRoot = binding.playerRoot,
@@ -361,7 +363,10 @@ class PlayerActivity : AppCompatActivity() {
             topChrome = binding.topChrome,
             bottomBar = binding.bottomBar,
             miniProgress = binding.miniProgress,
-            onApplied = { applyRoundPlayerChrome() },
+            onApplied = { pad ->
+                chromeSafePad = pad
+                applyRoundPlayerChrome()
+            },
         )
     }
 
@@ -515,7 +520,10 @@ class PlayerActivity : AppCompatActivity() {
         gestureHandler.removeCallbacks(longPressRunnable)
     }
 
-    /** 圆盘：加大侧栏内收；锁定/解锁芯片靠左并与 midControls 左边距对齐。 */
+    /**
+     * 圆盘 / 大圆角：安全边只垫命中目标（状态条、顶栏钮、锁、底栏钮），
+     * 不垫 topChrome / bottomBar 整栏——背景与 miniProgress 贴物理边。
+     */
     private fun applyRoundPlayerChrome() {
         val side = WatchUi.sideMeterMarginPx(this)
         (binding.brightnessMeter.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
@@ -528,23 +536,42 @@ class PlayerActivity : AppCompatActivity() {
         }
         val round = WatchUi.useRoundLayout(this)
         val cornerSafe = WatchUi.needsCornerSafeInset(this)
+        val safe = chromeSafePad
         val sidePad = when {
+            safe != null -> maxOf(safe.left, safe.right)
             round -> WatchUi.edgeInsetPx(this).coerceAtLeast(WatchUi.dp(this, 14f))
             cornerSafe -> WatchUi.dp(this, 12f)
             else -> WatchUi.dp(this, 10f)
         }
-        binding.midControls.setPadding(sidePad, 0, sidePad, 0)
-        val bottomPad = when {
+        val topSafe = safe?.top ?: when {
+            round -> WatchUi.edgeInsetPx(this)
+            cornerSafe -> (WatchUi.edgeInsetPx(this) * 0.95f).roundToInt()
+            else -> WatchUi.dp(this, 8f)
+        }
+        val bottomSafe = safe?.bottom ?: when {
             round -> WatchUi.dp(this, 12f)
             cornerSafe -> WatchUi.dp(this, 10f)
             else -> WatchUi.dp(this, 8f)
         }
-        binding.bottomButtons.setPadding(
-            bottomPad,
-            binding.bottomButtons.paddingTop,
-            bottomPad,
-            binding.bottomButtons.paddingBottom,
+        // 状态条：顶/左右吃系统栏与圆角，背景仍由 topChrome 铺满
+        binding.playerStatusStrip.setPadding(
+            sidePad,
+            topSafe,
+            sidePad,
+            binding.playerStatusStrip.paddingBottom,
         )
+        binding.midControls.setPadding(sidePad, 0, sidePad, 0)
+        // 底栏按钮行：左右+底安全边；整栏容器与进度贴真底
+        binding.bottomButtons.setPadding(
+            sidePad,
+            binding.bottomButtons.paddingTop,
+            sidePad,
+            bottomSafe,
+        )
+        val timeRow = binding.timeCurrent.parent as? android.view.View
+        timeRow?.setPadding(sidePad, timeRow.paddingTop, sidePad, timeRow.paddingBottom)
+        binding.seekBar.setPadding(sidePad, binding.seekBar.paddingTop, sidePad, binding.seekBar.paddingBottom)
+        binding.playerNotice.setPadding(sidePad, binding.playerNotice.paddingTop, sidePad, binding.playerNotice.paddingBottom)
         val seasonLp = binding.seasonBanner.layoutParams as? android.widget.FrameLayout.LayoutParams
         if (seasonLp != null) {
             val h = when {
@@ -556,20 +583,19 @@ class PlayerActivity : AppCompatActivity() {
             seasonLp.marginEnd = h
             binding.seasonBanner.layoutParams = seasonLp
         }
-        // 顶/底安全边已由 topChrome / bottomBar padding 承担（背景仍满幅）。
-        // 此处只给顶栏行额外一点内边，避免返回钮贴在渐变边缘。
-        val topPad = when {
+        // 顶栏行：左右安全边（顶已由 status strip 承担）
+        val topExtra = when {
             round -> WatchUi.dp(this, 6f)
             cornerSafe -> WatchUi.dp(this, 4f)
             else -> WatchUi.dp(this, 2f)
         }
         binding.topBar.setPadding(
-            topPad,
+            maxOf(sidePad, topExtra),
             binding.topBar.paddingTop,
-            topPad,
+            maxOf(sidePad, topExtra),
             binding.topBar.paddingBottom,
         )
-        // 解锁芯片靠左：与 midControls 左 padding 对齐（叠层容器已满幅、无额外 padding）。
+        // 解锁芯片靠左：与 midControls 左 padding 对齐
         (binding.unlockButton.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
             lp.gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
             lp.marginStart = sidePad

@@ -73,7 +73,8 @@ class PlayerChromeInsetsTest {
 
     @Test
     fun contentInsets_keepPositiveSafePaddingForCornerDevices() {
-        // 满幅背景仍要求控件有可点安全边（CD12 Max 大圆角）
+        // 满幅背景仍要求控件有可点安全边（CD12 Max 大圆角）；
+        // 这些值只应写到命中目标，不垫 topChrome/bottomBar/miniProgress。
         val pad = PlayerChromeInsets.compute(
             edgeInsetPx = 24,
             topFactor = 0.95f,
@@ -84,5 +85,17 @@ class PlayerChromeInsetsTest {
         assertEquals(kotlin.math.round(24 * 0.95f).toInt(), pad.top)
         assertEquals(24, pad.bottom)
         assertTrue(pad.left > 0 && pad.bottom > 0)
+    }
+
+    @Test
+    fun bottomSafe_isIndependentOfProgressTrueBottom() {
+        // 进度条贴真底（margin=0）；底安全边只给按钮行，compute 仍返回正 bottom
+        val pad = PlayerChromeInsets.compute(
+            edgeInsetPx = 20,
+            topFactor = 0.5f,
+            system = Insets.of(0, 0, 0, 12),
+        )
+        assertEquals(20, pad.bottom)
+        assertTrue(pad.bottom > 0)
     }
 }

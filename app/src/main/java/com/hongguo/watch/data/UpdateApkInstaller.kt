@@ -27,10 +27,14 @@ object UpdateApkInstaller {
     private const val PREFS = "update_apk_installer"
     private const val KEY_PENDING_CLEANUP = "pending_cleanup"
     private const val KEY_LAST_CLEANED_VERSION = "last_cleaned_version_code"
+    private const val KEY_PENDING_DELETED_TOAST = "pending_deleted_toast"
 
     private val cleanupExecutor = Executors.newSingleThreadExecutor { r ->
         Thread(r, "update-apk-cleanup").apply { isDaemon = true }
     }
+
+    /** 串行化清盘，避免 Application 异步与首页 onResume 竞态丢掉 toast 标记。 */
+    private val cleanupLock = Any()
 
     private val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -62,19 +66,22 @@ object UpdateApkInstaller {
      * 永不抛错；删失败只打日志。
      */
     fun clearDownloadedUpdates(context: Context): Int {
-        var removed = 0
-        for (dir in candidateUpdateDirs(context)) {
-            removed += clearUpdatesDirectory(dir)
+        synchronized(cleanupLock) {
+            var removed = 0
+            for (dir in candidateUpdateDirs(context)) {
+                removed += clearUpdatesDirectory(dir)
+            }
+            removed += clearOrphanUpdateFiles(context.applicationContext.cacheDir)
+            context.applicationContext.externalCacheDir?.let {
+                removed += clearOrphanUpdateFiles(it)
+            }
+            if (removed > 0) {
+                Log.i(TAG, "cleared $removed update artifact(s)")
+                markPendingDeletedToast(context)
+            }
+            markCleaned(context, stillHasArtifacts = hasAnyUpdateArtifacts(context))
+            return removed
         }
-        removed += clearOrphanUpdateFiles(context.applicationContext.cacheDir)
-        context.applicationContext.externalCacheDir?.let {
-            removed += clearOrphanUpdateFiles(it)
-        }
-        if (removed > 0) {
-            Log.i(TAG, "cleared $removed update artifact(s)")
-        }
-        markCleaned(context, stillHasArtifacts = hasAnyUpdateArtifacts(context))
-        return removed
     }
 
     /** 任一候选目录里是否还剩 apk/part。 */
@@ -304,6 +311,7 @@ object UpdateApkInstaller {
 
     /**
      * 冷启动：无条件扫盘（覆盖安装后旧进程可能没来得及删）。
+     * 若实际删了文件，会置 [consumeDeletedToast] 标记供首页提示。
      */
     fun cleanupOnAppStart(context: Context): Int {
         return try {
@@ -311,6 +319,23 @@ object UpdateApkInstaller {
         } catch (t: Throwable) {
             Log.w(TAG, "cleanupOnAppStart failed: ${t.message}")
             0
+        }
+    }
+
+    /**
+     * 是否有「已删除更新包」待提示。消费即清零；无删除时不会置位，避免每次冷启动 toast。
+     */
+    fun consumeDeletedToast(context: Context): Boolean {
+        return try {
+            // 等正在进行的清盘写完标记，避免与 Application 异步竞态
+            synchronized(cleanupLock) {
+                val p = prefs(context.applicationContext)
+                if (!p.getBoolean(KEY_PENDING_DELETED_TOAST, false)) return false
+                p.edit().putBoolean(KEY_PENDING_DELETED_TOAST, false).apply()
+                true
+            }
+        } catch (_: Throwable) {
+            false
         }
     }
 
@@ -339,6 +364,12 @@ object UpdateApkInstaller {
     private fun markPendingCleanup(context: Context) {
         runCatching {
             prefs(context).edit().putBoolean(KEY_PENDING_CLEANUP, true).apply()
+        }
+    }
+
+    private fun markPendingDeletedToast(context: Context) {
+        runCatching {
+            prefs(context).edit().putBoolean(KEY_PENDING_DELETED_TOAST, true).apply()
         }
     }
 

@@ -34,6 +34,7 @@ import kotlinx.coroutines.launch
 
 class DetailActivity : AppCompatActivity() {
     private lateinit var binding: ActivityDetailBinding
+    private lateinit var toolbarClock: WatchToolbarClock
     private lateinit var adapter: EpisodeAdapter
     private lateinit var relatedAdapter: SeriesListAdapter
 
@@ -68,6 +69,7 @@ class DetailActivity : AppCompatActivity() {
         setContentView(binding.root)
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
         WatchUi.applySafePadding(binding.detailRoot)
+        toolbarClock = WatchToolbarClock(this, binding.toolbarClock)
 
         seriesId = intent.getStringExtra(EXTRA_SERIES_ID).orEmpty()
         seriesTitle = intent.getStringExtra(EXTRA_SERIES_TITLE).orEmpty()

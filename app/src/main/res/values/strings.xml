@@ -133,6 +133,9 @@
     <string name="cd_speed">倍速</string>
     <string name="cd_rotate">切换横竖屏</string>
     <string name="cd_aspect">画面比例</string>
+    <string name="cd_toolbar_clock">当前时间</string>
+    <string name="cd_battery">电量 %1$d%%</string>
+    <string name="cd_battery_charging">充电中 %1$d%%</string>
     <string name="rotate_portrait">竖屏</string>
     <string name="rotate_landscape">横屏</string>
     <string name="aspect_sheet_title">画面比例</string>

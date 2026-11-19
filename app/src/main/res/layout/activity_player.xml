@@ -451,6 +451,56 @@
         </LinearLayout>
     </LinearLayout>
 
+    <!-- 手表状态条：时间 + 电量；顶栏居中避免挡右侧按钮；锁定时仍可见 -->
+    <LinearLayout
+        android:id="@+id/playerStatusStrip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="6dp"
+        android:paddingVertical="3dp">
+
+        <TextView
+            android:id="@+id/statusClock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="@string/cd_toolbar_clock"
+            android:fontFamily="sans-serif-medium"
+            android:shadowColor="#CC000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="2"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta"
+            android:textStyle="bold" />
+
+        <ImageView
+            android:id="@+id/statusBatteryIcon"
+            android:layout_width="14dp"
+            android:layout_height="9dp"
+            android:layout_marginStart="6dp"
+            android:contentDescription="@null"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_battery" />
+
+        <TextView
+            android:id="@+id/statusBatteryText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="3dp"
+            android:fontFamily="sans-serif-medium"
+            android:shadowColor="#CC000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="2"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta"
+            android:textStyle="bold" />
+    </LinearLayout>
+
     <FrameLayout
         android:id="@+id/sheetScrim"
         android:layout_width="match_parent"

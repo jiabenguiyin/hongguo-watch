@@ -35,6 +35,18 @@
             android:textColor="@color/text_primary"
             android:textSize="@dimen/watch_title"
             android:textStyle="bold" />
+
+        <!-- 手表顶栏时钟：首页 / 库页共用 -->
+        <TextView
+            android:id="@+id/toolbarClock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:contentDescription="@string/cd_toolbar_clock"
+            android:fontFamily="sans-serif-medium"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta"
+            android:textStyle="bold" />
     </LinearLayout>
 
     <LinearLayout

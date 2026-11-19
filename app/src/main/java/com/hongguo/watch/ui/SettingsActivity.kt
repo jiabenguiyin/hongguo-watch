@@ -449,6 +449,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun installApk(apkFile: File) {
         runCatching {
+            // install() 内已：记 pending + 延迟清盘；失败不抛到这里以外
             UpdateApkInstaller.install(this, apkFile)
         }.onFailure { err ->
             if (err is SecurityException) {

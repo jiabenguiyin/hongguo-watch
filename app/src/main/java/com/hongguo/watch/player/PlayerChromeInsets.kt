@@ -11,7 +11,12 @@ import kotlin.math.roundToInt
 
 /**
  * 播放器控件栏 WindowInsets：顶栏避让 statusBars / displayCutout，
- * 并叠圆屏 / 大圆角安全边。视频层保持全屏，不在此加 padding。
+ * 并叠圆屏 / 大圆角安全边。
+ *
+ * 布局约定（满幅美学）：
+ * - 视频层 / [chromeOverlay] 本身 **不加** padding，顶/底渐变背景贴屏幕边；
+ * - 安全边写在 [topChrome] / [bottomBar] 的 padding 上——Android 背景仍铺满 view，
+ *   只有可点控件内缩，避免大圆角下出现「悬浮圆角卡片」空隙。
  */
 object PlayerChromeInsets {
     data class Padding(
@@ -54,18 +59,26 @@ object PlayerChromeInsets {
     }
 
     /**
-     * 仅给控件叠层加安全边；[videoRoot] 清零 padding，避免画面被额外 letterbox。
+     * 视频与叠层容器满幅；顶/底 chrome 背景满幅，内容吃安全边。
      * 手势 50/50 分区仍相对 videoRoot 内容区（此时即全屏宽）。
      */
     fun install(
         videoRoot: View,
         chromeOverlay: View,
+        topChrome: View,
+        bottomBar: View,
         miniProgress: View? = null,
         onApplied: ((Padding) -> Unit)? = null,
     ) {
         videoRoot.setPadding(0, 0, 0, 0)
+        chromeOverlay.setPadding(0, 0, 0, 0)
         fun applyPadding(pad: Padding) {
-            chromeOverlay.setPadding(pad.left, pad.top, pad.right, pad.bottom)
+            // 背景铺满；padding 只内缩子控件（status / 返回 / 选集等）
+            // topChrome 底边不垫：与 mid 区衔接；左右/顶吃安全边，背景仍满幅
+            topChrome.setPadding(pad.left, pad.top, pad.right, 0)
+            // 保留 XML 的 paddingTop（进度条上方间距），底边改为系统/圆角安全边
+            val bottomTop = bottomBar.paddingTop.coerceAtLeast(0)
+            bottomBar.setPadding(pad.left, bottomTop, pad.right, pad.bottom)
             miniProgress?.let { progress ->
                 val lp = progress.layoutParams as? android.widget.FrameLayout.LayoutParams
                 if (lp != null) {

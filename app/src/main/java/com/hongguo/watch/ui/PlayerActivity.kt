@@ -353,11 +353,13 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    /** 视频全屏；控件叠层吃 statusBars / cutout / 圆角安全边。 */
+    /** 视频全屏；顶/底 chrome 背景满幅，控件吃 statusBars / cutout / 圆角安全边。 */
     private fun installPlayerChromeInsets() {
         PlayerChromeInsets.install(
             videoRoot = binding.playerRoot,
             chromeOverlay = binding.controlsOverlay,
+            topChrome = binding.topChrome,
+            bottomBar = binding.bottomBar,
             miniProgress = binding.miniProgress,
             onApplied = { applyRoundPlayerChrome() },
         )
@@ -554,7 +556,8 @@ class PlayerActivity : AppCompatActivity() {
             seasonLp.marginEnd = h
             binding.seasonBanner.layoutParams = seasonLp
         }
-        // 圆屏 / 大圆角方屏：顶栏左右再内收，返回钮不贴圆弧
+        // 顶/底安全边已由 topChrome / bottomBar padding 承担（背景仍满幅）。
+        // 此处只给顶栏行额外一点内边，避免返回钮贴在渐变边缘。
         val topPad = when {
             round -> WatchUi.dp(this, 6f)
             cornerSafe -> WatchUi.dp(this, 4f)
@@ -566,11 +569,10 @@ class PlayerActivity : AppCompatActivity() {
             topPad,
             binding.topBar.paddingBottom,
         )
-        // 解锁芯片靠左：marginStart 与 midControls 左 padding 同值。
-        // 视频根已无 padding；再叠 controlsOverlay 左侧 inset 时，用 post 对齐可视左缘。
+        // 解锁芯片靠左：与 midControls 左 padding 对齐（叠层容器已满幅、无额外 padding）。
         (binding.unlockButton.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
             lp.gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
-            lp.marginStart = sidePad + binding.controlsOverlay.paddingLeft
+            lp.marginStart = sidePad
             lp.marginEnd = 0
             binding.unlockButton.layoutParams = lp
         }

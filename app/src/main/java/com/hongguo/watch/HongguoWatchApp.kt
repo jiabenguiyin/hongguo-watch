@@ -1,6 +1,7 @@
 package com.hongguo.watch
 
 import android.app.Application
+import android.util.Log
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
@@ -25,9 +26,10 @@ class HongguoWatchApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
-        // 覆盖安装后冷启动：清掉上次下载的更新包（已不存在则无操作）
+        // 覆盖安装后冷启动：扫 files/external/cache 下残留更新包（含 .part）
         appScope.launch(Dispatchers.IO) {
-            runCatching { UpdateApkInstaller.clearDownloadedUpdates(this@HongguoWatchApp) }
+            runCatching { UpdateApkInstaller.cleanupOnAppStart(this@HongguoWatchApp) }
+                .onFailure { Log.w("UpdateApk", "cold-start cleanup: ${it.message}") }
         }
         appScope.launch {
             WatchUi.setRoundAdaptOverride(container.settings.roundAdaptOverrideNow())

@@ -5,21 +5,32 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import androidx.core.content.FileProvider
 import com.hongguo.watch.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 将 GitHub Release APK 下载到应用私有目录，再经 FileProvider 调起系统安装。
+ * 安装成功启动后会清理残留；冷启动 / 首页恢复也会再扫一遍。
  */
 object UpdateApkInstaller {
+    private const val TAG = "UpdateApk"
     private const val DIR_NAME = "updates"
     private const val AUTHORITY_SUFFIX = ".fileprovider"
+    private const val PREFS = "update_apk_installer"
+    private const val KEY_PENDING_CLEANUP = "pending_cleanup"
+    private const val KEY_LAST_CLEANED_VERSION = "last_cleaned_version_code"
+
+    private val cleanupExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "update-apk-cleanup").apply { isDaemon = true }
+    }
 
     private val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -35,12 +46,61 @@ object UpdateApkInstaller {
         return dir
     }
 
+    /** 所有可能落下更新包的目录（files / external-files / cache）。 */
+    fun candidateUpdateDirs(context: Context): List<File> {
+        val app = context.applicationContext
+        val dirs = ArrayList<File>(4)
+        dirs.add(File(app.filesDir, DIR_NAME))
+        app.getExternalFilesDir(null)?.let { dirs.add(File(it, DIR_NAME)) }
+        dirs.add(File(app.cacheDir, DIR_NAME))
+        app.externalCacheDir?.let { dirs.add(File(it, DIR_NAME)) }
+        return dirs
+    }
+
     /**
-     * 删除 [updatesDir] 内残留安装包（含 `.part`）。
-     * 文件已不存在或目录为空时安全返回 0。
+     * 删除各 updates 目录内残留安装包（含 `.part`），以及 cache 根下的孤立 apk/part。
+     * 永不抛错；删失败只打日志。
      */
-    fun clearDownloadedUpdates(context: Context): Int =
-        clearUpdatesDirectory(updatesDir(context))
+    fun clearDownloadedUpdates(context: Context): Int {
+        var removed = 0
+        for (dir in candidateUpdateDirs(context)) {
+            removed += clearUpdatesDirectory(dir)
+        }
+        removed += clearOrphanUpdateFiles(context.applicationContext.cacheDir)
+        context.applicationContext.externalCacheDir?.let {
+            removed += clearOrphanUpdateFiles(it)
+        }
+        if (removed > 0) {
+            Log.i(TAG, "cleared $removed update artifact(s)")
+        }
+        markCleaned(context, stillHasArtifacts = hasAnyUpdateArtifacts(context))
+        return removed
+    }
+
+    /** 任一候选目录里是否还剩 apk/part。 */
+    fun hasAnyUpdateArtifacts(context: Context): Boolean {
+        for (dir in candidateUpdateDirs(context)) {
+            if (!dir.exists() || !dir.isDirectory) continue
+            val children = dir.listFiles() ?: continue
+            if (children.any { it.isFile && isUpdateArtifactName(it.name) }) return true
+        }
+        val cache = context.applicationContext.cacheDir
+        if (orphanUpdateCount(cache) > 0) return true
+        context.applicationContext.externalCacheDir?.let {
+            if (orphanUpdateCount(it) > 0) return true
+        }
+        return false
+    }
+
+    private fun orphanUpdateCount(dir: File?): Int {
+        if (dir == null || !dir.exists() || !dir.isDirectory) return 0
+        val children = dir.listFiles() ?: return 0
+        return children.count { file ->
+            file.isFile && isUpdateArtifactName(file.name) &&
+                (file.name.lowercase().contains("hongguo") ||
+                    file.name.lowercase().startsWith("update"))
+        }
+    }
 
     /** 纯文件逻辑，便于单测；只删本目录下的 apk / part，不递归。 */
     fun clearUpdatesDirectory(dir: File): Int {
@@ -49,15 +109,51 @@ object UpdateApkInstaller {
         val children = dir.listFiles() ?: return 0
         for (file in children) {
             if (!file.isFile) continue
-            val name = file.name
-            val isApkOrPart = name.endsWith(".apk", ignoreCase = true) ||
-                name.endsWith(".part", ignoreCase = true)
-            if (!isApkOrPart) continue
-            if (file.delete() || !file.exists()) {
+            if (!isUpdateArtifactName(file.name)) continue
+            if (deleteQuietly(file)) {
                 removed++
             }
         }
         return removed
+    }
+
+    /** cache 根目录里误落的更新包（非 updates/ 子目录）。 */
+    fun clearOrphanUpdateFiles(dir: File?): Int {
+        if (dir == null || !dir.exists() || !dir.isDirectory) return 0
+        var removed = 0
+        val children = dir.listFiles() ?: return 0
+        for (file in children) {
+            if (!file.isFile) continue
+            if (!isUpdateArtifactName(file.name)) continue
+            // 只清看起来像本应用更新包的名字，避免误删无关缓存
+            val lower = file.name.lowercase()
+            if (!lower.contains("hongguo") && !lower.startsWith("update")) continue
+            if (deleteQuietly(file)) {
+                removed++
+            }
+        }
+        return removed
+    }
+
+    fun isUpdateArtifactName(name: String): Boolean {
+        return name.endsWith(".apk", ignoreCase = true) ||
+            name.endsWith(".part", ignoreCase = true)
+    }
+
+    private fun deleteQuietly(file: File): Boolean {
+        return try {
+            if (!file.exists()) return true
+            if (file.delete()) return true
+            // 部分手表 ROM 上刚被安装器打开过的文件需可写后再删
+            file.setWritable(true)
+            if (file.delete()) return true
+            if (!file.exists()) return true
+            Log.w(TAG, "failed to delete ${file.absolutePath}")
+            false
+        } catch (t: Throwable) {
+            Log.w(TAG, "delete error ${file.absolutePath}: ${t.message}")
+            false
+        }
     }
 
     fun resolveLocalFile(context: Context, apkName: String?, versionName: String): File {
@@ -185,5 +281,83 @@ object UpdateApkInstaller {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(intent)
+        // 安装器已拿到 URI：立刻记待清理，并尽快删盘（再加冷启动兜底）
+        markPendingCleanup(context)
+        scheduleCleanupAfterInstall(context)
     }
+
+    /** 安装 Intent 已发出：后台立刻清一次（失败不抛）。 */
+    fun scheduleCleanupAfterInstall(context: Context) {
+        val app = context.applicationContext
+        markPendingCleanup(app)
+        cleanupExecutor.execute {
+            try {
+                // 稍等：给安装器一点打开流的时间，再删文件
+                Thread.sleep(1_500L)
+                val n = clearDownloadedUpdates(app)
+                Log.i(TAG, "post-install cleanup removed=$n")
+            } catch (t: Throwable) {
+                Log.w(TAG, "post-install cleanup failed: ${t.message}")
+            }
+        }
+    }
+
+    /**
+     * 冷启动：无条件扫盘（覆盖安装后旧进程可能没来得及删）。
+     */
+    fun cleanupOnAppStart(context: Context): Int {
+        return try {
+            clearDownloadedUpdates(context.applicationContext)
+        } catch (t: Throwable) {
+            Log.w(TAG, "cleanupOnAppStart failed: ${t.message}")
+            0
+        }
+    }
+
+    /**
+     * 首页恢复：仅在「待清理」或 versionCode 相对上次清理已变化时扫盘，
+     * 避免每次 onResume 都打盘。
+     */
+    fun cleanupAfterVersionBumpIfNeeded(context: Context): Int {
+        return try {
+            val app = context.applicationContext
+            val prefs = prefs(app)
+            val pending = prefs.getBoolean(KEY_PENDING_CLEANUP, true) // 缺省 true：旧安装无标记时也扫一次
+            val last = prefs.getInt(KEY_LAST_CLEANED_VERSION, -1)
+            val current = BuildConfig.VERSION_CODE
+            if (!pending && last == current) return 0
+            clearDownloadedUpdates(app)
+        } catch (t: Throwable) {
+            Log.w(TAG, "cleanupAfterVersionBumpIfNeeded failed: ${t.message}")
+            0
+        }
+    }
+
+    fun hasPendingCleanup(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_PENDING_CLEANUP, false)
+
+    private fun markPendingCleanup(context: Context) {
+        runCatching {
+            prefs(context).edit().putBoolean(KEY_PENDING_CLEANUP, true).apply()
+        }
+    }
+
+    private fun markCleaned(context: Context, stillHasArtifacts: Boolean) {
+        runCatching {
+            val editor = prefs(context).edit()
+            if (stillHasArtifacts) {
+                // 仍有残留：保持待清理，下次冷启动 / onResume 再试
+                editor.putBoolean(KEY_PENDING_CLEANUP, true)
+                Log.w(TAG, "update artifacts still present; pending cleanup kept")
+            } else {
+                editor.putBoolean(KEY_PENDING_CLEANUP, false)
+                    .putInt(KEY_LAST_CLEANED_VERSION, BuildConfig.VERSION_CODE)
+                Log.d(TAG, "update dirs clean @${BuildConfig.VERSION_NAME}")
+            }
+            editor.apply()
+        }
+    }
+
+    private fun prefs(context: Context) =
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 }

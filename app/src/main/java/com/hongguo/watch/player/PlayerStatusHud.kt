@@ -20,7 +20,8 @@ import com.hongguo.watch.ui.WatchToolbarClock
 
 /**
  * 播放器手表状态条：当前时间 + 电量%（充电时着色）。
- * 独立于控件栏，锁定时仍可见；TIME_TICK / BATTERY_CHANGED 生命周期内注册、离开注销。
+ * 挂在控件叠层内，随 chrome 同显隐（含锁定藏栏）；勿单独常驻画面。
+ * TIME_TICK / BATTERY_CHANGED 生命周期内注册、离开注销。
  */
 class PlayerStatusHud(
     private val activity: Activity,
@@ -43,20 +44,10 @@ class PlayerStatusHud(
 
     init {
         (activity as LifecycleOwner).lifecycle.addObserver(this)
-        strip.visibility = View.VISIBLE
         refreshBatterySticky()
     }
 
-    /** 圆屏 / 大圆角：顶边与右侧内收，避免贴圆弧。 */
-    fun applySafeMargins(marginStart: Int, marginTop: Int, marginEnd: Int) {
-        val lp = strip.layoutParams as? android.widget.FrameLayout.LayoutParams ?: return
-        lp.marginStart = marginStart
-        lp.topMargin = marginTop
-        lp.marginEnd = marginEnd
-        strip.layoutParams = lp
-    }
-
-    /** 锁定与否都保持可见（手表状态条）。 */
+    /** 与控件栏同步显隐；锁定态应由控件叠层一并隐藏。 */
     fun setVisible(visible: Boolean) {
         strip.visibility = if (visible) View.VISIBLE else View.GONE
     }

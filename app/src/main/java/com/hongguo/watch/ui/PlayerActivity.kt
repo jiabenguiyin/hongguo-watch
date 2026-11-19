@@ -46,6 +46,7 @@ import com.hongguo.watch.databinding.ActivityPlayerBinding
 import com.hongguo.watch.player.DecodePath
 import com.hongguo.watch.player.IjkPlayerEngine
 import com.hongguo.watch.player.PlaybackPowerController
+import com.hongguo.watch.player.PlayerChromeInsets
 import com.hongguo.watch.player.PlayerDiagLog
 import com.hongguo.watch.player.PlayerGestureArbiter
 import com.hongguo.watch.player.PlayerGestureZones
@@ -207,7 +208,7 @@ class PlayerActivity : AppCompatActivity() {
         landscapePreferred = savedInstanceState?.getBoolean(STATE_LANDSCAPE, false) == true
         applyRequestedOrientation(announce = false)
         WatchUi.applyImmersive(this)
-        WatchUi.applySafePadding(binding.playerRoot)
+        installPlayerChromeInsets()
 
         powerController = PlaybackPowerController(
             activity = this,
@@ -343,13 +344,23 @@ class PlayerActivity : AppCompatActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         WatchUi.applyImmersive(this)
-        WatchUi.applySafePadding(binding.playerRoot)
+        installPlayerChromeInsets()
         applyRoundPlayerChrome()
         // 横竖切换后重算 IJK / Media3 比例与缩放
         binding.playerRoot.post {
             applyVideoTransform()
             refreshEpisodeGridSpan()
         }
+    }
+
+    /** 视频全屏；控件叠层吃 statusBars / cutout / 圆角安全边。 */
+    private fun installPlayerChromeInsets() {
+        PlayerChromeInsets.install(
+            videoRoot = binding.playerRoot,
+            chromeOverlay = binding.controlsOverlay,
+            miniProgress = binding.miniProgress,
+            onApplied = { applyRoundPlayerChrome() },
+        )
     }
 
     private fun bindControls() {
@@ -555,27 +566,17 @@ class PlayerActivity : AppCompatActivity() {
             topPad,
             binding.topBar.paddingBottom,
         )
-        // 解锁芯片靠左：marginStart 与 midControls 左 padding 同值
-        // （二者均在 playerRoot 内边距内布局，勿再叠加 root.paddingLeft）
+        // 解锁芯片靠左：marginStart 与 midControls 左 padding 同值。
+        // 视频根已无 padding；再叠 controlsOverlay 左侧 inset 时，用 post 对齐可视左缘。
         (binding.unlockButton.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
             lp.gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
-            lp.marginStart = sidePad
+            lp.marginStart = sidePad + binding.controlsOverlay.paddingLeft
             lp.marginEnd = 0
             binding.unlockButton.layoutParams = lp
         }
-        // 状态条顶居中：圆屏略抬高，避开圆弧裁切
+        // 状态条随 controlsOverlay 显隐，不在此强制常驻
         if (::statusHud.isInitialized) {
-            val statusTop = when {
-                round -> WatchUi.dp(this, 8f)
-                cornerSafe -> WatchUi.dp(this, 5f)
-                else -> WatchUi.dp(this, 4f)
-            }
-            statusHud.applySafeMargins(
-                marginStart = 0,
-                marginTop = statusTop,
-                marginEnd = 0,
-            )
-            statusHud.setVisible(true)
+            statusHud.setVisible(!locked && controlsVisible)
         }
     }
 

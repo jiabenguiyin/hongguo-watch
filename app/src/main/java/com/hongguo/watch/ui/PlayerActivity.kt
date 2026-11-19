@@ -50,6 +50,7 @@ import com.hongguo.watch.player.PlayerDiagLog
 import com.hongguo.watch.player.PlayerGestureArbiter
 import com.hongguo.watch.player.PlayerGestureZones
 import com.hongguo.watch.player.PlayerKernel
+import com.hongguo.watch.player.PlayerStatusHud
 import com.hongguo.watch.player.ScreenOffPlaybackPolicy
 import com.hongguo.watch.player.VideoAspectHelper
 import com.hongguo.watch.player.VideoDataSource
@@ -111,6 +112,8 @@ class PlayerActivity : AppCompatActivity() {
     /** 设置「息屏续听」；默认关。 */
     private var screenOffContinue = ScreenOffPlaybackPolicy.DEFAULT_CONTINUE_ENABLED
     private lateinit var powerController: PlaybackPowerController
+    /** 播放器时间 + 电量；锁定时仍显示。 */
+    private lateinit var statusHud: PlayerStatusHud
 
     private val repo get() = (application as HongguoWatchApp).container.repository
     private val settings get() = (application as HongguoWatchApp).container.settings
@@ -216,6 +219,13 @@ class PlayerActivity : AppCompatActivity() {
                     saveProgress(force = true)
                 }
             },
+        )
+        statusHud = PlayerStatusHud(
+            activity = this,
+            strip = binding.playerStatusStrip,
+            timeView = binding.statusClock,
+            batteryIcon = binding.statusBatteryIcon,
+            batteryText = binding.statusBatteryText,
         )
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         seriesId = intent.getStringExtra(EXTRA_SERIES_ID).orEmpty()
@@ -552,6 +562,20 @@ class PlayerActivity : AppCompatActivity() {
             lp.marginStart = sidePad
             lp.marginEnd = 0
             binding.unlockButton.layoutParams = lp
+        }
+        // 状态条顶居中：圆屏略抬高，避开圆弧裁切
+        if (::statusHud.isInitialized) {
+            val statusTop = when {
+                round -> WatchUi.dp(this, 8f)
+                cornerSafe -> WatchUi.dp(this, 5f)
+                else -> WatchUi.dp(this, 4f)
+            }
+            statusHud.applySafeMargins(
+                marginStart = 0,
+                marginTop = statusTop,
+                marginEnd = 0,
+            )
+            statusHud.setVisible(true)
         }
     }
 

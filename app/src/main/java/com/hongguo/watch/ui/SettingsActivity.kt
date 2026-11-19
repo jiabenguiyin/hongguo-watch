@@ -40,6 +40,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class SettingsActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySettingsBinding
+    private lateinit var toolbarClock: WatchToolbarClock
     private val container get() = (application as HongguoWatchApp).container
     private var currentQuality = 480
     private var currentKernel = PlayerKernel.AUTO
@@ -56,6 +57,7 @@ class SettingsActivity : AppCompatActivity() {
         setContentView(binding.root)
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
         WatchUi.applySafePadding(binding.settingsRoot)
+        toolbarClock = WatchToolbarClock(this, binding.toolbarClock)
 
         binding.backButton.setOnClickListener { finish() }
         binding.versionLabel.text =

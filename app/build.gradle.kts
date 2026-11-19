@@ -12,9 +12,9 @@ android {
         applicationId = "com.hongguo.watch"
         minSdk = 24
         targetSdk = 34
-        // main tip 0.4.27/#34；本 PR：库页横滑隔离 + 更新包启动清理（T-72/T-73）→ 0.4.28
-        versionCode = 34
-        versionName = "0.4.28"
+        // main tip 0.4.28/#35；本 PR：顶栏时钟 + 播放器电量（T-75）→ 0.4.29
+        versionCode = 35
+        versionName = "0.4.29"
         resourceConfigurations += listOf("zh", "en")
         // 可选诊断上传端点（构建时注入）；空则走公开粘贴服务。切勿把密钥写进仓库。
         val diagUrl = (System.getenv("HG_DIAG_UPLOAD_URL") ?: "")

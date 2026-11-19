@@ -36,6 +36,8 @@ import kotlin.math.abs
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
+    /** 顶栏 HH:mm（首页 / 库页共用 brandRow）。 */
+    private lateinit var toolbarClock: WatchToolbarClock
     private lateinit var adapter: SeriesListAdapter
     private lateinit var offlineAdapter: OfflineCacheAdapter
     private var mode = Mode.HOME
@@ -82,6 +84,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         // 必须在 setContentView 之后：否则系统栏藏不住，底 Tab 会被挤扁
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
+        toolbarClock = WatchToolbarClock(this, binding.toolbarClock)
         applyWatchChrome()
 
         adapter = SeriesListAdapter(

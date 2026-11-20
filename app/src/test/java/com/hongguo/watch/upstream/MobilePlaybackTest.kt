@@ -1,8 +1,11 @@
 package com.hongguo.watch.upstream
 
+import com.hongguo.watch.data.PlaybackRoutePreference
 import java.io.IOException
+import java.io.InterruptedIOException
 import java.net.SocketTimeoutException
 import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.GZIPInputStream
 import okhttp3.OkHttpClient
@@ -325,6 +328,131 @@ class MobilePlaybackTest {
         assertEquals(attemptCount, attempts)
         assertEquals(false, (error.suppressed.single() as EmptyPlaybackResponseException).allCompatibilityModelsEmpty)
     }
+
+    @Test(timeout = 8000)
+    fun aHungPrimaryCallIsCancelledAndVideoTabGetsTheNextAttempt() {
+        val requests = mutableListOf<String>()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            requests += chain.request().method
+            if (requests.size == 1) {
+                // The first call has no response at all. OkHttp's own per-call timer must cancel it.
+                val stopWaitingAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                while (!chain.call().isCanceled() && System.nanoTime() < stopWaitingAt) {
+                    Thread.sleep(10)
+                }
+                assertTrue("route deadline did not cancel the stalled call", chain.call().isCanceled())
+                throw IOException("Canceled")
+            }
+            httpResponse(chain.request(), model(videoTab = true))
+        }.build()
+        val result = RequestScope.withDeadline(System.nanoTime() + TimeUnit.SECONDS.toNanos(12)) {
+            MobilePlayback.ladder("123", device, client, passthroughSigner, 1000)
+        }
+        assertEquals(listOf("POST", "GET"), requests)
+        assertEquals("https://example.org/video", result.renditions.single().url)
+    }
+
+    @Test
+    fun lowRemainingBudgetSkipsPostToLeaveTimeForVideoTab() {
+        val methods = mutableListOf<String>()
+        RequestScope.withDeadline(System.nanoTime() + TimeUnit.SECONDS.toNanos(2)) {
+            MobilePlayback.ladder(
+                "123",
+                device,
+                http(listOf(model(videoTab = true))) { methods += it.method },
+                passthroughSigner,
+                1000,
+            )
+        }
+        assertEquals(listOf("GET"), methods)
+    }
+
+    @Test
+    fun lowRemainingBudgetStillHonorsAnExplicitFirstChoice() {
+        val hosts = mutableListOf<String>()
+        RequestScope.withDeadline(System.nanoTime() + TimeUnit.SECONDS.toNanos(2)) {
+            MobilePlayback.ladder(
+                "123", device, http(listOf(model())) { hosts += it.url.host },
+                passthroughSigner, 1000, PlaybackRoutePreference.PRIMARY_A,
+            )
+        }
+        assertEquals(listOf(MobilePlayback.modelHosts()[1]), hosts)
+    }
+
+    @Test
+    fun cancellingPlaybackDoesNotStartAnAlternateRequest() {
+        val scope = RequestScope()
+        var attempts = 0
+        val client = http(listOf(model())) {
+            attempts++
+            scope.cancel()
+            throw InterruptedIOException("request cancelled while taking source")
+        }
+        assertThrows(InterruptedIOException::class.java) {
+            scope.run { MobilePlayback.ladder("123", device, client, passthroughSigner, 1000) }
+        }
+        assertEquals(1, attempts)
+    }
+
+    @Test
+    fun routePreferenceSelectsThatExactHostOrInterfaceFirst() {
+        val primaryPreferences = listOf(
+            PlaybackRoutePreference.PRIMARY,
+            PlaybackRoutePreference.PRIMARY_A,
+            PlaybackRoutePreference.PRIMARY_HL,
+            PlaybackRoutePreference.PRIMARY_LF,
+        )
+        for ((index, preference) in primaryPreferences.withIndex()) {
+            val hosts = mutableListOf<String>()
+            MobilePlayback.ladder(
+                "123", device, http(listOf(model())) { hosts += it.url.host },
+                passthroughSigner, 1000, preference,
+            )
+            assertEquals(listOf(MobilePlayback.modelHosts()[index]), hosts)
+        }
+        val videoTab = mutableListOf<String>()
+        MobilePlayback.ladder(
+            "123", device, http(listOf(model(videoTab = true))) { videoTab += it.method },
+            passthroughSigner, 1000, PlaybackRoutePreference.VIDEO_TAB,
+        )
+        assertEquals(listOf("GET"), videoTab)
+
+        val preload = mutableListOf<String>()
+        MobilePlayback.ladder(
+            "123", device, http(listOf("", model()), listOf(404, 200)) { preload += it.url.encodedPath },
+            passthroughSigner, 1000, PlaybackRoutePreference.PRELOAD,
+        )
+        assertEquals(
+            listOf("/novel/player/multi_video_model/preload/v1", "/novel/player/multi_video_model/player/v1"),
+            preload,
+        )
+    }
+
+    @Test
+    fun allPostHostsTemporarilyUnavailableStillTriesVideoTab() {
+        val methods = mutableListOf<String>()
+        val hostCount = MobilePlayback.modelHosts().size
+        val result = MobilePlayback.ladder(
+            "123",
+            device,
+            http(List(hostCount) { "" } + model(videoTab = true), List(hostCount) { 503 }) {
+                methods += it.method
+            },
+            passthroughSigner,
+            1000,
+        )
+        assertEquals(List(hostCount) { "POST" } + "GET", methods)
+        assertEquals("https://example.org/video", result.renditions.single().url)
+    }
+
+    private fun httpResponse(request: okhttp3.Request, body: String) =
+        Response.Builder()
+            .request(request)
+            .protocol(Protocol.HTTP_1_1)
+            .code(200)
+            .message("OK")
+            .body(body.toResponseBody())
+            .build()
 
     @Test
     fun noContentStatusAndMalformedBodyDoNotTriggerEmptyResponseFallback() {

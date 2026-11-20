@@ -24,6 +24,7 @@ class SettingsStore(private val context: Context) {
     private val roundAdaptModeKey = intPreferencesKey("round_adapt_mode")
     private val playerKernelKey = stringPreferencesKey("player_kernel")
     private val decodePathKey = stringPreferencesKey("decode_path")
+    private val playbackRouteKey = stringPreferencesKey("playback_route")
     /** 息屏/退后台续听；默认关（省电）。 */
     private val screenOffContinueKey = booleanPreferencesKey("screen_off_continue")
 
@@ -51,6 +52,9 @@ class SettingsStore(private val context: Context) {
     /** 解码路径：AUTO / HARDWARE / SOFTWARE。 */
     val decodePath: Flow<DecodePath> = context.dataStore.data.map {
         DecodePath.fromStorage(it[decodePathKey])
+    }
+    val playbackRoute: Flow<PlaybackRoutePreference> = context.dataStore.data.map {
+        PlaybackRoutePreference.fromStorage(it[playbackRouteKey])
     }
 
     suspend fun setWifiOnly(enabled: Boolean) {
@@ -86,6 +90,10 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[decodePathKey] = path.name }
     }
 
+    suspend fun setPlaybackRoute(preference: PlaybackRoutePreference) {
+        context.dataStore.edit { it[playbackRouteKey] = preference.name }
+    }
+
     suspend fun wifiOnlyNow(): Boolean = wifiOnly.first()
     suspend fun screenOffContinueNow(): Boolean = screenOffContinue.first()
     suspend fun maxQualityNow(): Int = maxQuality.first()
@@ -93,6 +101,7 @@ class SettingsStore(private val context: Context) {
     suspend fun roundAdaptModeNow(): Int = roundAdaptMode.first()
     suspend fun playerKernelNow(): PlayerKernel = playerKernel.first()
     suspend fun decodePathNow(): DecodePath = decodePath.first()
+    suspend fun playbackRouteNow(): PlaybackRoutePreference = playbackRoute.first()
 
     /** 供 WatchUi 缓存：AUTO→null，ON→true，OFF→false。 */
     suspend fun roundAdaptOverrideNow(): Boolean? = when (roundAdaptModeNow()) {

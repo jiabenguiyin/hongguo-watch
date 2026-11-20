@@ -477,16 +477,15 @@ class AppSourceClient(
         preferAvc: Boolean = true,
         avcOnly: Boolean = false,
         excludeKeys: Set<String> = emptySet(),
+        routePreference: PlaybackRoutePreference = PlaybackRoutePreference.AUTO,
     ): StreamSelection {
         require(SERIES_ID.matches(seriesId.trim())) { "无效剧集 ID" }
         val vid = episodeId.trim()
         require(SERIES_ID.matches(vid)) { "无效分集 ID" }
-        ensureDevice()
-
         val ladder = RequestScope.withDeadline(
             System.nanoTime() + TimeUnit.SECONDS.toNanos(12),
         ) {
-            fetchMobileLadder(vid)
+            fetchMobileLadder(vid, routePreference)
         }
         val capped = maxHeight.coerceIn(240, 1080)
         val parse = ladder.parseResult().let {
@@ -512,12 +511,14 @@ class AppSourceClient(
         maxHeight: Int,
         preferAvc: Boolean = true,
         avcOnly: Boolean = false,
+        routePreference: PlaybackRoutePreference = PlaybackRoutePreference.AUTO,
     ): StreamInfo = fetchStreamSelection(
         seriesId = seriesId,
         episodeId = episodeId,
         maxHeight = maxHeight,
         preferAvc = preferAvc,
         avcOnly = avcOnly,
+        routePreference = routePreference,
     ).stream
 
     /** 已有阶梯时本地再选一档（失败切流，不重新请求）。 */
@@ -585,17 +586,22 @@ class AppSourceClient(
      * 取流：先走 v5 mobile-model（内部已换 host）；若各 host 仍空响应，
      * 有界刷新一次匿名设备身份后再试（对照 drama / TV 空响应恢复）。
      */
-    private fun fetchMobileLadder(vid: String): StreamLadder {
+    private fun fetchMobileLadder(vid: String, preference: PlaybackRoutePreference): StreamLadder {
         ensureDevice()
         fun requestLadder() =
-            MobilePlayback.ladder(vid, identityQuery(), client, MobilePlayback.signer, clock()) { route ->
-                PlayerDiagLog.i("playback model fallback=$route")
+            MobilePlayback.ladder(vid, identityQuery(), client, MobilePlayback.signer, clock(), preference) { route ->
+                val label = if (preference == PlaybackRoutePreference.AUTO && route != "primary-b") "fallback" else "route"
+                PlayerDiagLog.i("playback model $label=$route preference=${preference.name}")
             }
         return try {
             requestLadder()
         } catch (empty: EmptyPlaybackResponseException) {
             if (!empty.allCompatibilityModelsEmpty) throw empty
-            RequestScope.ensureActive()
+            RequestScope.ensureWithinDeadline()
+            if (RequestScope.remainingNanos() < TimeUnit.SECONDS.toNanos(5)) {
+                PlayerDiagLog.w("playback identity refresh skipped (budget)")
+                throw empty
+            }
             if (!claimPlaybackIdentityRefresh()) {
                 PlayerDiagLog.w("playback identity refresh skipped (cooldown)")
                 throw empty
@@ -603,7 +609,9 @@ class AppSourceClient(
             // ladder() 已扫完候选 host；再换发一次匿名身份后重试整轮。
             PlayerDiagLog.w("mobile-model empty → refresh device once (${empty.detail})")
             try {
-                refreshDevice()
+                RequestScope.withDeadline(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(1500)) {
+                    refreshDevice()
+                }
             } catch (registration: Exception) {
                 RequestScope.ensureActive()
                 empty.addSuppressed(registration)

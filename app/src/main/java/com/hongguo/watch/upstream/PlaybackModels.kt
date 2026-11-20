@@ -7,16 +7,20 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** A deterministic source failure, unlike a transient transport failure. */
+/** A classified source failure from the upstream status or playback model. */
 class PlaybackSourceException(val reason: Reason, val upstreamCode: Int? = null) : IOException(
     when (reason) {
         Reason.REJECTED -> "上游拒绝播放请求（错误码 $upstreamCode），请稍后手动重试"
-        Reason.HTTP_REJECTED -> "播放请求被拒绝（HTTP $upstreamCode），请稍后手动重试"
+        Reason.HTTP_REJECTED -> when (upstreamCode) {
+            429 -> "播放请求过于频繁，请稍后重试"
+            else -> "播放请求未成功（HTTP $upstreamCode），请稍后重试"
+        }
+        Reason.TEMPORARY_UNAVAILABLE -> "播放服务暂时不可用（HTTP $upstreamCode），请稍后重试"
         Reason.INVALID_RESPONSE -> "播放信息格式异常，请稍后手动重试"
         Reason.NO_PLAYABLE_SOURCE -> "没有可播放的视频资源，可尝试其他清晰度或剧集"
     },
 ) {
-    enum class Reason { REJECTED, HTTP_REJECTED, INVALID_RESPONSE, NO_PLAYABLE_SOURCE }
+    enum class Reason { REJECTED, HTTP_REJECTED, TEMPORARY_UNAVAILABLE, INVALID_RESPONSE, NO_PLAYABLE_SOURCE }
 }
 
 /** Pure parsing only: no device registration, requests or entitlement changes. */

@@ -1,6 +1,7 @@
 package com.hongguo.watch.data
 
 import android.content.Context
+import android.os.SystemClock
 import com.hongguo.watch.data.model.CatalogPage
 import com.hongguo.watch.data.model.Episode
 import com.hongguo.watch.data.model.HomeCategory
@@ -49,6 +50,8 @@ class AppSourceClient(
     private val signer = Signer()
     private val clock: () -> Long = System::currentTimeMillis
     private val relatedCache = ConcurrentHashMap<String, List<RelatedWork>>()
+    private val playbackIdentityRefreshLock = Any()
+    private var lastPlaybackIdentityRefreshAtMs: Long? = null
 
     fun search(query: String, page: Int = 1): SearchPage {
         val keyword = query.trim()
@@ -584,11 +587,20 @@ class AppSourceClient(
      */
     private fun fetchMobileLadder(vid: String): StreamLadder {
         ensureDevice()
+        fun requestLadder() =
+            MobilePlayback.ladder(vid, identityQuery(), client, MobilePlayback.signer, clock()) { route ->
+                PlayerDiagLog.i("playback model fallback=$route")
+            }
         return try {
-            MobilePlayback.ladder(vid, identityQuery(), client, MobilePlayback.signer, clock())
+            requestLadder()
         } catch (empty: EmptyPlaybackResponseException) {
-            // ladder() 已扫完候选 host；再换发一次匿名身份后重试整轮。
+            if (!empty.allCompatibilityModelsEmpty) throw empty
             RequestScope.ensureActive()
+            if (!claimPlaybackIdentityRefresh()) {
+                PlayerDiagLog.w("playback identity refresh skipped (cooldown)")
+                throw empty
+            }
+            // ladder() 已扫完候选 host；再换发一次匿名身份后重试整轮。
             PlayerDiagLog.w("mobile-model empty → refresh device once (${empty.detail})")
             try {
                 refreshDevice()
@@ -599,12 +611,23 @@ class AppSourceClient(
             }
             RequestScope.ensureActive()
             try {
-                MobilePlayback.ladder(vid, identityQuery(), client, MobilePlayback.signer, clock())
+                requestLadder()
             } catch (again: IOException) {
                 RequestScope.ensureActive()
                 again.addSuppressed(empty)
                 throw again
             }
+        }
+    }
+
+    private fun claimPlaybackIdentityRefresh(): Boolean = synchronized(playbackIdentityRefreshLock) {
+        val now = SystemClock.elapsedRealtime()
+        val previous = lastPlaybackIdentityRefreshAtMs
+        if (previous != null && now - previous < PLAYBACK_IDENTITY_REFRESH_COOLDOWN_MS) {
+            false
+        } else {
+            lastPlaybackIdentityRefreshAtMs = now
+            true
         }
     }
 
@@ -621,14 +644,9 @@ class AppSourceClient(
         registerDeviceLocked()
     }
 
-    /** 强制换发匿名设备身份；仅在全 host 空响应后调用一次。 */
+    /** 只有登记成功才覆盖旧身份；失败时保留原身份供后续请求。 */
     @Synchronized
     private fun refreshDevice() {
-        prefs.edit()
-            .remove(KEY_DEVICE_ID)
-            .remove(KEY_IID)
-            .remove(KEY_CDID)
-            .apply()
         registerDeviceLocked()
         PlayerDiagLog.i("playback device refreshed")
     }
@@ -648,6 +666,7 @@ class AppSourceClient(
             DeviceRegister.parse(text, response.headers("Set-Cookie"))
                 ?: throw IllegalStateException("设备登记响应无效")
         }
+        RequestScope.ensureActive()
         prefs.edit()
             .putString(KEY_DEVICE_ID, registered.deviceId)
             .putString(KEY_IID, registered.installId)
@@ -866,6 +885,7 @@ class AppSourceClient(
 
     companion object {
         private const val PREFS = "app_source_device"
+        private const val PLAYBACK_IDENTITY_REFRESH_COOLDOWN_MS = 10 * 60 * 1000L
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_IID = "iid"
         private const val KEY_CDID = "cdid"

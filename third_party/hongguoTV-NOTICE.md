@@ -1,5 +1,13 @@
 # 本次同步来源
 
+2026-11-20：手表端的同档 CDN 备用与模型二次取源，参考
+[N3urda/hongguoTV](https://github.com/N3urda/hongguoTV/blob/478f00683f086f1e5d135b3bcbb443e3cbc8b252/kotlin-tv/core/src/main/kotlin/com/hongguotv/core/ContentRepository.kt#L1292)、
+[jackotom/hongguo-drama](https://github.com/jackotom/hongguo-drama/blob/6449bb1e0329dbe567ffa2db93e73d654bf36aba/src/native/app-source.js)
+和 [kuoluoss/zhenguojian](https://github.com/kuoluoss/zhenguojian/blob/0cdce6ad19f2e4496650b325c4de3bf8522bda1e/native/core/provider_hongguo_fplay.go)
+的播放模型和回包结构。手表端保留同一清晰度的备用媒体地址。仅当本集模型没有内联清晰度列表时，
+才在原线路时限内跟随一次模型明确给出的官方 HTTPS 备用地址，并核对返回的视频身份。
+不构造 `fplay` 地址或参数，备用地址不跟随重定向。
+
 2026-11-11：TV 功能与测试同步自 tsukiyo-zero/hongguoTV，提交 `49532eb2110dcbf66814ca250d43f222e7193895`（GPL-3.0）。保留原作者声明；本分支适配原包名、更新渠道及品牌。
 
 # 原生版第三方声明

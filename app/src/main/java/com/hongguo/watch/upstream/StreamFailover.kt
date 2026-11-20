@@ -21,6 +21,15 @@ object StreamFailover {
         return "$q|${CodecLabels.normalize(codec)}|$url"
     }
 
+    /** Selects a mirror of the same rendition without changing quality or codec. */
+    fun pickBackup(rendition: Rendition, excludeKeys: Set<String>): Rendition? {
+        val remaining = rendition.backupUrls.distinct().filter { url ->
+            url != rendition.url && key(rendition.copy(url = url)) !in excludeKeys
+        }
+        val url = remaining.firstOrNull() ?: return null
+        return rendition.copy(url = url, backupUrls = remaining.drop(1), isCdnBackup = true)
+    }
+
     /**
      * 在排除已失败档后选下一档。preferAvc 时先尽 AVC（含降档），再才 HEVC。
      * @return null 表示当前策略下已无候选。

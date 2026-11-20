@@ -27,6 +27,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -60,6 +61,9 @@ import com.hongguo.watch.player.VideoResizeMode
 import com.hongguo.watch.player.WatchDecodePolicy
 import com.hongguo.watch.upstream.CodecLabels
 import com.hongguo.watch.upstream.EmptyPlaybackResponseException
+import com.hongguo.watch.upstream.MediaRangeFormatException
+import com.hongguo.watch.upstream.MediaRangeHttpException
+import com.hongguo.watch.upstream.PlaybackSourceException
 import com.hongguo.watch.upstream.RemoteVideo
 import com.hongguo.watch.upstream.Rendition
 import com.hongguo.watch.upstream.StreamFailover
@@ -69,8 +73,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import tv.danmaku.ijk.media.player.IMediaPlayer
+import java.io.EOFException
 import java.io.File
 import java.io.InterruptedIOException
 import java.net.SocketException
@@ -159,6 +166,7 @@ class PlayerActivity : AppCompatActivity() {
     private val failedStreamKeys = linkedSetOf<String>()
     /** 切流 + 解码策略切换合计次数。 */
     private var playbackFailoverAttempts = 0
+    private var cdnBackupAttempts = 0
     private var activeStreamKey: String? = null
     private var activeStreamInfo: StreamInfo? = null
     private var stallWatchJob: Job? = null
@@ -1262,6 +1270,7 @@ class PlayerActivity : AppCompatActivity() {
         ladderEpisodeId = null
         failedStreamKeys.clear()
         playbackFailoverAttempts = 0
+        cdnBackupAttempts = 0
         activeStreamKey = null
         activeStreamInfo = null
         stallWatchJob?.cancel()
@@ -1304,7 +1313,7 @@ class PlayerActivity : AppCompatActivity() {
             }.getOrNull()
             if (cachedFile != null) {
                 if (token != playGeneration) return@launch
-                PlayerDiagLog.i("play from cache ep=$episodeId file=${cachedFile.name}")
+                PlayerDiagLog.i("play from cache")
                 playingFromCache = true
                 playCachedFile(cachedFile, startPositionMs, token)
                 return@launch
@@ -1388,14 +1397,18 @@ class PlayerActivity : AppCompatActivity() {
                 )
                 PlayerDiagLog.i(
                     "selected codec_id=${stream.codec.ifBlank { "?" }} " +
-                        "isAvc=${CodecLabels.isAvc(stream.codec)} isHevc=${CodecLabels.isHevc(stream.codec)} " +
-                        "key=${selection.selectedKey.take(64)}",
+                        "isAvc=${CodecLabels.isAvc(stream.codec)} isHevc=${CodecLabels.isHevc(stream.codec)}",
                 )
                 playStream(stream, startPositionMs)
             } catch (e: Exception) {
                 if (token != playGeneration) return@launch
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                PlayerDiagLog.e("fetchStream/play failed: ${e.message}", e)
+                val sourceFailure = e as? PlaybackSourceException
+                val status = mediaHttpStatus(e)
+                PlayerDiagLog.e(
+                    "fetchStream/play failed type=${e.javaClass.simpleName} " +
+                        "reason=${sourceFailure?.reason} status=${sourceFailure?.upstreamCode ?: status}",
+                )
                 if (e is NoPlayableRenditionException &&
                     e.renditions.isNotEmpty()
                 ) {
@@ -1415,6 +1428,8 @@ class PlayerActivity : AppCompatActivity() {
                         recoveryTarget,
                         startPositionMs,
                         reason = "fetch_or_select_failed",
+                        trySameQualityBackup = recoverableStream != null && isMediaReadFailure(e),
+                        httpStatus = status,
                     )
                 ) {
                     return@launch
@@ -1487,14 +1502,8 @@ class PlayerActivity : AppCompatActivity() {
         binding.playerView.visibility = View.GONE
         binding.playerView.player = null
         binding.ijkTexture.visibility = View.VISIBLE
-        val key = stream.decryptionKey
-        val remote = if (key != null) {
-            withContext(Dispatchers.IO) {
-                RemoteVideo(
-                    mediaHttp,
-                    UpstreamStreamInfo(stream.url, key, stream.quality),
-                ).prepare()
-            }
+        val remote = if (stream.decryptionKey != null || stream.isCdnBackup) {
+            prepareRemoteVideo(stream)
         } else {
             null
         }
@@ -1503,7 +1512,8 @@ class PlayerActivity : AppCompatActivity() {
             return
         }
         remoteVideo = remote
-        val engine = IjkPlayerEngine(
+        lateinit var engine: IjkPlayerEngine
+        engine = IjkPlayerEngine(
             context = this,
             textureView = binding.ijkTexture,
             softDecode = softDecodePreferred,
@@ -1548,9 +1558,17 @@ class PlayerActivity : AppCompatActivity() {
                 }
 
                 override fun onError(what: Int, extra: Int, message: String?) {
-                    if (token != playGeneration) return
+                    if (ijkEngine !== engine || (token != playGeneration && playJob?.isActive == true)) return
                     PlayerDiagLog.e(message ?: "ijk error")
-                    if (tryPlaybackFailover(stream, activePosition(), reason = "ijk_error")) return
+                    val ioFailure = what == IMediaPlayer.MEDIA_ERROR_IO ||
+                        extra == IMediaPlayer.MEDIA_ERROR_IO ||
+                        what == IMediaPlayer.MEDIA_ERROR_TIMED_OUT ||
+                        extra == IMediaPlayer.MEDIA_ERROR_TIMED_OUT
+                    if (tryPlaybackFailover(
+                            stream, activePosition(), reason = "ijk_error",
+                            trySameQualityBackup = ioFailure && remote != null,
+                        )
+                    ) return
                     binding.retryButton.visibility = View.VISIBLE
                     setLoadingIndicator(visible = false, immediate = true)
                     if (!locked) showControls(autoHide = false)
@@ -1577,6 +1595,17 @@ class PlayerActivity : AppCompatActivity() {
         setLoadingIndicator(visible = true, immediate = true)
     }
 
+    private suspend fun prepareRemoteVideo(stream: StreamInfo): RemoteVideo = withContext(Dispatchers.IO) {
+        suspendCancellableCoroutine { continuation ->
+            val remote = RemoteVideo(
+                mediaHttp,
+                UpstreamStreamInfo(stream.url, stream.decryptionKey, stream.quality, stream.isCdnBackup),
+            )
+            continuation.invokeOnCancellation { remote.close() }
+            continuation.resumeWith(runCatching { remote.prepare() }.onFailure { remote.close() })
+        }
+    }
+
     @OptIn(UnstableApi::class)
     private suspend fun playWithMedia3(stream: StreamInfo, positionMs: Long, token: Int) {
         binding.ijkTexture.visibility = View.GONE
@@ -1587,15 +1616,9 @@ class PlayerActivity : AppCompatActivity() {
             .build()
         val renderersFactory = WatchDecodePolicy.renderersFactory(this, videoCodecMode)
 
-        val key = stream.decryptionKey
         val localFile = stream.url.startsWith("file:", ignoreCase = true)
-        val exo = if (key != null) {
-            val remote = withContext(Dispatchers.IO) {
-                RemoteVideo(
-                    mediaHttp,
-                    UpstreamStreamInfo(stream.url, key, stream.quality),
-                ).prepare()
-            }
+        val exo = if (stream.decryptionKey != null || stream.isCdnBackup) {
+            val remote = prepareRemoteVideo(stream)
             if (!playerForeground || token != playGeneration) {
                 remote.close()
                 return
@@ -1718,9 +1741,10 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                if (player !== exo || (token != playGeneration && playJob?.isActive == true)) return
+                val status = mediaHttpStatus(error)
                 PlayerDiagLog.e(
-                    "player error code=${error.errorCode} msg=${error.message}",
-                    error,
+                    "player error code=${error.errorCode} status=$status cause=${error.cause?.javaClass?.simpleName}",
                 )
                 val reason = when {
                     error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED ||
@@ -1732,7 +1756,14 @@ class PlayerActivity : AppCompatActivity() {
                         "http_or_io_error"
                     else -> "player_error"
                 }
-                if (tryPlaybackFailover(stream, exo.currentPosition, reason = reason)) {
+                val tryBackup = reason == "http_or_io_error" && (
+                    isMediaReadFailure(error) ||
+                        status == null && (
+                            error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                                error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
+                            )
+                    )
+                if (tryPlaybackFailover(stream, exo.currentPosition, reason, tryBackup, status)) {
                     return
                 }
                 binding.retryButton.visibility = View.VISIBLE
@@ -1840,7 +1871,10 @@ class PlayerActivity : AppCompatActivity() {
                 "stall timeout ${StreamFailover.STALL_TIMEOUT_MS}ms " +
                     "pos=$pos anchor=$stallAnchorPositionMs codec=${stream.codec}",
             )
-            if (!tryPlaybackFailover(stream, pos, reason = "stall_timeout")) {
+            if (!tryPlaybackFailover(
+                    stream, pos, reason = "stall_timeout", trySameQualityBackup = remoteVideo != null,
+                )
+            ) {
                 binding.retryButton.visibility = View.VISIBLE
                 setLoadingIndicator(visible = false, immediate = true)
                 if (!locked) showControls(autoHide = false)
@@ -1863,7 +1897,12 @@ class PlayerActivity : AppCompatActivity() {
         stream: StreamInfo,
         positionMs: Long,
         reason: String,
+        trySameQualityBackup: Boolean = false,
+        httpStatus: Int? = null,
     ): Boolean {
+        val rejection = remoteVideo?.upstreamRejection()?.statusCode ?: httpStatus
+        if (isExplicitMediaRejection(rejection)) return false
+        if (trySameQualityBackup && tryCdnBackup(stream, positionMs, reason)) return true
         if (playbackFailoverAttempts >= StreamFailover.MAX_ATTEMPTS) {
             PlayerDiagLog.w("failover cap reached ($playbackFailoverAttempts) reason=$reason")
             return false
@@ -1918,6 +1957,47 @@ class PlayerActivity : AppCompatActivity() {
 
         return tryDecodeRecovery(stream, positionMs, reason)
     }
+
+    private fun tryCdnBackup(stream: StreamInfo, positionMs: Long, reason: String): Boolean {
+        if (playingFromCache || cdnBackupAttempts >= 2 ||
+            ladderEpisodeId != episodeIds.getOrNull(episodeIndex)
+        ) return false
+        val currentKey = activeStreamKey ?: return false
+        val current = ladderRenditions.firstOrNull {
+            it.url == stream.url && StreamFailover.key(it) == currentKey
+        } ?: return false
+        val backup = StreamFailover.pickBackup(current, failedStreamKeys) ?: return false
+        // Replace this one rung so selection retains quality and the decoder policy on retry.
+        ladderRenditions = ladderRenditions.map { if (it === current) backup else it }
+        failedStreamKeys.add(currentKey)
+        cdnBackupAttempts++
+        PlayerDiagLog.w("cdn backup[$reason] attempt=$cdnBackupAttempts quality=${current.quality}")
+        startPositionMs = positionMs.coerceAtLeast(0L)
+        loadCurrent()
+        return true
+    }
+
+    private fun mediaHttpStatus(error: Throwable): Int? =
+        generateSequence(error) { it.cause }.take(8).firstNotNullOfOrNull {
+            when (it) {
+                is HttpDataSource.InvalidResponseCodeException -> it.responseCode
+                is MediaRangeHttpException -> it.statusCode
+                else -> null
+            }
+        }
+
+    private fun isMediaReadFailure(error: Throwable): Boolean {
+        mediaHttpStatus(error)?.let { code ->
+            return code == 200 || code == 204 || code in 300..399 ||
+                code == 404 || code == 408 || code == 410 || code == 416 || code in 500..599
+        }
+        return generateSequence(error) { it.cause }.take(8).any {
+            it is MediaRangeFormatException || it is EOFException || it is InterruptedIOException ||
+                it is SocketException || it is UnknownHostException
+        }
+    }
+
+    private fun isExplicitMediaRejection(code: Int?): Boolean = code == 401 || code == 403 || code == 429
 
     /**
      * @return true 表示已发起兼容重试。
@@ -1982,7 +2062,7 @@ class PlayerActivity : AppCompatActivity() {
                 withContext(Dispatchers.IO) { DiagUploader.upload(report) }
             }
             outcome.onSuccess { result ->
-                PlayerDiagLog.i("diag uploaded via ${result.channel}: ${result.url}")
+                PlayerDiagLog.i("diag uploaded via ${result.channel}")
                 if (!isDestroyed) {
                     watchSafeDiagToast(result.url)
                 }
@@ -2222,8 +2302,9 @@ class PlayerActivity : AppCompatActivity() {
         stallWatchJob?.cancel()
         if (save) saveProgress(force = true)
         binding.playerView.player = null
-        player?.release()
+        val exo = player
         player = null
+        exo?.release()
         val ijk = ijkEngine
         ijkEngine = null
         if (ijk != null) {

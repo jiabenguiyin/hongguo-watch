@@ -5,9 +5,11 @@ import android.os.StatFs
 import android.util.Log
 import com.hongguo.watch.BuildConfig
 import com.hongguo.watch.data.model.StreamInfo
+import com.hongguo.watch.upstream.PlaybackModels
 import com.hongguo.watch.upstream.RemoteVideo
 import com.hongguo.watch.upstream.StreamInfo as UpstreamStreamInfo
 import com.hongguo.watch.upstream.VendorConstants
+import com.hongguo.watch.upstream.forCdnBackup
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -238,7 +240,8 @@ class VideoCacheManager(
     }
 
     private fun writeEncryptedStream(stream: StreamInfo, key: ByteArray, part: File) {
-        RemoteVideo(http, UpstreamStreamInfo(stream.url, key, stream.quality)).use { remote ->
+        val info = UpstreamStreamInfo(stream.url, key, stream.quality, stream.isCdnBackup)
+        RemoteVideo(http, info).use { remote ->
             remote.prepare()
             val total = remote.total
             if (total <= 0L) throw IOException("视频长度为 0")
@@ -270,6 +273,12 @@ class VideoCacheManager(
     }
 
     private fun writePlainHttp(stream: StreamInfo, part: File) {
+        val transport = if (stream.isCdnBackup) {
+            if (!PlaybackModels.isOfficialBackup(stream.url)) throw IOException("备用视频地址无效")
+            http.forCdnBackup()
+        } else {
+            http
+        }
         val request = Request.Builder()
             .url(stream.url)
             .header("User-Agent", stream.userAgent ?: VendorConstants.VIDEO_UA)
@@ -279,7 +288,7 @@ class VideoCacheManager(
             .header("Accept-Encoding", "identity")
             .get()
             .build()
-        http.newCall(request).execute().use { response ->
+        transport.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
             val body = response.body ?: throw IOException("空响应")
             val declared = body.contentLength()

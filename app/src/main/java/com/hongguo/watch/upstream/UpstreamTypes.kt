@@ -17,7 +17,12 @@ internal fun cleanUrl(s: String) =
         .replace("&amp;", "&")
         .trim()
 
-data class StreamInfo(val url: String, val key: ByteArray?, val quality: String)
+data class StreamInfo(
+    val url: String,
+    val key: ByteArray?,
+    val quality: String,
+    val isCdnBackup: Boolean = false,
+)
 
 data class Rendition(
     val quality: Int,
@@ -26,11 +31,14 @@ data class Rendition(
     val height: Int?,
     val url: String,
     val key: ByteArray?,
+    /** Alternate URLs from this exact rendition, in upstream order. */
+    val backupUrls: List<String> = emptyList(),
+    val isCdnBackup: Boolean = false,
 ) {
     val isAvc: Boolean get() = CodecLabels.isAvc(codec)
     val isHevc: Boolean get() = CodecLabels.isHevc(codec)
 
-    fun toStreamInfo() = StreamInfo(url, key, if (quality > 0) "${quality}P" else "自动")
+    fun toStreamInfo() = StreamInfo(url, key, if (quality > 0) "${quality}P" else "自动", isCdnBackup)
 }
 
 class StreamLadder(

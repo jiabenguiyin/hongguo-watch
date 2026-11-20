@@ -22,6 +22,7 @@ import com.hongguo.watch.BuildConfig
 import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
 import com.hongguo.watch.data.DiagUploader
+import com.hongguo.watch.data.PlaybackRoutePreference
 import com.hongguo.watch.data.SettingsStore
 import com.hongguo.watch.data.UpdateApkInstaller
 import com.hongguo.watch.data.UpdateChecker
@@ -45,6 +46,7 @@ class SettingsActivity : AppCompatActivity() {
     private var currentQuality = 480
     private var currentKernel = PlayerKernel.AUTO
     private var currentDecode = DecodePath.AUTO
+    private var currentRoute = PlaybackRoutePreference.AUTO
     private var roundSwitchReady = false
     private var screenOffSwitchReady = false
     private var updateChecking = false
@@ -71,9 +73,12 @@ class SettingsActivity : AppCompatActivity() {
             currentQuality = container.settings.maxQuality.first()
             currentKernel = container.settings.playerKernel.first()
             currentDecode = container.settings.decodePath.first()
+            currentRoute = container.settings.playbackRouteNow()
             refreshQualityChips()
             refreshKernelChips()
             refreshDecodeChips()
+            refreshPlaybackRouteLabel()
+            binding.playbackRouteButton.setOnClickListener { showPlaybackRouteDialog() }
             refreshVideoCacheUi()
             // 开关展示当前生效状态；AUTO 时跟 isRoundScreen
             binding.roundAdaptSwitch.isChecked = WatchUi.useRoundLayout(this@SettingsActivity)
@@ -497,6 +502,39 @@ class SettingsActivity : AppCompatActivity() {
             currentDecode = path
             refreshDecodeChips()
         }
+    }
+
+    private fun showPlaybackRouteDialog() {
+        val options = PlaybackRoutePreference.entries
+        val labels = options.map { getString(playbackRouteLabel(it)) }.toTypedArray()
+        val dialog = watchDialogBuilder()
+            .setTitle(R.string.playback_route_label)
+            .setSingleChoiceItems(labels, options.indexOf(currentRoute)) { chooser, index ->
+                chooser.dismiss()
+                val route = options[index]
+                lifecycleScope.launch {
+                    container.settings.setPlaybackRoute(route)
+                    currentRoute = route
+                    refreshPlaybackRouteLabel()
+                }
+            }
+            .setNegativeButton(R.string.update_cancel, null)
+            .create()
+        showWatchDialog(dialog)
+    }
+
+    private fun refreshPlaybackRouteLabel() {
+        binding.playbackRouteStatus.setText(playbackRouteLabel(currentRoute))
+    }
+
+    private fun playbackRouteLabel(route: PlaybackRoutePreference): Int = when (route) {
+        PlaybackRoutePreference.AUTO -> R.string.playback_route_auto
+        PlaybackRoutePreference.PRIMARY -> R.string.playback_route_primary
+        PlaybackRoutePreference.PRIMARY_A -> R.string.playback_route_primary_a
+        PlaybackRoutePreference.PRIMARY_HL -> R.string.playback_route_primary_hl
+        PlaybackRoutePreference.PRIMARY_LF -> R.string.playback_route_primary_lf
+        PlaybackRoutePreference.VIDEO_TAB -> R.string.playback_route_video_tab
+        PlaybackRoutePreference.PRELOAD -> R.string.playback_route_preload
     }
 
     private fun refreshVideoCacheUi() {

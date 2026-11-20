@@ -264,6 +264,65 @@
                         android:layout_height="0dp"
                         android:visibility="gone" />
                 </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/playbackRouteButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="?attr/selectableItemBackground"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:minHeight="48dp"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="8dp">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_settings_wifi" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:paddingVertical="4dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/playback_route_label"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_body" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/playback_route_hint"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="@dimen/watch_meta" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/playbackRouteStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:text="@string/playback_route_auto"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="@dimen/watch_meta" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:importantForAccessibility="no"
+                        android:text="@string/setting_chevron"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="16sp" />
+                </LinearLayout>
             </LinearLayout>
 
             <LinearLayout

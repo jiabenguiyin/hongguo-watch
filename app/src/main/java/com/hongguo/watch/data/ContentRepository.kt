@@ -13,7 +13,9 @@ import com.hongguo.watch.data.model.SeriesDetail
 import com.hongguo.watch.data.model.SeriesSource
 import com.hongguo.watch.data.model.StreamInfo
 import com.hongguo.watch.upstream.Rendition
+import com.hongguo.watch.upstream.RequestScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
 class ContentRepository(
@@ -83,15 +85,7 @@ class ContentRepository(
         preferAvc: Boolean = true,
         avcOnly: Boolean = false,
         maxHeight: Int? = null,
-    ): StreamInfo = withContext(Dispatchers.IO) {
-        appSource.fetchStream(
-            seriesId = seriesId,
-            episodeId = episodeId,
-            maxHeight = maxHeight ?: settings.maxQualityNow(),
-            preferAvc = preferAvc,
-            avcOnly = avcOnly,
-        )
-    }
+    ): StreamInfo = streamSelection(seriesId, episodeId, preferAvc, avcOnly, maxHeight).stream
 
     /** 取流并带回完整阶梯，供播放失败自动切流。 */
     suspend fun streamSelection(
@@ -102,14 +96,25 @@ class ContentRepository(
         maxHeight: Int? = null,
         excludeKeys: Set<String> = emptySet(),
     ): StreamSelection = withContext(Dispatchers.IO) {
-        appSource.fetchStreamSelection(
-            seriesId = seriesId,
-            episodeId = episodeId,
-            maxHeight = maxHeight ?: settings.maxQualityNow(),
-            preferAvc = preferAvc,
-            avcOnly = avcOnly,
-            excludeKeys = excludeKeys,
-        )
+        val quality = maxHeight ?: settings.maxQualityNow()
+        val route = settings.playbackRouteNow()
+        suspendCancellableCoroutine { continuation ->
+            val request = RequestScope()
+            continuation.invokeOnCancellation { request.cancel() }
+            continuation.resumeWith(runCatching {
+                request.run {
+                    appSource.fetchStreamSelection(
+                        seriesId = seriesId,
+                        episodeId = episodeId,
+                        maxHeight = quality,
+                        preferAvc = preferAvc,
+                        avcOnly = avcOnly,
+                        excludeKeys = excludeKeys,
+                        routePreference = route,
+                    )
+                }
+            })
+        }
     }
 
     /** 已有阶梯时本地再选（不联网）。 */

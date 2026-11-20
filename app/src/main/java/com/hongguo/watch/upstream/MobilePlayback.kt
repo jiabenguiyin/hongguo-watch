@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hongguo.watch.upstream
 
+import com.hongguo.watch.data.PlaybackRoutePreference
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.net.SocketTimeoutException
 import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPOutputStream
 import okhttp3.CookieJar
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -31,76 +34,105 @@ internal object MobilePlayback {
         MobileSignedRequest(request.url, request.headers)
     }
 
-    /** Primary + PlayRetryPlan hosts; empty HTTP 200 is a known recoverable rejection. */
-    internal fun modelHosts(): List<String> {
-        val primary = "api5-normal-sinfonlineb.fqnovel.com"
-        return (listOf(primary) + PlayRetryPlan.hosts).distinct()
+    private enum class Route(
+        val preference: PlaybackRoutePreference,
+        val tag: String,
+        val timeoutMs: Long,
+        val hostIndex: Int? = null,
+    ) {
+        PRIMARY(PlaybackRoutePreference.PRIMARY, "primary-b", 2500, 0),
+        PRIMARY_A(PlaybackRoutePreference.PRIMARY_A, "primary-a", 1250, 1),
+        PRIMARY_HL(PlaybackRoutePreference.PRIMARY_HL, "primary-hl", 1250, 2),
+        PRIMARY_LF(PlaybackRoutePreference.PRIMARY_LF, "primary-lf", 1250, 3),
+        VIDEO_TAB(PlaybackRoutePreference.VIDEO_TAB, "video-tab", 3000),
+        PRELOAD(PlaybackRoutePreference.PRELOAD, "preload", 1750),
     }
+
+    internal fun modelHosts() = PlayRetryPlan.hosts
 
     fun ladder(id: String, device: Map<String, String>, http: OkHttpClient,
                signer: MobilePlaybackSigner, now: Long,
-               onFallback: (String) -> Unit = {}): StreamLadder {
+               preference: PlaybackRoutePreference = PlaybackRoutePreference.AUTO,
+               onRoute: (String) -> Unit = {}): StreamLadder {
         require(id.matches(Regex("[0-9]{1,30}")))
-        RequestScope.ensureActive()
+        RequestScope.ensureWithinDeadline()
         val hosts = modelHosts()
+        val pending = ArrayDeque(Route.entries)
+        val preferred = Route.entries.firstOrNull { it.preference == preference }
+        if (preferred != null) {
+            pending.remove(preferred)
+            pending.addFirst(preferred)
+        }
         var lastTransient: IOException? = null
-        val emptyHosts = ArrayList<String>(hosts.size)
-        for ((attempt, host) in hosts.withIndex()) {
-            RequestScope.ensureActive()
-            try {
-                return ladderOnHost(host, id, device, http, signer, now + attempt)
-            } catch (e: EmptyPlaybackResponseException) {
-                emptyHosts += PlayRetryPlan.tag(host)
-            } catch (e: IOException) {
-                if (!PlayRetryPlan.temporary(e)) throw e
-                lastTransient = e
+        val emptyRoutes = linkedMapOf<Route, EmptyPlaybackResponseException>()
+        var attempt = 0
+        while (pending.isNotEmpty()) {
+            RequestScope.ensureWithinDeadline()
+            val route = pending.removeFirst()
+            if (route == Route.PRELOAD && preferred != Route.PRELOAD && Route.VIDEO_TAB !in emptyRoutes) {
+                continue
             }
-        }
-        var videoTabEmpty: EmptyPlaybackResponseException? = null
-        var preloadEmpty: EmptyPlaybackResponseException? = null
-        if (emptyHosts.isNotEmpty()) {
-            RequestScope.ensureActive()
+            val start = System.nanoTime()
+            val remaining = RequestScope.remainingNanos(start)
+            val firstChoice = route == preferred && attempt == 0
+            val reserve = if (Route.VIDEO_TAB in pending) {
+                // Leave room for the known backup, but still try an explicit first choice
+                // if device registration already took most of the overall budget.
+                val backupBudget = TimeUnit.MILLISECONDS.toNanos(Route.VIDEO_TAB.timeoutMs + 100)
+                if (firstChoice) minOf(backupBudget, remaining / 2) else backupBudget
+            } else {
+                0L
+            }
+            val attemptMs = if (firstChoice && route.hostIndex != null) Route.PRIMARY.timeoutMs else route.timeoutMs
+            val budget = minOf(TimeUnit.MILLISECONDS.toNanos(attemptMs), remaining - reserve)
+            if (budget <= 0L) {
+                if (lastTransient == null) lastTransient = PlaybackRouteTimeoutException()
+                continue
+            }
+            val routeDeadline = start + budget
+            val ticket = now + attempt++
             try {
-                return ladderOnVideoTab(id, device, http, signer, now + hosts.size).also {
-                    onFallback("video-tab")
+                val ladder = if (route == Route.VIDEO_TAB) {
+                    ladderOnVideoTab(id, device, http, signer, ticket, routeDeadline)
+                } else {
+                    ladderOnHost(
+                        host = hosts[route.hostIndex ?: 0],
+                        id = id,
+                        device = device,
+                        http = http,
+                        signer = signer,
+                        now = ticket,
+                        routeDeadline = routeDeadline,
+                        preload = route == Route.PRELOAD,
+                    )
                 }
+                onRoute(route.tag)
+                return ladder
             } catch (e: EmptyPlaybackResponseException) {
-                videoTabEmpty = e
+                emptyRoutes[route] = e
             } catch (e: IOException) {
-                if (!PlayRetryPlan.temporary(e)) throw e
+                RequestScope.ensureWithinDeadline()
+                val unsupportedPreload = route == Route.PRELOAD && e is PlaybackSourceException &&
+                    e.reason == PlaybackSourceException.Reason.HTTP_REJECTED &&
+                    e.upstreamCode in listOf(404, 405)
+                if (!PlayRetryPlan.temporary(e) && !unsupportedPreload) throw e
                 lastTransient = e
+                if (route.hostIndex != null && e is SocketTimeoutException && pending.remove(Route.VIDEO_TAB)) {
+                    // Don't spend the next attempt on a similar POST after a hung route.
+                    pending.addFirst(Route.VIDEO_TAB)
+                }
             }
         }
-        if (videoTabEmpty != null) {
-            RequestScope.ensureActive()
-            try {
-                return ladderOnHost(
-                    host = hosts.first(),
-                    id = id,
-                    device = device,
-                    http = http,
-                    signer = signer,
-                    now = now + hosts.size + 1,
-                    path = "/novel/player/multi_video_model/preload/v1",
-                    scene = "preload",
-                ).also { onFallback("preload") }
-            } catch (e: EmptyPlaybackResponseException) {
-                preloadEmpty = e
-            } catch (e: IOException) {
-                if (!PlayRetryPlan.temporary(e)) throw e
-                lastTransient = e
-            }
-        }
-        val emptyFailure = if (emptyHosts.isEmpty()) null else {
+        val emptyFailure = if (emptyRoutes.isEmpty()) null else {
             val detail = buildString {
-                append("stage=mobile-model empty_hosts=").append(emptyHosts.joinToString(","))
-                videoTabEmpty?.detail?.let { append(" video_tab=[$it]") }
-                preloadEmpty?.detail?.let { append(" preload=[$it]") }
+                val emptyHosts = emptyRoutes.keys.mapNotNull { it.hostIndex?.let(hosts::get) }
+                append("stage=mobile-model empty_hosts=").append(emptyHosts.joinToString(",") { PlayRetryPlan.tag(it) })
+                emptyRoutes[Route.VIDEO_TAB]?.detail?.let { append(" video_tab=[$it]") }
+                emptyRoutes[Route.PRELOAD]?.detail?.let { append(" preload=[$it]") }
             }
             EmptyPlaybackResponseException(
                 detail,
-                allCompatibilityModelsEmpty =
-                    emptyHosts.size == hosts.size && videoTabEmpty != null && preloadEmpty != null,
+                allCompatibilityModelsEmpty = emptyRoutes.size == Route.entries.size,
             )
         }
         lastTransient?.let { failure ->
@@ -117,9 +149,10 @@ internal object MobilePlayback {
         http: OkHttpClient,
         signer: MobilePlaybackSigner,
         now: Long,
-        path: String = "/novel/player/multi_video_model/player/v1",
-        scene: String = "player",
+        routeDeadline: Long,
+        preload: Boolean,
     ): StreamLadder {
+        val scene = if (preload) "preload" else "player"
         val query = linkedMapOf(
             "aid" to "8662",
             "app_name" to "novelread",
@@ -135,7 +168,7 @@ internal object MobilePlayback {
             "device_id" to device.getValue("device_id"),
             "_rticket" to now.toString(),
         )
-        val url = "https://$host$path"
+        val url = "https://$host/novel/player/multi_video_model/$scene/v1"
             .toHttpUrl().newBuilder().apply { query.forEach { (k, v) -> addQueryParameter(k, v) } }.build()
         // TV uses platform decoders, not the official app's bytevc2 decoder.
         // Level 3 can return only bytevc2; level 1 negotiates compatible renditions.
@@ -161,8 +194,8 @@ internal object MobilePlayback {
         RequestScope.ensureActive()
         request.post(bytes.toRequestBody("application/json; charset=utf-8".toMediaType()))
         val transport = http.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
-        return RequestScope.execute(transport.newCall(request.build())) { response ->
-            val stage = if (scene == "preload") "preload" else "mobile-model"
+        return RequestScope.execute(transport.newCall(request.build()), routeDeadline) { response ->
+            val stage = if (preload) "preload" else "mobile-model"
             val data = modelData(response, stage, host)
             val entries = data.optJSONObject("1004") ?: data
             val model = PlaybackModels.objectValue(entries.optJSONObject(id)?.opt("video_model"))
@@ -181,6 +214,7 @@ internal object MobilePlayback {
         http: OkHttpClient,
         signer: MobilePlaybackSigner,
         now: Long,
+        routeDeadline: Long,
     ): StreamLadder {
         val query = linkedMapOf<String, String>().apply {
             putAll(VendorConstants.device)
@@ -218,7 +252,7 @@ internal object MobilePlayback {
         signed.headers.forEach { (key, value) -> request.header(key, value) }
         request.get()
         val transport = http.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
-        return RequestScope.execute(transport.newCall(request.build())) { response ->
+        return RequestScope.execute(transport.newCall(request.build()), routeDeadline) { response ->
             val data = modelData(response, "video-tab", PlayRetryPlan.hosts.first())
             val entries = data.optJSONObject("video_model_data") ?: data
             val model = PlaybackModels.model(entries, id)

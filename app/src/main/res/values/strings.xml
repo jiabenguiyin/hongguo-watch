@@ -105,6 +105,15 @@
     <string name="setting_decode_status_sw">软解优先</string>
     <string name="setting_quality_status">%1$dp</string>
     <string name="setting_quality_adaptive">自适应（省流）</string>
+    <string name="playback_route_label">播放线路</string>
+    <string name="playback_route_hint">超时或空响应时自动换线</string>
+    <string name="playback_route_auto">自动（推荐）</string>
+    <string name="playback_route_primary">主线路 1 优先</string>
+    <string name="playback_route_primary_a">主线路 2 优先</string>
+    <string name="playback_route_primary_hl">主线路 3 优先</string>
+    <string name="playback_route_primary_lf">主线路 4 优先</string>
+    <string name="playback_route_video_tab">兼容线路优先</string>
+    <string name="playback_route_preload">旧版线路优先</string>
     <string name="setting_version_status">当前 v%1$s</string>
     <string name="setting_diag_status">上传日志</string>
     <string name="setting_chevron">›</string>

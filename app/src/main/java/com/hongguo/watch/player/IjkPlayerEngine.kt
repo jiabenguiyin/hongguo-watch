@@ -50,7 +50,7 @@ class IjkPlayerEngine(
         positionMs: Long,
         speed: Float,
     ) {
-        releaseInternal(keepRemote = false)
+        release()
         released.set(false)
         firstFrameNotified = false
         videoWidth = 0
@@ -176,21 +176,16 @@ class IjkPlayerEngine(
     }
 
     fun release() {
-        releaseInternal(keepRemote = false)
-    }
-
-    private fun releaseInternal(keepRemote: Boolean) {
         released.set(true)
+        // Cancel outstanding HTTP reads before native player teardown waits for the reader.
+        remote?.close()
+        remote = null
         runCatching { player?.stop() }
         runCatching { player?.reset() }
         runCatching { player?.release() }
         player = null
         surface?.release()
         surface = null
-        if (!keepRemote) {
-            remote?.close()
-            remote = null
-        }
     }
 
     private fun bindSurface(ijk: IjkMediaPlayer) {

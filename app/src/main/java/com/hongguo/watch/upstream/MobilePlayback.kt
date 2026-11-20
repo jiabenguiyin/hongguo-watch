@@ -4,8 +4,12 @@ package com.hongguo.watch.upstream
 import com.hongguo.watch.data.PlaybackRoutePreference
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InterruptedIOException
+import java.net.SocketException
 import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.security.MessageDigest
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPOutputStream
 import okhttp3.CookieJar
@@ -23,6 +27,15 @@ internal data class MobileSignedRequest(val url: String, val headers: Map<String
 internal fun interface MobilePlaybackSigner {
     fun sign(url: String, body: ByteArray?, device: Map<String, String>): MobileSignedRequest
 }
+
+/** Safe for diagnostic uploads: no request URLs, identifiers, or upstream response body. */
+internal data class PlaybackRouteAttempt(
+    val route: String,
+    val outcome: String,
+    val elapsedMs: Long,
+    val remainingMs: Long?,
+    val code: Int? = null,
+)
 
 internal object MobilePlayback {
     private val v5Signer = Signer(mobileV5 = true)
@@ -53,6 +66,7 @@ internal object MobilePlayback {
     fun ladder(id: String, device: Map<String, String>, http: OkHttpClient,
                signer: MobilePlaybackSigner, now: Long,
                preference: PlaybackRoutePreference = PlaybackRoutePreference.AUTO,
+               onAttempt: (PlaybackRouteAttempt) -> Unit = {},
                onRoute: (String) -> Unit = {}): StreamLadder {
         require(id.matches(Regex("[0-9]{1,30}")))
         RequestScope.ensureWithinDeadline()
@@ -65,14 +79,32 @@ internal object MobilePlayback {
         }
         var lastTransient: IOException? = null
         val emptyRoutes = linkedMapOf<Route, EmptyPlaybackResponseException>()
+        var videoTabCanFallBack = false
+        var followupAvailable = true
+        val claimFollowup = {
+            followupAvailable.also { followupAvailable = false }
+        }
         var attempt = 0
+        fun report(route: Route, outcome: String, start: Long, code: Int? = null) {
+            val finished = System.nanoTime()
+            val remaining = RequestScope.remainingNanos(finished)
+            onAttempt(PlaybackRouteAttempt(
+                route.tag,
+                outcome,
+                TimeUnit.NANOSECONDS.toMillis(finished - start),
+                remaining.takeUnless { it == Long.MAX_VALUE }
+                    ?.let { TimeUnit.NANOSECONDS.toMillis(it.coerceAtLeast(0)) },
+                code,
+            ))
+        }
         while (pending.isNotEmpty()) {
             RequestScope.ensureWithinDeadline()
             val route = pending.removeFirst()
-            if (route == Route.PRELOAD && preferred != Route.PRELOAD && Route.VIDEO_TAB !in emptyRoutes) {
+            val start = System.nanoTime()
+            if (route == Route.PRELOAD && preferred != Route.PRELOAD && !videoTabCanFallBack) {
+                report(route, "skipped", start)
                 continue
             }
-            val start = System.nanoTime()
             val remaining = RequestScope.remainingNanos(start)
             val firstChoice = route == preferred && attempt == 0
             val reserve = if (Route.VIDEO_TAB in pending) {
@@ -86,6 +118,7 @@ internal object MobilePlayback {
             val attemptMs = if (firstChoice && route.hostIndex != null) Route.PRIMARY.timeoutMs else route.timeoutMs
             val budget = minOf(TimeUnit.MILLISECONDS.toNanos(attemptMs), remaining - reserve)
             if (budget <= 0L) {
+                report(route, "budget", start)
                 if (lastTransient == null) lastTransient = PlaybackRouteTimeoutException()
                 continue
             }
@@ -93,7 +126,7 @@ internal object MobilePlayback {
             val ticket = now + attempt++
             try {
                 val ladder = if (route == Route.VIDEO_TAB) {
-                    ladderOnVideoTab(id, device, http, signer, ticket, routeDeadline)
+                    ladderOnVideoTab(id, device, http, signer, ticket, routeDeadline, claimFollowup)
                 } else {
                     ladderOnHost(
                         host = hosts[route.hostIndex ?: 0],
@@ -104,21 +137,36 @@ internal object MobilePlayback {
                         now = ticket,
                         routeDeadline = routeDeadline,
                         preload = route == Route.PRELOAD,
+                        claimFollowup = claimFollowup,
                     )
                 }
+                report(route, "ok", start, 200)
                 onRoute(route.tag)
                 return ladder
             } catch (e: EmptyPlaybackResponseException) {
                 emptyRoutes[route] = e
+                report(route, "empty", start, 200)
+                if (route == Route.VIDEO_TAB) videoTabCanFallBack = true
+                if (preferred == null && route == Route.PRIMARY && pending.remove(Route.VIDEO_TAB)) {
+                    // Try a different endpoint before another mirror of the empty primary response.
+                    pending.addFirst(Route.VIDEO_TAB)
+                }
             } catch (e: IOException) {
+                report(route, outcome(e), start, (e as? PlaybackSourceException)?.upstreamCode)
                 RequestScope.ensureWithinDeadline()
-                val unsupportedPreload = route == Route.PRELOAD && e is PlaybackSourceException &&
-                    e.reason == PlaybackSourceException.Reason.HTTP_REJECTED &&
-                    e.upstreamCode in listOf(404, 405)
-                if (!PlayRetryPlan.temporary(e) && !unsupportedPreload) throw e
+                val routeUnavailable = e is PlaybackSourceException && when (e.reason) {
+                    PlaybackSourceException.Reason.NO_CONTENT,
+                    PlaybackSourceException.Reason.NO_PLAYABLE_SOURCE -> true
+                    PlaybackSourceException.Reason.HTTP_REJECTED -> e.upstreamCode == 404 || e.upstreamCode == 405
+                    else -> false
+                }
+                if (!PlayRetryPlan.temporary(e) && !routeUnavailable) throw e
                 lastTransient = e
-                if (route.hostIndex != null && e is SocketTimeoutException && pending.remove(Route.VIDEO_TAB)) {
-                    // Don't spend the next attempt on a similar POST after a hung route.
+                if (route == Route.VIDEO_TAB) videoTabCanFallBack = true
+                if (route.hostIndex != null && (e is SocketTimeoutException || routeUnavailable) &&
+                    pending.remove(Route.VIDEO_TAB)
+                ) {
+                    // Try a different endpoint before another mirror of a timed out/unusable POST.
                     pending.addFirst(Route.VIDEO_TAB)
                 }
             }
@@ -142,6 +190,15 @@ internal object MobilePlayback {
         throw emptyFailure ?: IOException("播放服务暂时不可用，请稍后重试")
     }
 
+    private fun outcome(error: IOException): String = when (error) {
+        is PlaybackSourceException -> error.reason.name.lowercase(Locale.ROOT)
+        is SocketTimeoutException -> "timeout"
+        is UnknownHostException -> "dns"
+        is SocketException -> "socket"
+        is InterruptedIOException -> "interrupted"
+        else -> "io"
+    }
+
     private fun ladderOnHost(
         host: String,
         id: String,
@@ -151,6 +208,7 @@ internal object MobilePlayback {
         now: Long,
         routeDeadline: Long,
         preload: Boolean,
+        claimFollowup: () -> Boolean,
     ): StreamLadder {
         val scene = if (preload) "preload" else "player"
         val query = linkedMapOf(
@@ -198,13 +256,13 @@ internal object MobilePlayback {
             val stage = if (preload) "preload" else "mobile-model"
             val data = modelData(response, stage, host)
             val entries = data.optJSONObject("1004") ?: data
-            val model = PlaybackModels.objectValue(entries.optJSONObject(id)?.opt("video_model"))
-                ?: throw PlaybackSourceException(PlaybackSourceException.Reason.NO_PLAYABLE_SOURCE)
-            val parsed = PlaybackModels.parseLadder(model)
-            if (parsed.accepted.isEmpty()) {
+            val entry = entries.optJSONObject(id)
+            val model = PlaybackModels.objectValue(entry?.opt("video_model"))
+            PlaybackModels.checkStatus(entries, entry, model)
+            if (model == null) {
                 throw PlaybackSourceException(PlaybackSourceException.Reason.NO_PLAYABLE_SOURCE)
             }
-            StreamLadder(parsed.accepted, parsed.diag)
+            ladderFromModel(model, http, routeDeadline, id, claimFollowup)
         }
     }
 
@@ -215,6 +273,7 @@ internal object MobilePlayback {
         signer: MobilePlaybackSigner,
         now: Long,
         routeDeadline: Long,
+        claimFollowup: () -> Boolean,
     ): StreamLadder {
         val query = linkedMapOf<String, String>().apply {
             putAll(VendorConstants.device)
@@ -255,17 +314,41 @@ internal object MobilePlayback {
         return RequestScope.execute(transport.newCall(request.build()), routeDeadline) { response ->
             val data = modelData(response, "video-tab", PlayRetryPlan.hosts.first())
             val entries = data.optJSONObject("video_model_data") ?: data
+            val entry = entries.optJSONObject(id)
             val model = PlaybackModels.model(entries, id)
-                ?: throw PlaybackSourceException(PlaybackSourceException.Reason.NO_PLAYABLE_SOURCE)
-            val parsed = PlaybackModels.parseLadder(model)
-            if (parsed.accepted.isEmpty()) {
+            PlaybackModels.checkStatus(entries, entry, model)
+            if (model == null) {
                 throw PlaybackSourceException(PlaybackSourceException.Reason.NO_PLAYABLE_SOURCE)
             }
-            StreamLadder(parsed.accepted, parsed.diag)
+            // A direct unkeyed model can be played as before, but doesn't prove which episode
+            // an additional model request belongs to.
+            val episodeId = id.takeIf { entry != null }
+            ladderFromModel(model, http, routeDeadline, episodeId, claimFollowup)
         }
     }
 
+    private fun ladderFromModel(
+        model: JSONObject,
+        http: OkHttpClient,
+        routeDeadline: Long,
+        episodeId: String?,
+        claimFollowup: () -> Boolean,
+    ): StreamLadder {
+        val parsed = PlaybackModels.parseLadder(model)
+        if (parsed.accepted.isNotEmpty()) return StreamLadder(parsed.accepted, parsed.diag)
+        val start = System.nanoTime()
+        if (episodeId != null && routeDeadline - start >= TimeUnit.MILLISECONDS.toNanos(200)) {
+            val end = minOf(routeDeadline, start + TimeUnit.MILLISECONDS.toNanos(850))
+            PlaybackModelFollowup.read(model, http, end, episodeId = episodeId, claimAttempt = claimFollowup)
+                ?.let { return it }
+        }
+        throw PlaybackSourceException(PlaybackSourceException.Reason.NO_PLAYABLE_SOURCE)
+    }
+
     private fun modelData(response: Response, stage: String, host: String): JSONObject {
+        if (response.code == 204) {
+            throw PlaybackSourceException(PlaybackSourceException.Reason.NO_CONTENT, 204)
+        }
         if (response.code != 200) {
             val reason = if (PlayRetryPlan.retryableStatus(response.code)) {
                 PlaybackSourceException.Reason.TEMPORARY_UNAVAILABLE
@@ -286,13 +369,16 @@ internal object MobilePlayback {
             val hostTag = PlayRetryPlan.tag(host)
             throw EmptyPlaybackResponseException("stage=$stage host=$hostTag http=200 bytes=0")
         }
+        if (text.isBlank()) {
+            throw PlaybackSourceException(PlaybackSourceException.Reason.NO_CONTENT, 200)
+        }
         val root = try {
             JSONObject(text)
         } catch (_: org.json.JSONException) {
             throw PlaybackSourceException(PlaybackSourceException.Reason.INVALID_RESPONSE)
         }
-        PlaybackModels.checkStatus(root)
-        return root.optJSONObject("data")
-            ?: throw PlaybackSourceException(PlaybackSourceException.Reason.INVALID_RESPONSE)
+        val data = root.optJSONObject("data")
+        PlaybackModels.checkStatus(root, data)
+        return data ?: throw PlaybackSourceException(PlaybackSourceException.Reason.INVALID_RESPONSE)
     }
 }

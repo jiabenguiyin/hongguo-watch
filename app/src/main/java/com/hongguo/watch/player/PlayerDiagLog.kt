@@ -126,9 +126,8 @@ object PlayerDiagLog {
     }
 
     private fun append(level: String, msg: String) {
-        val line = "${timeFmt.format(Date())} $level/$TAG: $msg"
         synchronized(lines) {
-            lines.addLast(line)
+            lines.addLast("${timeFmt.format(Date())} $level/$TAG: $msg")
             while (lines.size > CAPACITY) lines.removeFirst()
         }
     }

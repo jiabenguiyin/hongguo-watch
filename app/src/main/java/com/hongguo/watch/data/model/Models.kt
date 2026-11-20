@@ -78,6 +78,7 @@ data class StreamInfo(
     val decryptionKey: ByteArray? = null,
     /** 上游 codec_type 归一化标签（如 h264 / bytevc1）。 */
     val codec: String = "",
+    val isCdnBackup: Boolean = false,
 )
 
 data class SearchPage(

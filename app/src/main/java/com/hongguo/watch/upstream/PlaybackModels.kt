@@ -16,18 +16,39 @@ class PlaybackSourceException(val reason: Reason, val upstreamCode: Int? = null)
             else -> "播放请求未成功（HTTP $upstreamCode），请稍后重试"
         }
         Reason.TEMPORARY_UNAVAILABLE -> "播放服务暂时不可用（HTTP $upstreamCode），请稍后重试"
+        Reason.NO_CONTENT -> "片源服务暂未返回播放信息，请稍后重试"
         Reason.INVALID_RESPONSE -> "播放信息格式异常，请稍后手动重试"
         Reason.NO_PLAYABLE_SOURCE -> "没有可播放的视频资源，可尝试其他清晰度或剧集"
     },
 ) {
-    enum class Reason { REJECTED, HTTP_REJECTED, TEMPORARY_UNAVAILABLE, INVALID_RESPONSE, NO_PLAYABLE_SOURCE }
+    enum class Reason { REJECTED, HTTP_REJECTED, TEMPORARY_UNAVAILABLE, NO_CONTENT, INVALID_RESPONSE, NO_PLAYABLE_SOURCE }
 }
 
 /** Pure parsing only: no device registration, requests or entitlement changes. */
 internal object PlaybackModels {
-    fun checkStatus(data: JSONObject) {
-        val code = data.optInt("Code", data.optInt("code", 0))
-        if (code != 0) throw PlaybackSourceException(PlaybackSourceException.Reason.REJECTED, code)
+    private val mediaHosts = setOf("qznovelvod.com", "fqnovelvod.com", "douyinvod.com")
+    private val statusFields = listOf("Code", "code")
+
+    fun checkStatus(vararg values: JSONObject?) {
+        if (!statusIsValid(*values)) {
+            throw PlaybackSourceException(PlaybackSourceException.Reason.INVALID_RESPONSE)
+        }
+    }
+
+    fun statusIsValid(vararg values: JSONObject?): Boolean {
+        var valid = true
+        for (value in values) {
+            if (value == null) continue
+            for (name in statusFields) {
+                if (!value.has(name)) continue
+                val code = value.opt(name)?.toString()?.toIntOrNull()
+                if (code == null) valid = false
+                else if (code != 0) {
+                    throw PlaybackSourceException(PlaybackSourceException.Reason.REJECTED, code)
+                }
+            }
+        }
+        return valid
     }
 
     fun objectValue(value: Any?): JSONObject? = when (value) {
@@ -45,10 +66,17 @@ internal object PlaybackModels {
         it.username.isEmpty() && it.password.isEmpty()
     }?.toString()
 
+    internal fun isOfficialBackup(raw: String): Boolean {
+        val url = raw.toHttpUrlOrNull() ?: return false
+        return url.isHttps && url.port == 443 &&
+            url.username.isEmpty() && url.password.isEmpty() && url.fragment == null &&
+            mediaHosts.any { url.host == it || url.host.endsWith(".$it") }
+    }
+
     fun renditions(model: JSONObject): List<Rendition> = parseLadder(model).accepted
 
     /** 解析 video_list，同时产出完整候选诊断（含被滤掉的档）。 */
-    fun parseLadder(model: JSONObject): LadderParseResult {
+    fun parseLadder(model: JSONObject, requireOfficialMedia: Boolean = false): LadderParseResult {
         val list = model.opt("video_list")
         val entries = when (list) {
             is JSONObject -> list.keys().asSequence().mapNotNull { key ->
@@ -63,7 +91,7 @@ internal object PlaybackModels {
         val accepted = ArrayList<Rendition>(entries.size)
         val diag = ArrayList<LadderEntryDiag>(entries.size)
         entries.forEachIndexed { index, (name, entry) ->
-            val parsed = parseEntry(model, name, entry, index)
+            val parsed = parseEntry(model, name, entry, index, requireOfficialMedia)
             diag += parsed.diag
             parsed.rendition?.let { accepted += it }
         }
@@ -80,6 +108,7 @@ internal object PlaybackModels {
         name: String,
         entry: JSONObject,
         index: Int,
+        requireOfficialMedia: Boolean,
     ): ParsedEntry {
         val codecType = entry.str("codec_type")
         val gearDesKey = entry.str("gear_des_key")
@@ -157,9 +186,9 @@ internal object PlaybackModels {
             ) {
                 return drop("encrypt_key_missing")
             }
-            val resolved = listOf("main_url", "play_url", "backup_url_1").firstNotNullOfOrNull { field ->
+            fun resolveUrl(value: String): String? =
                 runCatching {
-                    val raw = cleanUrl(entry.str(field))
+                    val raw = cleanUrl(value)
                     if (raw.isEmpty()) {
                         null
                     } else {
@@ -169,10 +198,21 @@ internal object PlaybackModels {
                         )
                     }
                 }.getOrNull()
+            val backups = buildList {
+                add(entry.str("backup_url_1"))
+                add(entry.str("backup_url_2"))
+                add(entry.str("backup_url"))
+                entry.optJSONArray("backup_url_list")?.let { rows ->
+                    for (row in 0 until minOf(rows.length(), 8)) add(rows.opt(row) as? String ?: "")
+                }
+            }.mapNotNull(::resolveUrl).filter(::isOfficialBackup).distinct()
+            val main = listOf("main_url", "play_url").firstNotNullOfOrNull {
+                resolveUrl(entry.str(it))?.takeIf { url -> !requireOfficialMedia || isOfficialBackup(url) }
             }
-            if (resolved == null) {
-                return drop("no_playable_url")
-            }
+            val resolved = main ?: backups.firstOrNull() ?: return drop("no_playable_url")
+            // Mirrors belong to this rendition; keep them out of the quality and codec ladder.
+            // Decode the mirror fields using the same model and require HTTPS on new retries.
+            val backupUrls = backups.filter { it != resolved }
             val rendition = Rendition(
                 quality,
                 label,
@@ -180,6 +220,8 @@ internal object PlaybackModels {
                 height,
                 resolved,
                 key,
+                backupUrls,
+                isCdnBackup = main == null || requireOfficialMedia,
             )
             ParsedEntry(
                 rendition = rendition,

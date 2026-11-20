@@ -35,6 +35,27 @@ class StreamFailoverTest {
     }
 
     @Test
+    fun picksFirstUnfailedMirrorWithoutChangingRendition() {
+        val firstUrl = "https://example.test/mirror-one"
+        val secondUrl = "https://example.test/mirror-two"
+        val original = r(480, "bytevc1").copy(
+            key = byteArrayOf(1, 2, 3),
+            backupUrls = listOf(firstUrl, secondUrl),
+        )
+        val first = requireNotNull(StreamFailover.pickBackup(original, emptySet()))
+        assertEquals(original.copy(url = firstUrl, backupUrls = listOf(secondUrl), isCdnBackup = true), first)
+        assertEquals(
+            original.copy(url = secondUrl, backupUrls = emptyList(), isCdnBackup = true),
+            StreamFailover.pickBackup(first, emptySet()),
+        )
+
+        val alreadyFailed = setOf(StreamFailover.key(original), StreamFailover.key(first))
+        val second = requireNotNull(StreamFailover.pickBackup(original, alreadyFailed))
+        assertEquals(original.copy(url = secondUrl, backupUrls = emptyList(), isCdnBackup = true), second)
+        assertNull(StreamFailover.pickBackup(original, alreadyFailed + StreamFailover.key(second)))
+    }
+
+    @Test
     fun afterAllAvcFailsFallsBackToHevcWhenAllowed() {
         val ladder = listOf(
             r(480, "h264"),

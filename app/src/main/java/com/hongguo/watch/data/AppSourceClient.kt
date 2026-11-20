@@ -564,6 +564,7 @@ class AppSourceClient(
             "stream pick codec=${selected.codec.ifBlank { "?" }} " +
                 "q=${qualityLabel} avcOnly=$avcOnly preferAvc=$preferAvc " +
                 "ladder=${renditions.size} " +
+                "cdnBackups=${selected.backupUrls.size} " +
                 "avcRungs=${renditions.count { it.isAvc }} " +
                 "excluded=${excludeKeys.size}",
         )
@@ -576,6 +577,7 @@ class AppSourceClient(
                 userAgent = VendorConstants.PLAYER_UA,
                 decryptionKey = selected.key,
                 codec = selected.codec,
+                isCdnBackup = selected.isCdnBackup,
             ),
             renditions = renditions,
             selectedKey = StreamFailover.key(selected),
@@ -588,13 +590,22 @@ class AppSourceClient(
      */
     private fun fetchMobileLadder(vid: String, preference: PlaybackRoutePreference): StreamLadder {
         ensureDevice()
-        fun requestLadder() =
-            MobilePlayback.ladder(vid, identityQuery(), client, MobilePlayback.signer, clock(), preference) { route ->
+        fun requestLadder(round: Int) =
+            MobilePlayback.ladder(
+                vid, identityQuery(), client, MobilePlayback.signer, clock(), preference,
+                onAttempt = { attempt ->
+                    PlayerDiagLog.i(
+                        "playback attempt round=$round preference=${preference.name} route=${attempt.route} " +
+                            "result=${attempt.outcome} ms=${attempt.elapsedMs} leftMs=${attempt.remainingMs ?: "-"} " +
+                            "code=${attempt.code ?: "-"}",
+                    )
+                },
+            ) { route ->
                 val label = if (preference == PlaybackRoutePreference.AUTO && route != "primary-b") "fallback" else "route"
                 PlayerDiagLog.i("playback model $label=$route preference=${preference.name}")
             }
         return try {
-            requestLadder()
+            requestLadder(1)
         } catch (empty: EmptyPlaybackResponseException) {
             if (!empty.allCompatibilityModelsEmpty) throw empty
             RequestScope.ensureWithinDeadline()
@@ -619,7 +630,7 @@ class AppSourceClient(
             }
             RequestScope.ensureActive()
             try {
-                requestLadder()
+                requestLadder(2)
             } catch (again: IOException) {
                 RequestScope.ensureActive()
                 again.addSuppressed(empty)

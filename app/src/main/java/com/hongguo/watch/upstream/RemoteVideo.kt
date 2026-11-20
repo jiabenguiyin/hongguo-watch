@@ -6,13 +6,26 @@ package com.hongguo.watch.upstream
 import java.io.Closeable
 import java.io.IOException
 import java.io.InputStream
+import java.net.ProtocolException
+import java.util.concurrent.atomic.AtomicReference
 import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 
+internal class MediaRangeHttpException(val statusCode: Int) :
+    IOException("视频服务器不支持分段读取（HTTP $statusCode）")
+
+internal class MediaRangeFormatException :
+    IOException("视频分段响应异常")
+
+internal fun OkHttpClient.forCdnBackup(): OkHttpClient =
+    newBuilder().followRedirects(false).followSslRedirects(false).build()
+
 /** One playback stream. No listening socket or local HTTP service. */
-class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo) : Closeable {
+class RemoteVideo(http: OkHttpClient, val info: StreamInfo) : Closeable {
+    private val transport = if (info.isCdnBackup) http.forCdnBackup() else http
+    private val upstreamRejection = AtomicReference<MediaRangeHttpException?>(null)
     @Volatile private var closed = false
     private val calls = mutableSetOf<Call>()
 
@@ -26,7 +39,11 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo) : Closea
 
     private fun newCall(start: Long, end: Long): Call {
         if (closed) throw IOException("播放请求已取消")
+        upstreamRejection.get()?.let { throw it }
         require(start >= 0 && end >= start && end - start < 8 * 1024 * 1024)
+        if (info.isCdnBackup && !PlaybackModels.isOfficialBackup(info.url)) {
+            throw IOException("备用视频地址无效")
+        }
         val request =
             Request.Builder()
                 .url(info.url)
@@ -35,7 +52,7 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo) : Closea
                 .header("Range", "bytes=$start-$end")
                 .header("Accept-Encoding", "identity")
                 .build()
-        val call = http.newCall(request)
+        val call = transport.newCall(request)
         synchronized(calls) {
             if (closed) throw IOException("播放请求已取消")
             calls += call
@@ -44,17 +61,26 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo) : Closea
     }
 
     private fun rangeSize(response: Response, start: Long, end: Long): Pair<Int, Long> {
-        if (response.code != 206) throw IOException("视频服务器不支持分段读取（HTTP ${response.code}）")
+        if (response.code != 206) {
+            val failure = MediaRangeHttpException(response.code)
+            if (response.code == 401 || response.code == 403 || response.code == 429) {
+                upstreamRejection.compareAndSet(null, failure)
+            }
+            throw failure
+        }
         val match =
-            Regex("bytes (\\d+)-(\\d+)/(\\d+)")
+            CONTENT_RANGE
                 .matchEntire(response.header("Content-Range").orEmpty())
-                ?: throw IOException("视频分段响应异常")
+                ?: throw MediaRangeFormatException()
         val (begin, finish, size) = match.destructured
-        val full = size.toLong()
+        val full = size.toLongOrNull() ?: throw MediaRangeFormatException()
+        if (full <= start) throw MediaRangeFormatException()
         val last = minOf(end, full - 1)
-        if (begin.toLong() != start || finish.toLong() != last || full <= start)
-            throw IOException("视频分段范围不匹配")
-        if (total != 0L && full != total) throw IOException("视频资源已变化，请重试")
+        if (begin.toLongOrNull() != start || finish.toLongOrNull() != last ||
+            (total != 0L && full != total)
+        ) {
+            throw MediaRangeFormatException()
+        }
         return (last - start + 1).toInt() to full
     }
 
@@ -63,10 +89,12 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo) : Closea
         try {
             return RequestScope.execute(call) { response ->
                 val (n, full) = rangeSize(response, start, end)
-                val body = response.body ?: throw IOException("视频分段为空")
+                val body = response.body ?: throw MediaRangeFormatException()
                 val bytes = body.source().readByteArray(n.toLong())
                 Range(bytes, full)
             }
+        } catch (_: ProtocolException) {
+            throw MediaRangeFormatException()
         } finally {
             synchronized(calls) { calls -= call }
         }
@@ -81,7 +109,7 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo) : Closea
         try {
             return RequestScope.execute(call) { response ->
                 val (size, full) = rangeSize(response, 0, 256 * 1024 - 1)
-                val source = (response.body ?: throw IOException("视频分段为空")).source()
+                val source = (response.body ?: throw MediaRangeFormatException()).source()
                 val first = source.readByteArray(minOf(initialBytes, size).toLong())
                 val needed = minOf(MediaCrypto.headerEnd(first, full), size)
                 val bytes =
@@ -90,6 +118,8 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo) : Closea
                     else first
                 Range(bytes, full)
             }
+        } catch (_: ProtocolException) {
+            throw MediaRangeFormatException()
         } finally {
             synchronized(calls) { calls -= call }
         }
@@ -102,7 +132,7 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo) : Closea
     fun openRead(start: Long, length: Int): InputStream {
         check(::prepared.isInitialized)
         require(start in 0 until total && length in 1..1024 * 1024)
-        val end = minOf(total - 1, start + length - 1)
+        val end = start + minOf(total - start, length.toLong()) - 1
         val call = newCall(start, end)
         // The player may stop consuming a range while paused or sufficiently buffered.
         // A wall-clock call timeout would cancel healthy streams during that idle time.
@@ -113,7 +143,7 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo) : Closea
             val opened = call.execute()
             response = opened
             val (size, _) = rangeSize(opened, start, end)
-            val input = (opened.body ?: throw IOException("视频分段为空")).byteStream()
+            val input = (opened.body ?: throw MediaRangeFormatException()).byteStream()
             return object : InputStream() {
                 private var position = start
                 private var remaining = size
@@ -130,10 +160,18 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo) : Closea
                     if (count == 0) return 0
                     if (readerClosed || closed) throw IOException("播放请求已取消")
                     if (remaining == 0) return -1
-                    val n = input.read(scratch, 0, minOf(count, remaining, scratch.size))
+                    val n = try {
+                        input.read(scratch, 0, minOf(count, remaining, scratch.size))
+                    } catch (_: ProtocolException) {
+                        throw MediaRangeFormatException()
+                    }
                     if (n < 0) throw java.io.EOFException("视频分段意外结束")
-                    MediaCrypto.decrypt(scratch.copyOf(n), position, info.key, prepared)
-                        .copyInto(target, offset)
+                    if (info.key == null) {
+                        scratch.copyInto(target, offset, endIndex = n)
+                    } else {
+                        MediaCrypto.decrypt(scratch.copyOf(n), position, info.key, prepared)
+                            .copyInto(target, offset)
+                    }
                     position += n
                     remaining -= n
                     return n
@@ -151,6 +189,7 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo) : Closea
             call.cancel()
             response?.close()
             synchronized(calls) { calls -= call }
+            if (error is ProtocolException) throw MediaRangeFormatException()
             throw error
         }
     }
@@ -161,9 +200,14 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo) : Closea
         require(initialBytes in 16 * 1024..256 * 1024)
         if (::prepared.isInitialized) return this
         val first =
-            if (initialBytes < 256 * 1024) indexPrefix(initialBytes) else range(0, 256 * 1024 - 1)
+            if (info.key != null && initialBytes < 256 * 1024) indexPrefix(initialBytes)
+            else range(0, initialBytes - 1L)
         total = first.total
         prefix = first.bytes
+        if (info.key == null) {
+            prepared = MediaCrypto.prepare(byteArrayOf(), null)
+            return this
+        }
         val end = MediaCrypto.headerEnd(first.bytes, total)
         val header =
             if (end > first.bytes.size)
@@ -194,15 +238,18 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo) : Closea
         if (closed) throw IOException("播放请求已取消")
         if (start >= total) return byteArrayOf()
         val cached = prefix
-        val end = minOf(total, start + length)
+        val end = start + minOf(total - start, length.toLong())
         val available = (minOf(end, cached.size.toLong()) - start).coerceAtLeast(0).toInt()
         val first =
             if (available > 0) cached.copyOfRange(start.toInt(), start.toInt() + available)
             else byteArrayOf()
         val raw =
             if (start + available < end) first + range(start + available, end - 1).bytes else first
-        return MediaCrypto.decrypt(raw, start, info.key, prepared)
+        return if (info.key == null) raw else MediaCrypto.decrypt(raw, start, info.key, prepared)
     }
+
+    /** Native IJK callbacks can lose the actual HTTP status. Keep it for the current source. */
+    internal fun upstreamRejection(): MediaRangeHttpException? = upstreamRejection.get()
 
     /**
      * Coded video dimensions after prepare(); null before prepare or when the header has no
@@ -219,5 +266,9 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo) : Closea
             calls.toList().forEach { it.cancel() }
             calls.clear()
         }
+    }
+
+    private companion object {
+        val CONTENT_RANGE = Regex("bytes (\\d+)-(\\d+)/(\\d+)")
     }
 }

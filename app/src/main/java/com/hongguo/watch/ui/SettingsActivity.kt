@@ -16,6 +16,8 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.text.buildSpannedString
+import androidx.core.text.color
 import androidx.lifecycle.lifecycleScope
 import coil.imageLoader
 import com.hongguo.watch.BuildConfig
@@ -506,9 +508,14 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun showPlaybackRouteDialog() {
         val options = PlaybackRoutePreference.entries
-        val labels = options.map { getString(playbackRouteLabel(it)) }.toTypedArray()
+        val textColor = getColor(R.color.text_primary)
+        // The default single-choice row may use a light theme even on our dark dialog.
+        fun lightLabel(label: Int): CharSequence = buildSpannedString {
+            color(textColor) { append(getText(label)) }
+        }
+        val labels = options.map { lightLabel(playbackRouteLabel(it)) }.toTypedArray()
         val dialog = watchDialogBuilder()
-            .setTitle(R.string.playback_route_label)
+            .setTitle(lightLabel(R.string.playback_route_label))
             .setSingleChoiceItems(labels, options.indexOf(currentRoute)) { chooser, index ->
                 chooser.dismiss()
                 val route = options[index]

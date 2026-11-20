@@ -12,8 +12,8 @@ android {
         applicationId = "com.hongguo.watch"
         minSdk = 24
         targetSdk = 34
-        versionCode = 41
-        versionName = "0.4.35"
+        versionCode = 42
+        versionName = "0.4.36"
         resourceConfigurations += listOf("zh", "en")
         // 可选诊断上传端点（构建时注入）；空则走公开粘贴服务。切勿把密钥写进仓库。
         val diagUrl = (System.getenv("HG_DIAG_UPLOAD_URL") ?: "")
@@ -186,6 +186,7 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     // JVM unit tests need a real org.json (android.jar stubs throw).
     testImplementation("org.json:json:20240303")
 }

@@ -35,5 +35,11 @@ internal object PlayRetryPlan {
             problem is java.net.SocketTimeoutException ||
             problem is java.net.SocketException ||
             problem is java.net.UnknownHostException ||
-            (problem is ContentHttpException && problem.statusCode in setOf(500, 502, 503, 504))
+            (problem is ContentHttpException && retryableStatus(problem.statusCode)) ||
+            (problem is PlaybackSourceException &&
+                problem.reason == PlaybackSourceException.Reason.TEMPORARY_UNAVAILABLE)
+
+    /** Do not rotate hosts for auth failures or rate limits; those amplify a deliberate rejection. */
+    internal fun retryableStatus(status: Int) =
+        status == 408 || status == 425 || status in setOf(500, 502, 503, 504)
 }

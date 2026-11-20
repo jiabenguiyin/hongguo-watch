@@ -37,6 +37,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
 import com.hongguo.watch.data.DiagUploader
+import com.hongguo.watch.data.NoPlayableRenditionException
 import com.hongguo.watch.data.SettingsStore
 import com.hongguo.watch.data.model.Episode
 import com.hongguo.watch.data.model.RelatedWork
@@ -58,6 +59,7 @@ import com.hongguo.watch.player.VideoDataSource
 import com.hongguo.watch.player.VideoResizeMode
 import com.hongguo.watch.player.WatchDecodePolicy
 import com.hongguo.watch.upstream.CodecLabels
+import com.hongguo.watch.upstream.EmptyPlaybackResponseException
 import com.hongguo.watch.upstream.RemoteVideo
 import com.hongguo.watch.upstream.Rendition
 import com.hongguo.watch.upstream.StreamFailover
@@ -70,6 +72,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.io.File
+import java.io.InterruptedIOException
+import java.net.SocketException
+import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -1312,6 +1317,7 @@ class PlayerActivity : AppCompatActivity() {
                 setLoadingIndicator(visible = false, immediate = true)
                 return@launch
             }
+            var selectedStreamForRecovery: StreamInfo? = null
             try {
                 playingFromCache = false
                 val userMax = settings.maxQualityNow()
@@ -1353,6 +1359,7 @@ class PlayerActivity : AppCompatActivity() {
                 ladderEpisodeId = episodeId
                 activeStreamKey = selection.selectedKey
                 val stream = selection.stream
+                selectedStreamForRecovery = stream
                 // avcOnly 会话：拒绝把 HEVC/bytevc1 交给播放器（选流层已硬拦，此处再防）
                 if (forceAvcOnly && CodecLabels.isHevc(stream.codec)) {
                     PlayerDiagLog.e(
@@ -1389,20 +1396,37 @@ class PlayerActivity : AppCompatActivity() {
                 if (token != playGeneration) return@launch
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 PlayerDiagLog.e("fetchStream/play failed: ${e.message}", e)
-                if (e is com.hongguo.watch.data.NoPlayableRenditionException &&
+                if (e is NoPlayableRenditionException &&
                     e.renditions.isNotEmpty()
                 ) {
                     ladderRenditions = e.renditions
                     ladderEpisodeId = episodeId
                 }
-                // 选流失败：放宽解码策略或改走 HEVC+IJK 后再选
-                val fake = activeStreamInfo ?: StreamInfo(url = "", quality = "", codec = "")
-                if (tryPlaybackFailover(fake, startPositionMs, reason = "fetch_or_select_failed")) {
+                // Source lookup failures cannot be fixed by changing decoder; only retry a selected
+                // stream or reselect from a verified ladder for this episode.
+                val failedLadder =
+                    e is NoPlayableRenditionException && e.renditions.isNotEmpty() &&
+                        ladderEpisodeId == episodeId && ladderRenditions.isNotEmpty()
+                val recoverableStream = selectedStreamForRecovery
+                val recoveryTarget = recoverableStream
+                    ?: if (failedLadder) StreamInfo(url = "", quality = "", codec = "") else null
+                if (recoveryTarget != null &&
+                    tryPlaybackFailover(
+                        recoveryTarget,
+                        startPositionMs,
+                        reason = "fetch_or_select_failed",
+                    )
+                ) {
                     return@launch
                 }
                 Toast.makeText(
                     this@PlayerActivity,
-                    e.message ?: getString(R.string.error_no_play_url),
+                    when (e) {
+                        is EmptyPlaybackResponseException -> getString(R.string.error_playback_empty)
+                        is InterruptedIOException, is SocketException, is UnknownHostException ->
+                            getString(R.string.error_network)
+                        else -> e.message ?: getString(R.string.error_no_play_url)
+                    },
                     Toast.LENGTH_LONG,
                 ).show()
                 binding.retryButton.visibility = View.VISIBLE
@@ -1850,8 +1874,12 @@ class PlayerActivity : AppCompatActivity() {
         val userMax = currentQuality
         val effectiveMax = WatchDecodePolicy.effectiveMaxQuality(this, userMax)
 
-        if (!playingFromCache && ladderRenditions.isNotEmpty() && stream.url.isNotBlank()) {
-            val exclude = if (currentKey.isNotBlank()) {
+        val currentEpisodeId = episodeIds.getOrNull(episodeIndex)
+        val hasCurrentLadder = ladderRenditions.isNotEmpty() && ladderEpisodeId == currentEpisodeId
+        if (!playingFromCache && hasCurrentLadder &&
+            (stream.url.isNotBlank() || reason == "fetch_or_select_failed")
+        ) {
+            val exclude = if (stream.url.isNotBlank() && currentKey.isNotBlank()) {
                 failedStreamKeys + currentKey
             } else {
                 failedStreamKeys
@@ -1864,7 +1892,7 @@ class PlayerActivity : AppCompatActivity() {
                 avcOnly = forceAvcOnly,
             )
             if (next != null) {
-                if (currentKey.isNotBlank()) failedStreamKeys.add(currentKey)
+                if (stream.url.isNotBlank() && currentKey.isNotBlank()) failedStreamKeys.add(currentKey)
                 playbackFailoverAttempts++
                 if (StreamFailover.shouldPreferIjkSoft(next) && IjkPlayerEngine.isAbiSupported()) {
                     activeKernel = PlayerKernel.IJK

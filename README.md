@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="红果终端 Logo" width="112" height="112" />
+
 # 红果终端 · 红果短剧手表版
 
 **hongguo-watch · 安卓手表短剧与漫剧播放器**
@@ -9,7 +11,7 @@
 [![Android](https://img.shields.io/badge/Android-7.0%2B-3DDC84)](#设备要求)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue)](LICENSE)
 
-红果终端是面向安卓手表、小屏 Android 设备及低配设备的非官方短剧、漫剧客户端，支持圆屏与方屏手表追剧。  
+红果终端是面向安卓手表、小屏 Android 设备及低配设备的非官方短剧、漫剧客户端，支持圆屏与方屏手表追剧、离线下载和账号历史续播。  
 Lightweight short-drama player for Android watches and small-screen devices.
 
 **[下载最新版 APK](https://github.com/jiabenguiyin/hongguo-watch/releases/latest)** · [安装指南](docs/install.md) · [更新记录](https://github.com/jiabenguiyin/hongguo-watch/releases) · [问题反馈](https://github.com/jiabenguiyin/hongguo-watch/issues/new/choose)
@@ -27,6 +29,13 @@ Lightweight short-drama player for Android watches and small-screen devices.
 | 库（收藏 / 观看历史）、断点续播 | 适应/铺满/拉伸、双指缩放与放大后拖动、横竖屏、防误触锁定 |
 | 条件满足时自动接续下一季 | 0.75–2 倍速、长按临时 2x、进度 / 亮度 / 音量手势 |
 | 圆屏与大圆角方屏适配 | 应用内检查更新、诊断反馈 |
+| 「我的」红果账号：扫码 / 手机号登录 | 查看云端观看历史与收藏，支持续播和打开详情 |
+| 库页面管理收藏、历史与离线下载 | 详情页多选分集 / 全季下载，离线内容管理 |
+| 显示设置：界面缩放、字体大小及安全边距 | 首页、库、我的统一圆角底栏 |
+
+## 红果账号与本机记录
+
+在「我的 → 红果账号」中可通过扫码或手机号登录，查看手机红果账号的云端观看历史与收藏，并从云端历史续播或打开收藏剧集详情。手表端新增的观看记录、收藏仍保存在本机；退出账号不会删除这些本机记录。
 
 ## 红果终端 APK 下载与安装
 

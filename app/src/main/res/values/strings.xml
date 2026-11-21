@@ -189,6 +189,8 @@
     <string name="playing_now">正在播放: %1$s 第%2$d集</string>
     <string name="gesture_playing">播放</string>
     <string name="gesture_paused">暂停</string>
+    <string name="gesture_value_percent">%1$d%%</string>
+    <string name="speed_boost_hint">加速中 %1$s</string>
     <string name="cd_player_controls">显示或隐藏播放器控件</string>
     <string name="related_section">相关季 / 同系列</string>
     <string name="related_empty">暂无相关季</string>

@@ -54,8 +54,8 @@
     <!-- 左侧亮度条（圆屏由代码加大 margin，避开圆弧） -->
     <LinearLayout
         android:id="@+id/brightnessMeter"
-        android:layout_width="28dp"
-        android:layout_height="120dp"
+        android:layout_width="36dp"
+        android:layout_height="wrap_content"
         android:layout_gravity="start|center_vertical"
         android:layout_marginStart="18dp"
         android:background="@drawable/bg_side_meter"
@@ -69,24 +69,33 @@
             android:layout_height="wrap_content"
             android:text="@string/brightness"
             android:textColor="@color/text_secondary"
-            android:textSize="8sp" />
+            android:textSize="@dimen/watch_meta" />
 
         <ProgressBar
             android:id="@+id/brightnessBar"
             style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="72dp"
-            android:layout_height="10dp"
-            android:layout_marginTop="8dp"
+            android:layout_width="6dp"
+            android:layout_height="54dp"
+            android:layout_marginVertical="4dp"
             android:max="100"
-            android:progressDrawable="@drawable/mini_progress"
-            android:rotation="270" />
+            android:importantForAccessibility="no"
+            android:progressDrawable="@drawable/side_meter_progress" />
+
+        <TextView
+            android:id="@+id/brightnessPercent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:maxLines="1"
+            android:textColor="@color/text_primary"
+            android:textSize="10sp" />
     </LinearLayout>
 
     <!-- 右侧音量条 -->
     <LinearLayout
         android:id="@+id/volumeMeter"
-        android:layout_width="28dp"
-        android:layout_height="120dp"
+        android:layout_width="36dp"
+        android:layout_height="wrap_content"
         android:layout_gravity="end|center_vertical"
         android:layout_marginEnd="18dp"
         android:background="@drawable/bg_side_meter"
@@ -100,17 +109,26 @@
             android:layout_height="wrap_content"
             android:text="@string/volume"
             android:textColor="@color/text_secondary"
-            android:textSize="8sp" />
+            android:textSize="@dimen/watch_meta" />
 
         <ProgressBar
             android:id="@+id/volumeBar"
             style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="72dp"
-            android:layout_height="10dp"
-            android:layout_marginTop="8dp"
+            android:layout_width="6dp"
+            android:layout_height="54dp"
+            android:layout_marginVertical="4dp"
             android:max="100"
-            android:progressDrawable="@drawable/mini_progress"
-            android:rotation="270" />
+            android:importantForAccessibility="no"
+            android:progressDrawable="@drawable/side_meter_progress" />
+
+        <TextView
+            android:id="@+id/volumePercent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:maxLines="1"
+            android:textColor="@color/text_primary"
+            android:textSize="10sp" />
     </LinearLayout>
 
     <!-- 唯一缓冲指示：勿与 PlayerView 内置 buffering 叠圈 -->

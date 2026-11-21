@@ -1,5 +1,7 @@
 package com.hongguo.watch.player
 
+import kotlin.math.abs
+
 /**
  * 播放器亮度 / 音量 / 进度手势分区。
  *
@@ -10,9 +12,10 @@ package com.hongguo.watch.player
  *
  * - 横屏：竖直滑动按可用宽度 **50% / 50%** 分左右（左亮度、右音量）；横向→进度。
  * - 竖屏：保持左 1/3 亮度、右 1/3 音量；中间优先横向进度，纯竖直再按半宽回落。
+ * - 放大时：仅左右外侧的近竖直滑动调节亮度/音量，其余方向用于平移画面。
  */
 object PlayerGestureZones {
-    enum class Mode { SEEK, BRIGHTNESS, VOLUME }
+    enum class Mode { SEEK, BRIGHTNESS, VOLUME, PAN }
 
     fun classify(
         startXInContent: Float,
@@ -20,9 +23,18 @@ object PlayerGestureZones {
         dy: Float,
         contentWidth: Int,
         landscape: Boolean,
+        zoomed: Boolean = false,
     ): Mode {
         val width = contentWidth.coerceAtLeast(1).toFloat()
         val x = startXInContent.coerceIn(0f, width)
+        if (zoomed) {
+            if (abs(dy) <= abs(dx) * 1.2f) return Mode.PAN
+            return when {
+                x < width / 3f -> Mode.BRIGHTNESS
+                x > width * 2f / 3f -> Mode.VOLUME
+                else -> Mode.PAN
+            }
+        }
         // 主轴互斥：与 [PlayerGestureArbiter.dominantAxis] 一致，避免对角同时像 seek 又像音量
         return when (PlayerGestureArbiter.dominantAxis(dx, dy)) {
             PlayerGestureArbiter.Axis.HORIZONTAL -> Mode.SEEK

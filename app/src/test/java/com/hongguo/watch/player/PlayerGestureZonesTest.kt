@@ -66,6 +66,36 @@ class PlayerGestureZonesTest {
     }
 
     @Test
+    fun zoomedVerticalSwipesAtTheSidesStillAdjust() {
+        for (landscape in listOf(false, true)) {
+            assertEquals(
+                PlayerGestureZones.Mode.BRIGHTNESS,
+                PlayerGestureZones.classify(w * 0.2f, 8f, -40f, w, landscape, zoomed = true),
+            )
+            assertEquals(
+                PlayerGestureZones.Mode.VOLUME,
+                PlayerGestureZones.classify(w * 0.8f, -6f, 40f, w, landscape, zoomed = true),
+            )
+        }
+    }
+
+    @Test
+    fun zoomedMiddleAndDiagonalDragsPanWithoutAdjusting() {
+        assertEquals(
+            PlayerGestureZones.Mode.PAN,
+            PlayerGestureZones.classify(w / 2f, 0f, 60f, w, landscape = false, zoomed = true),
+        )
+        assertEquals(
+            PlayerGestureZones.Mode.PAN,
+            PlayerGestureZones.classify(w * 0.2f, 42f, 48f, w, landscape = true, zoomed = true),
+        )
+        assertEquals(
+            PlayerGestureZones.Mode.PAN,
+            PlayerGestureZones.classify(w * 0.8f, -50f, 3f, w, landscape = false, zoomed = true),
+        )
+    }
+
+    @Test
     fun bugRepro_outerWidthHalfLooksLikeSeventyThirty() {
         // 旧逻辑：用外框半宽 233 对比内容区坐标 → 亮度约占 233/372 ≈ 62.6%
         // 更大圆屏 inset 时会逼近体感 ~70%/30%

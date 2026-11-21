@@ -741,14 +741,14 @@ class PlayerActivity : AppCompatActivity() {
                 cancelTap()
             }
             if (!PlayerGestureArbiter.shouldClaimSwipe(dx, dy, slop)) return
-            gestureMode = if (videoTransform.zoom > VideoAspectHelper.MIN_USER_ZOOM) {
+            gestureMode = classifyGesture(downContentX, dx, dy)
+            if (gestureMode == GestureMode.PAN) {
                 previousTouchX = downX
                 previousTouchY = downY
+            }
+            if (gestureMode != GestureMode.SEEK) {
                 hideControls()
                 hideGestureHint()
-                GestureMode.PAN
-            } else {
-                classifyGesture(downContentX, dx, dy)
             }
             hideControlsJob?.cancel()
         }
@@ -777,17 +777,21 @@ class PlayerActivity : AppCompatActivity() {
             }
             GestureMode.BRIGHTNESS -> {
                 val next = (brightnessStart - dy / playerContentHeight()).coerceIn(0.05f, 1f)
+                val percent = (next * 100).roundToInt()
                 applyBrightness(next)
+                binding.brightnessBar.progress = percent
+                binding.brightnessPercent.text = getString(R.string.gesture_value_percent, percent)
                 binding.brightnessMeter.visibility = View.VISIBLE
-                binding.brightnessBar.progress = (next * 100).toInt()
             }
             GestureMode.VOLUME -> {
                 val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
                 val delta = ((-dy / playerContentHeight()) * maxVol).toInt()
                 val next = (volumeStart + delta).coerceIn(0, maxVol)
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, next, 0)
+                val percent = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) * 100 / maxVol
+                binding.volumeBar.progress = percent
+                binding.volumePercent.text = getString(R.string.gesture_value_percent, percent)
                 binding.volumeMeter.visibility = View.VISIBLE
-                binding.volumeBar.progress = next * 100 / maxVol
             }
             else -> Unit
         }
@@ -876,11 +880,13 @@ class PlayerActivity : AppCompatActivity() {
                 dy = dy,
                 contentWidth = playerContentWidth(),
                 landscape = landscape,
+                zoomed = videoTransform.zoom > VideoAspectHelper.MIN_USER_ZOOM,
             )
         ) {
             PlayerGestureZones.Mode.BRIGHTNESS -> GestureMode.BRIGHTNESS
             PlayerGestureZones.Mode.VOLUME -> GestureMode.VOLUME
             PlayerGestureZones.Mode.SEEK -> GestureMode.SEEK
+            PlayerGestureZones.Mode.PAN -> GestureMode.PAN
         }
     }
 
@@ -1219,7 +1225,7 @@ class PlayerActivity : AppCompatActivity() {
         hideControls()
         setActiveSpeed(LONG_PRESS_BOOST_SPEED)
         binding.speedButton.text = SettingsStore.formatSpeed(LONG_PRESS_BOOST_SPEED)
-        showGestureHint(SettingsStore.formatSpeed(LONG_PRESS_BOOST_SPEED))
+        showGestureHint(getString(R.string.speed_boost_hint, binding.speedButton.text), autoHide = false)
     }
 
     private fun endSpeedBoost() {
@@ -2257,10 +2263,12 @@ class PlayerActivity : AppCompatActivity() {
         return "%d:%02d".format(m, s)
     }
 
-    private fun showGestureHint(text: String) {
+    private fun showGestureHint(text: String, autoHide: Boolean = true) {
+        if (gestureMode == GestureMode.BOOST && autoHide) return
+        hintJob?.cancel()
         binding.gestureHint.text = text
         binding.gestureHint.visibility = View.VISIBLE
-        hintJob?.cancel()
+        if (!autoHide) return
         hintJob = lifecycleScope.launch {
             delay(700)
             binding.gestureHint.visibility = View.GONE

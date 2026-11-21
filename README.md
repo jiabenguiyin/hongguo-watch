@@ -24,20 +24,21 @@ Lightweight short-drama player for Android watches and small-screen devices.
 | --- | --- |
 | 推荐 Banner 轮播、榜单、分类、搜索 | Media3 / IJK + FFmpeg 双内核 |
 | 分集选择、长剧分段选集、自动下一集 | 软解 / 硬解选择、双击播停 |
-| 库（收藏 / 观看历史）、断点续播 | 适应/铺满/拉伸、双指缩放、横竖屏、防误触锁定 |
+| 库（收藏 / 观看历史）、断点续播 | 适应/铺满/拉伸、双指缩放与放大后拖动、横竖屏、防误触锁定 |
 | 条件满足时自动接续下一季 | 0.75–2 倍速、长按临时 2x、进度 / 亮度 / 音量手势 |
 | 圆屏与大圆角方屏适配 | 应用内检查更新、诊断反馈 |
 
 ## 红果终端 APK 下载与安装
 
-打开 [最新正式发布页](https://github.com/jiabenguiyin/hongguo-watch/releases/latest)，在 Assets 中选择与你设备系统 ABI 对应的安装包。
+打开 [最新正式发布页](https://github.com/jiabenguiyin/hongguo-watch/releases/latest)，在 Assets 中选择一个 APK。
 
 | 安装包 | 适用系统 |
 | --- | --- |
+| `universal.apk` | 同时支持 32 位和 64 位 ARM Android，手表架构不明时选这个 |
 | `arm64-v8a.apk` | 64 位 ARM Android |
 | `armeabi-v7a.apk` | 32 位 ARM Android |
 
-开启未知来源安装权限后安装 APK；两种架构只需选择其一。支持 ADB 安装与应用内检查更新。若找不到下载入口，请查看 [安卓手表安装教程](docs/install.md)。
+支持 ADB 安装与应用内检查更新。有系统安装器的设备也可打开 APK 并按提示授权安装。Wear OS 无线安装步骤见 [安卓手表安装教程](docs/install.md)。
 
 0.4.4 起的同证书安装包通常可覆盖升级。遇到签名冲突先查看 [安装指南](docs/install.md)，卸载会清除本地数据。当前测试发行签名的私钥公开，请只从本仓库 Releases 下载；详见 [安全说明](SECURITY.md)。
 

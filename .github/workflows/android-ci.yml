@@ -46,14 +46,27 @@ jobs:
       - name: Verify ABI APKs and signatures
         shell: bash
         run: |
-          for abi in arm64-v8a armeabi-v7a; do
-            apk="app/build/outputs/apk/debug/app-$abi-debug.apk"
-            test -s "$apk"
-            "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$apk"
-            "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$apk" | grep -F "native-code: '$abi'"
-          done
           cd app/build/outputs/apk/debug
-          sha256sum app-arm64-v8a-debug.apk app-armeabi-v7a-debug.apk > SHA256SUMS.txt
+          tools="$ANDROID_HOME/build-tools/34.0.0"
+          expected_signer="33b21e34d819882bc077d90fff825d0a59f7d7c5c2fee42b0fdb8665730d1760"
+          verify_apk() {
+            local apk="$1" certs actual expected
+            shift
+            test -s "$apk"
+            certs="$("$tools/apksigner" verify --print-certs "$apk")"
+            printf '%s\n' "$certs"
+            test "$(printf '%s\n' "$certs" | awk -F ': ' '/^Signer #[0-9]+ certificate SHA-256 digest: / {print $2}')" = "$expected_signer"
+            actual="$("$tools/aapt" dump badging "$apk" | awk '/^native-code:/ {for (i = 2; i <= NF; i++) print $i}' | tr -d "'" | sort)"
+            expected="$(printf '%s\n' "$@" | sort)"
+            if [[ "$actual" != "$expected" ]]; then
+              printf 'Unexpected native ABIs in %s. Expected [%s], got [%s]\n' "$apk" "$expected" "$actual" >&2
+              return 1
+            fi
+          }
+          verify_apk app-arm64-v8a-debug.apk arm64-v8a
+          verify_apk app-armeabi-v7a-debug.apk armeabi-v7a
+          verify_apk app-universal-debug.apk arm64-v8a armeabi-v7a
+          sha256sum app-arm64-v8a-debug.apk app-armeabi-v7a-debug.apk app-universal-debug.apk > SHA256SUMS.txt
       - name: Upload test APKs
         uses: actions/upload-artifact@v4
         with:
@@ -61,6 +74,7 @@ jobs:
           path: |
             app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
             app/build/outputs/apk/debug/app-armeabi-v7a-debug.apk
+            app/build/outputs/apk/debug/app-universal-debug.apk
             app/build/outputs/apk/debug/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 7

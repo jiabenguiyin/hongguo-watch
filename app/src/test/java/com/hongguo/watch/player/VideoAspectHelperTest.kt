@@ -121,6 +121,39 @@ class VideoAspectHelperTest {
     }
 
     @Test
+    fun pinchKeepsThePictureUnderTheMovingFocus() {
+        val viewport = VideoAspectHelper.Viewport(400f, 400f, 400f, 400f)
+        val transform = viewport.moveFocus(
+            VideoAspectHelper.Transform(), 2f, 120f, 160f, 150f, 140f,
+        )
+        assertEquals(VideoAspectHelper.Transform(2f, 110f, 20f), transform)
+    }
+
+    @Test
+    fun dragClampsToVideoEdgesAndCentersLetterboxedAxes() {
+        val viewport = VideoAspectHelper.Viewport(320f, 320f, 180f, 320f)
+        val transform = viewport.moveFocus(
+            VideoAspectHelper.Transform(1.5f), 1f, 100f, 100f, 300f, 300f,
+        )
+        assertEquals(VideoAspectHelper.Transform(1.5f, 0f, 80f), transform)
+        assertEquals(VideoAspectHelper.Transform(), viewport.moveFocus(transform, 0.5f, 100f, 100f, 140f, 150f))
+    }
+
+    @Test
+    fun panContinuesAtTheMaximumZoomAndCanRevealEitherEdge() {
+        val viewport = VideoAspectHelper.Viewport(320f, 320f, 320f, 320f)
+        val start = VideoAspectHelper.Transform(VideoAspectHelper.MAX_USER_ZOOM)
+        assertEquals(
+            VideoAspectHelper.Transform(VideoAspectHelper.MAX_USER_ZOOM, -40f, 25f),
+            viewport.moveFocus(start, 1.5f, 150f, 150f, 110f, 175f),
+        )
+        assertEquals(
+            VideoAspectHelper.Transform(VideoAspectHelper.MAX_USER_ZOOM, 320f, -320f),
+            viewport.constrain(start.copy(x = 650f, y = -650f)),
+        )
+    }
+
+    @Test
     fun resizeMode_cycles() {
         assertEquals(VideoResizeMode.FILL, VideoResizeMode.FIT.next())
         assertEquals(VideoResizeMode.STRETCH, VideoResizeMode.FILL.next())

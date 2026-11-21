@@ -42,7 +42,7 @@ class IjkPlayerEngine(
     private var sarNum = 1
     private var sarDen = 1
     private var resizeMode: VideoResizeMode = VideoResizeMode.FIT
-    private var userZoom: Float = VideoAspectHelper.MIN_USER_ZOOM
+    private var transform = VideoAspectHelper.Transform()
 
     fun start(
         stream: StreamInfo,
@@ -112,20 +112,19 @@ class IjkPlayerEngine(
         ijk.prepareAsync()
     }
 
-    fun setResizeMode(mode: VideoResizeMode) {
+    fun setAspect(mode: VideoResizeMode, transform: VideoAspectHelper.Transform) {
         resizeMode = mode
+        this.transform = transform
         applyAspect()
     }
 
-    fun setUserZoom(zoom: Float) {
-        userZoom = zoom.coerceIn(VideoAspectHelper.MIN_USER_ZOOM, VideoAspectHelper.MAX_USER_ZOOM)
-        applyAspect()
-    }
-
-    fun setAspect(mode: VideoResizeMode, zoom: Float) {
-        resizeMode = mode
-        userZoom = zoom.coerceIn(VideoAspectHelper.MIN_USER_ZOOM, VideoAspectHelper.MAX_USER_ZOOM)
-        applyAspect()
+    fun videoViewport(mode: VideoResizeMode): VideoAspectHelper.Viewport? {
+        val width = textureView.width.toFloat()
+        val height = textureView.height.toFloat()
+        val (scaleX, scaleY) = VideoAspectHelper.scaleFor(
+            mode, width, height, videoWidth, videoHeight, sarNum, sarDen,
+        ) ?: return null
+        return VideoAspectHelper.Viewport(width, height, width * scaleX, height * scaleY)
     }
 
     /** 旋转 / 布局 / 模式 / 缩放变化后由 Activity 再调。 */
@@ -140,7 +139,7 @@ class IjkPlayerEngine(
                 videoHeight,
                 sarNum,
                 sarDen,
-                userZoom,
+                transform,
             )
         }
         if (textureView.width > 0 && textureView.height > 0) {

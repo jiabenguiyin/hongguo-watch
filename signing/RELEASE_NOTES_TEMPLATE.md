@@ -13,10 +13,11 @@
 ### 安装注意
 - **minSdk 24**（Android 7.0+）
 - versionName **X.Y.Z** / versionCode **N**
-- 本包为 **ABI 分包**，非 universal：
-  - **支持 arm64-v8a 的 Android 系统** `hongguo-watch-X.Y.Z-arm64-v8a.apk`
-  - 支持 armeabi-v7a 的 Android 系统装 `hongguo-watch-X.Y.Z-armeabi-v7a.apk`
-- 手表需开启「未知来源」后侧载：`adb install -r <apk>`
+- 按系统 ABI 选择一个安装包：
+  - 不确定系统架构时用 ARM 通用包 `hongguo-watch-X.Y.Z-universal.apk`
+  - 支持 arm64-v8a 的 Android 系统可用 `hongguo-watch-X.Y.Z-arm64-v8a.apk`
+  - 支持 armeabi-v7a 的 Android 系统可用 `hongguo-watch-X.Y.Z-armeabi-v7a.apk`
+- Wear OS 手表可通过 [无线 ADB](https://developer.android.com/training/wearables/get-started/debug-wifi) 连接后运行 `adb install -r <apk>`
 
 ### 签名（统一证书）
 - 构建：优先 `./gradlew :app:assembleDebug`（现行 Releases）；若跑 `assembleRelease` 且未配置 `WATCH_RELEASE_*`，**同一把**仓库 `signing/debug.keystore`

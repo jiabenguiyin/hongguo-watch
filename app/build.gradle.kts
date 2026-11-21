@@ -12,14 +12,20 @@ android {
         applicationId = "com.hongguo.watch"
         minSdk = 24
         targetSdk = 34
-        versionCode = 45
-        versionName = "0.4.39"
+        versionCode = 47
+        versionName = "0.5.0"
         resourceConfigurations += listOf("zh", "en")
         // 可选诊断上传端点（构建时注入）；空则走公开粘贴服务。切勿把密钥写进仓库。
         val diagUrl = (System.getenv("HG_DIAG_UPLOAD_URL") ?: "")
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
         buildConfigField("String", "DIAG_UPLOAD_URL", "\"$diagUrl\"")
+        val syncUrl = providers.gradleProperty("hongguoSyncUrl")
+            .orElse(providers.environmentVariable("HG_SYNC_URL")).orElse("").get()
+        require(syncUrl.isBlank() || Regex("https://[a-zA-Z0-9.-]+(?::[0-9]+)?/?").matches(syncUrl)) {
+            "HG_SYNC_URL must be an HTTPS origin"
+        }
+        buildConfigField("String", "SYNC_URL", "\"$syncUrl\"")
     }
 
     signingConfigs {
@@ -170,6 +176,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.google.zxing:core:3.5.3")
     // SM3 已内置 Sm3.kt，不再依赖完整 bcprov（约 8MB jar）
 
     implementation("androidx.media3:media3-exoplayer:1.4.1")

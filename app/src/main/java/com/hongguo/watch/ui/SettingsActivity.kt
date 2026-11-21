@@ -15,7 +15,6 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.text.buildSpannedString
 import androidx.core.text.color
 import androidx.lifecycle.lifecycleScope
@@ -41,7 +40,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
-class SettingsActivity : AppCompatActivity() {
+class SettingsActivity : WatchDisplayActivity() {
     private lateinit var binding: ActivitySettingsBinding
     private lateinit var toolbarClock: WatchToolbarClock
     private val container get() = (application as HongguoWatchApp).container
@@ -49,8 +48,6 @@ class SettingsActivity : AppCompatActivity() {
     private var currentKernel = PlayerKernel.AUTO
     private var currentDecode = DecodePath.AUTO
     private var currentRoute = PlaybackRoutePreference.AUTO
-    private var roundSwitchReady = false
-    private var screenOffSwitchReady = false
     private var updateChecking = false
     private var downloadJob: Job? = null
     private val downloadCancel = AtomicBoolean(false)
@@ -60,10 +57,13 @@ class SettingsActivity : AppCompatActivity() {
         binding = ActivitySettingsBinding.inflate(layoutInflater)
         setContentView(binding.root)
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
-        WatchUi.applySafePadding(binding.settingsRoot)
+        WatchUi.applySafePadding(binding.settingsRoot, topChrome = binding.settingsToolbar)
         toolbarClock = WatchToolbarClock(this, binding.toolbarClock)
 
         binding.backButton.setOnClickListener { finish() }
+        binding.displaySettingsButton.setOnClickListener {
+            startActivity(Intent(this, DisplaySettingsActivity::class.java))
+        }
         binding.versionLabel.text =
             getString(R.string.setting_version_status, BuildConfig.VERSION_NAME)
 
@@ -71,47 +71,30 @@ class SettingsActivity : AppCompatActivity() {
             binding.wifiOnlySwitch.isChecked = container.settings.wifiOnly.first()
             binding.screenOffContinueSwitch.isChecked =
                 container.settings.screenOffContinue.first()
-            screenOffSwitchReady = true
+            binding.wifiOnlySwitch.setOnCheckedChangeListener { _, checked ->
+                lifecycleScope.launch { container.settings.setWifiOnly(checked) }
+            }
+            binding.screenOffContinueSwitch.setOnCheckedChangeListener { _, checked ->
+                lifecycleScope.launch { container.settings.setScreenOffContinue(checked) }
+            }
+            binding.wifiOnlySwitch.isEnabled = true
+            binding.screenOffContinueSwitch.isEnabled = true
             currentQuality = container.settings.maxQuality.first()
             currentKernel = container.settings.playerKernel.first()
             currentDecode = container.settings.decodePath.first()
             currentRoute = container.settings.playbackRouteNow()
-            refreshQualityChips()
-            refreshKernelChips()
-            refreshDecodeChips()
+            refreshPlaybackLabels()
             refreshPlaybackRouteLabel()
+            binding.qualityButton.setOnClickListener { showQualityDialog() }
+            binding.kernelButton.setOnClickListener { showKernelDialog() }
+            binding.decodeButton.setOnClickListener { showDecodeDialog() }
             binding.playbackRouteButton.setOnClickListener { showPlaybackRouteDialog() }
-            refreshVideoCacheUi()
-            // 开关展示当前生效状态；AUTO 时跟 isRoundScreen
-            binding.roundAdaptSwitch.isChecked = WatchUi.useRoundLayout(this@SettingsActivity)
-            roundSwitchReady = true
+            binding.qualityButton.isEnabled = true
+            binding.kernelButton.isEnabled = true
+            binding.decodeButton.isEnabled = true
+            binding.playbackRouteButton.isEnabled = true
         }
 
-        binding.wifiOnlySwitch.setOnCheckedChangeListener { _, checked ->
-            lifecycleScope.launch { container.settings.setWifiOnly(checked) }
-        }
-        binding.screenOffContinueSwitch.setOnCheckedChangeListener { _, checked ->
-            if (!screenOffSwitchReady) return@setOnCheckedChangeListener
-            lifecycleScope.launch { container.settings.setScreenOffContinue(checked) }
-        }
-        binding.roundAdaptSwitch.setOnCheckedChangeListener { _, checked ->
-            if (!roundSwitchReady) return@setOnCheckedChangeListener
-            lifecycleScope.launch {
-                container.settings.setRoundAdaptEnabled(checked)
-                WatchUi.setRoundAdaptOverride(checked)
-                WatchUi.applySafePadding(binding.settingsRoot)
-            }
-        }
-
-        binding.quality480.setOnClickListener { pickQuality(480) }
-        binding.quality720.setOnClickListener { pickQuality(720) }
-        binding.quality1080.setOnClickListener { pickQuality(1080) }
-        binding.kernelAuto.setOnClickListener { pickKernel(PlayerKernel.AUTO) }
-        binding.kernelMedia3.setOnClickListener { pickKernel(PlayerKernel.MEDIA3) }
-        binding.kernelIjk.setOnClickListener { pickKernel(PlayerKernel.IJK) }
-        binding.decodeAuto.setOnClickListener { pickDecode(DecodePath.AUTO) }
-        binding.decodeHw.setOnClickListener { pickDecode(DecodePath.HARDWARE) }
-        binding.decodeSw.setOnClickListener { pickDecode(DecodePath.SOFTWARE) }
         binding.manageOfflineButton.setOnClickListener {
             startActivity(
                 Intent(this, MainActivity::class.java).apply {
@@ -125,33 +108,15 @@ class SettingsActivity : AppCompatActivity() {
         binding.uploadDiagButton.setOnClickListener { uploadDiagnostics() }
 
         binding.clearHistoryButton.setOnClickListener {
-            lifecycleScope.launch {
-                container.repository.clearHistory()
-                Toast.makeText(this@SettingsActivity, R.string.history_cleared, Toast.LENGTH_SHORT).show()
-            }
-        }
-        binding.clearVideoCacheButton.setOnClickListener {
-            val used = container.videoCache.formatUsedLabel()
-            if (container.videoCache.listReady().isEmpty()) {
-                Toast.makeText(this, R.string.video_cache_cleared, Toast.LENGTH_SHORT).show()
-                refreshVideoCacheUi()
-                return@setOnClickListener
-            }
             val dialog = watchDialogBuilder()
-                .setTitle(R.string.offline_clear_confirm_title)
-                .setMessage(getString(R.string.offline_clear_confirm_body, used))
-                .setPositiveButton(R.string.clear_video_cache) { _, _ ->
+                .setTitle(R.string.settings_clear_watch_history_confirm)
+                .setNegativeButton(R.string.update_cancel, null)
+                .setPositiveButton(R.string.clear_history) { _, _ ->
                     lifecycleScope.launch {
-                        withContext(Dispatchers.IO) { container.videoCache.clearAll() }
-                        refreshVideoCacheUi()
-                        Toast.makeText(
-                            this@SettingsActivity,
-                            R.string.video_cache_cleared,
-                            Toast.LENGTH_SHORT,
-                        ).show()
+                        container.repository.clearHistory()
+                        Toast.makeText(this@SettingsActivity, R.string.history_cleared, Toast.LENGTH_SHORT).show()
                     }
                 }
-                .setNegativeButton(R.string.update_cancel, null)
                 .create()
             showWatchDialog(dialog)
         }
@@ -190,7 +155,13 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (recreateForDisplaySizeChange()) return
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
+        WatchUi.applySafePadding(binding.settingsRoot, topChrome = binding.settingsToolbar)
+        val isDefault = WatchDisplaySettings.load(this) == WatchDisplaySettings()
+        binding.displaySettingsStatus.setText(
+            if (isDefault) R.string.display_shape_auto else R.string.settings_display_custom,
+        )
         refreshVideoCacheUi()
     }
 
@@ -482,48 +453,69 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    private fun pickQuality(height: Int) {
-        lifecycleScope.launch {
-            container.settings.setMaxQuality(height)
-            currentQuality = SettingsStore.normalizeQuality(height)
-            refreshQualityChips()
+    private fun showQualityDialog() {
+        val options = SettingsStore.QUALITY_OPTIONS
+        showChoiceDialog(R.string.max_quality, options.map(::qualityLabel), options.indexOf(currentQuality)) { index ->
+            lifecycleScope.launch {
+                currentQuality = options[index]
+                container.settings.setMaxQuality(currentQuality)
+                refreshPlaybackLabels()
+            }
         }
     }
 
-    private fun pickKernel(kernel: PlayerKernel) {
-        lifecycleScope.launch {
-            container.settings.setPlayerKernel(kernel)
-            currentKernel = kernel
-            refreshKernelChips()
+    private fun showKernelDialog() {
+        val options = PlayerKernel.entries
+        val labels = options.map { getText(kernelLabel(it)) }
+        showChoiceDialog(R.string.player_kernel_label, labels, options.indexOf(currentKernel)) { index ->
+            lifecycleScope.launch {
+                currentKernel = options[index]
+                container.settings.setPlayerKernel(currentKernel)
+                refreshPlaybackLabels()
+            }
         }
     }
 
-    private fun pickDecode(path: DecodePath) {
-        lifecycleScope.launch {
-            container.settings.setDecodePath(path)
-            currentDecode = path
-            refreshDecodeChips()
+    private fun showDecodeDialog() {
+        val options = DecodePath.entries
+        val labels = options.map { getText(decodeLabel(it)) }
+        showChoiceDialog(R.string.decode_path_label, labels, options.indexOf(currentDecode)) { index ->
+            lifecycleScope.launch {
+                currentDecode = options[index]
+                container.settings.setDecodePath(currentDecode)
+                refreshPlaybackLabels()
+            }
         }
     }
 
     private fun showPlaybackRouteDialog() {
         val options = PlaybackRoutePreference.entries
+        val labels = options.map { getText(playbackRouteLabel(it)) }
+        showChoiceDialog(R.string.playback_route_label, labels, options.indexOf(currentRoute)) { index ->
+            lifecycleScope.launch {
+                currentRoute = options[index]
+                container.settings.setPlaybackRoute(currentRoute)
+                refreshPlaybackRouteLabel()
+            }
+        }
+    }
+
+    private fun showChoiceDialog(
+        title: Int,
+        options: List<CharSequence>,
+        checked: Int,
+        onSelect: (Int) -> Unit,
+    ) {
         val textColor = getColor(R.color.text_primary)
         // The default single-choice row may use a light theme even on our dark dialog.
-        fun lightLabel(label: Int): CharSequence = buildSpannedString {
-            color(textColor) { append(getText(label)) }
+        fun lightLabel(label: CharSequence): CharSequence = buildSpannedString {
+            color(textColor) { append(label) }
         }
-        val labels = options.map { lightLabel(playbackRouteLabel(it)) }.toTypedArray()
         val dialog = watchDialogBuilder()
-            .setTitle(lightLabel(R.string.playback_route_label))
-            .setSingleChoiceItems(labels, options.indexOf(currentRoute)) { chooser, index ->
+            .setTitle(lightLabel(getText(title)))
+            .setSingleChoiceItems(options.map(::lightLabel).toTypedArray(), checked) { chooser, index ->
                 chooser.dismiss()
-                val route = options[index]
-                lifecycleScope.launch {
-                    container.settings.setPlaybackRoute(route)
-                    currentRoute = route
-                    refreshPlaybackRouteLabel()
-                }
+                onSelect(index)
             }
             .setNegativeButton(R.string.update_cancel, null)
             .create()
@@ -548,39 +540,28 @@ class SettingsActivity : AppCompatActivity() {
         val summary = container.videoCache.spaceSummary()
         binding.videoCacheUsage.text = getString(
             R.string.video_cache_usage,
-            summary.usedLabel,
-            summary.budgetLabel,
+            summary.usedLabel.replace(' ', '\u00A0'),
+            summary.budgetLabel.replace(' ', '\u00A0'),
         )
-        binding.videoCacheFree.text = getString(R.string.offline_free_space, summary.freeLabel) +
-            " · " + getString(R.string.offline_entry_count, summary.entryCount)
     }
 
-    private fun refreshQualityChips() {
-        binding.quality480.isSelected = currentQuality == 480
-        binding.quality720.isSelected = currentQuality == 720
-        binding.quality1080.isSelected = currentQuality == 1080
-        binding.qualityStatus.text = getString(R.string.setting_quality_status, currentQuality)
+    private fun refreshPlaybackLabels() {
+        binding.qualityStatus.text = qualityLabel(currentQuality)
+        binding.kernelStatus.setText(kernelLabel(currentKernel))
+        binding.decodeStatus.setText(decodeLabel(currentDecode))
     }
 
-    private fun refreshKernelChips() {
-        binding.kernelAuto.isSelected = currentKernel == PlayerKernel.AUTO
-        binding.kernelMedia3.isSelected = currentKernel == PlayerKernel.MEDIA3
-        binding.kernelIjk.isSelected = currentKernel == PlayerKernel.IJK
-        binding.kernelStatus.text = when (currentKernel) {
-            PlayerKernel.AUTO -> getString(R.string.setting_kernel_status_auto)
-            PlayerKernel.MEDIA3 -> getString(R.string.setting_kernel_status_media3)
-            PlayerKernel.IJK -> getString(R.string.setting_kernel_status_ijk)
-        }
+    private fun qualityLabel(height: Int): String = getString(R.string.setting_quality_status, height)
+
+    private fun kernelLabel(kernel: PlayerKernel): Int = when (kernel) {
+        PlayerKernel.AUTO -> R.string.setting_kernel_status_auto
+        PlayerKernel.MEDIA3 -> R.string.setting_kernel_status_media3
+        PlayerKernel.IJK -> R.string.setting_kernel_status_ijk
     }
 
-    private fun refreshDecodeChips() {
-        binding.decodeAuto.isSelected = currentDecode == DecodePath.AUTO
-        binding.decodeHw.isSelected = currentDecode == DecodePath.HARDWARE
-        binding.decodeSw.isSelected = currentDecode == DecodePath.SOFTWARE
-        binding.decodeStatus.text = when (currentDecode) {
-            DecodePath.AUTO -> getString(R.string.setting_decode_status_auto)
-            DecodePath.HARDWARE -> getString(R.string.setting_decode_status_hw)
-            DecodePath.SOFTWARE -> getString(R.string.setting_decode_status_sw)
-        }
+    private fun decodeLabel(path: DecodePath): Int = when (path) {
+        DecodePath.AUTO -> R.string.setting_decode_status_auto
+        DecodePath.HARDWARE -> R.string.setting_decode_status_hw
+        DecodePath.SOFTWARE -> R.string.setting_decode_status_sw
     }
 }

@@ -6,7 +6,7 @@ import kotlin.math.abs
  * 库页内「我的收藏 / 观看历史 / 离线」分段切换策略。
  *
  * 左右滑只在库内相邻分段之间移动；到边即停，不循环，
- * 更不会映射到底栏「首页 / 设置」或任何父级 pager。
+ * 更不会映射到底栏「首页 / 我的」或任何父级 pager。
  */
 object LibrarySegmentPolicy {
     enum class Segment {

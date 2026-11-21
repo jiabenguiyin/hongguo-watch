@@ -4,10 +4,14 @@ import android.app.Activity
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.Point
 import android.os.Build
 import android.util.TypedValue
+import android.view.RoundedCorner
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
+import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -18,19 +22,6 @@ import kotlin.math.roundToInt
 
 /** 手表小屏度量与沉浸式辅助（含纯圆盘屏）。 */
 object WatchUi {
-    /**
-     * 圆屏适配偏好缓存：`null` = 跟随 [isRoundScreen]；
-     * `true`/`false` = 强制开/关（设置里可改）。
-     */
-    @Volatile
-    private var roundAdaptOverride: Boolean? = null
-
-    fun setRoundAdaptOverride(enabled: Boolean?) {
-        roundAdaptOverride = enabled
-    }
-
-    fun roundAdaptOverride(): Boolean? = roundAdaptOverride
-
     fun widthDp(context: Context): Int {
         val metrics = context.resources.displayMetrics
         return (metrics.widthPixels / metrics.density).roundToInt()
@@ -42,12 +33,17 @@ object WatchUi {
     }
 
     fun isCompactWatch(context: Context): Boolean {
-        val shortest = min(widthDp(context), heightDp(context))
+        val platform = context.applicationContext.resources
+        val density = platform.displayMetrics.density
+        val metrics = context.resources.displayMetrics
+        val shortest = (min(metrics.widthPixels, metrics.heightPixels) / density).roundToInt()
+        val config = platform.configuration
+        val smallSquare = max(metrics.widthPixels, metrics.heightPixels) <= 600 &&
+            WatchDisplayGeometry.isNearlySquare(metrics.widthPixels, metrics.heightPixels)
         return shortest <= 360 ||
-            context.resources.configuration.smallestScreenWidthDp <= 360 ||
-            (
-                context.resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK
-                ) == Configuration.UI_MODE_TYPE_WATCH
+            smallSquare ||
+            config.smallestScreenWidthDp in 1..360 ||
+            (config.uiMode and Configuration.UI_MODE_TYPE_MASK) == Configuration.UI_MODE_TYPE_WATCH
     }
 
     /**
@@ -64,9 +60,8 @@ object WatchUi {
     /**
      * 布局是否按圆屏处理：设置强制开/关优先，否则跟随 [isRoundScreen]。
      */
-    fun useRoundLayout(context: Context): Boolean {
-        return roundAdaptOverride ?: isRoundScreen(context)
-    }
+    fun useRoundLayout(context: Context): Boolean =
+        WatchDisplaySettings.load(context).useRoundLayout(isRoundScreen(context))
 
     /**
      * 普通方屏但大圆角（如 CD12 Max / 华强北方表）：四角仍会裁切 chrome，
@@ -74,42 +69,31 @@ object WatchUi {
      */
     fun needsCornerSafeInset(context: Context): Boolean = isCompactWatch(context)
 
-    /**
-     * 安全边：
-     * - 圆屏适配开：约 0.14×短边
-     * - 小屏方表（大圆角）：约 0.09×短边，避免顶栏/底 Tab 被圆角吃掉
-     * - 手机/大屏：轻边距
-     */
-    fun edgeInsetPx(context: Context): Int {
+    internal fun preferredInsets(context: Context): WatchDisplayGeometry.PreferredInsets {
         val metrics = context.resources.displayMetrics
-        val edge = min(metrics.widthPixels, metrics.heightPixels)
-        val round = useRoundLayout(context)
-        val cornerSafe = !round && needsCornerSafeInset(context)
-        val ratio = when {
-            round -> 0.14f
-            // CD12 Max 等方屏大圆角：四角内切约需短边 10%+
-            cornerSafe -> 0.10f
-            else -> 0.04f
-        }
-        val preferred = (edge * ratio).roundToInt()
-        val minDp = when {
-            round -> 20f
-            cornerSafe -> 16f
-            else -> 8f
-        }
-        val maxDp = when {
-            round -> 48f
-            cornerSafe -> 32f
-            else -> 18f
-        }
-        val minPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, minDp, metrics).roundToInt()
-        val maxPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, maxDp, metrics).roundToInt()
-        return preferred.coerceIn(minPx, maxPx)
+        val settings = WatchDisplaySettings.load(context)
+        return WatchDisplayGeometry.preferredInsets(
+            widthPx = metrics.widthPixels,
+            heightPx = metrics.heightPixels,
+            platformDensity = context.applicationContext.resources.displayMetrics.density,
+            layoutDensity = metrics.density,
+            round = settings.useRoundLayout(isRoundScreen(context)),
+            compact = needsCornerSafeInset(context),
+            horizontalPercent = settings.horizontalPercent,
+            verticalPercent = settings.verticalPercent,
+        )
     }
+
+    fun edgeInsetPx(context: Context): Int = preferredInsets(context).horizontal
+
+    fun availableWidthDp(context: Context): Int =
+        (widthDp(context) - 2 * (edgeInsetPx(context) / context.resources.displayMetrics.density)).roundToInt()
+            .coerceAtLeast(1)
 
     /** 圆屏 / 大圆角方屏侧栏额外内收，避免贴圆弧。 */
     fun sideMeterMarginPx(context: Context): Int {
         val base = edgeInsetPx(context)
+        if (WatchDisplaySettings.load(context).horizontalPercent >= 0) return base
         return when {
             useRoundLayout(context) -> (base * 0.85f).roundToInt()
             needsCornerSafeInset(context) -> (base * 0.7f).roundToInt().coerceAtLeast(dp(context, 8f))
@@ -151,11 +135,12 @@ object WatchUi {
 
     fun episodeColumns(context: Context): Int {
         val w = widthDp(context)
-        return when {
+        val preferred = when {
             w < 280 -> 4
             w < 360 -> 5
             else -> 6
         }
+        return preferred.coerceAtMost((availableWidthDp(context) / 43).coerceAtLeast(2))
     }
 
     fun applyImmersive(activity: Activity) {
@@ -190,33 +175,84 @@ object WatchUi {
      * 手表安全边距。小屏沉浸式时**忽略** systemBars inset——
      * 系统栏已隐藏，若仍按其高度 padding，底 Tab 会被挤出可视区。
      */
-    fun applySafePadding(view: View, extraBottom: Int = 0) {
-        val inset = edgeInsetPx(view.context)
-        // 圆屏 / 大圆角方屏顶部按满 inset，避免品牌名与搜索钮被四角裁切
-        val topFactor = when {
-            useRoundLayout(view.context) -> 1f
-            needsCornerSafeInset(view.context) -> 0.95f
-            else -> 0.5f
-        }
-        val compact = isCompactWatch(view.context)
-        ViewCompat.setOnApplyWindowInsetsListener(view) { v, insets ->
-            val bars = if (compact) {
-                // 沉浸式：只吃左右手势提示等非系统栏，避免顶/底虚高
-                insets.getInsets(WindowInsetsCompat.Type.displayCutout())
-            } else {
-                insets.getInsets(WindowInsetsCompat.Type.systemBars())
+    fun applySafePadding(view: View, topChrome: View? = null, bottomChrome: View? = null) {
+        fun apply(insets: WindowInsetsCompat?) {
+            val context = view.context
+            val preferred = preferredInsets(context)
+            val compact = isCompactWatch(context)
+            val types = WindowInsetsCompat.Type.displayCutout() or
+                if (compact) 0 else WindowInsetsCompat.Type.systemBars()
+            val system = insets?.getInsets(types) ?: Insets.NONE
+            val left = max(preferred.horizontal, system.left)
+            val right = max(preferred.horizontal, system.right)
+            var top = max(preferred.top, system.top)
+            var bottom = max(preferred.vertical, system.bottom)
+            if (topChrome != null || bottomChrome != null) {
+                val settings = WatchDisplaySettings.load(context)
+                // Resource metrics may exclude the hidden navigation bar, making a square watch look tall or wide.
+                val size = windowSize(context)
+                val round = settings.useRoundLayout(isRoundScreen(context))
+                val shortEdge = min(size.x, size.y)
+                val fallback = WatchDisplayGeometry.fallbackCornerRadius(
+                    size.x, size.y, round, compact,
+                )
+                if (topChrome != null) {
+                    val reported = roundedCornerRadius(insets, RoundedCorner.POSITION_TOP_LEFT, RoundedCorner.POSITION_TOP_RIGHT)
+                    val radius = if (round || reported == 0) fallback else reported
+                    top = applyBarInsets(topChrome, top, left, right, shortEdge, radius, settings)
+                }
+                if (bottomChrome != null) {
+                    val reported = roundedCornerRadius(insets, RoundedCorner.POSITION_BOTTOM_LEFT, RoundedCorner.POSITION_BOTTOM_RIGHT)
+                    val radius = if (round || reported == 0) fallback else reported
+                    bottom = applyBarInsets(bottomChrome, bottom, left, right, shortEdge, radius, settings)
+                }
             }
-            v.setPadding(
-                max(inset, bars.left),
-                max((inset * topFactor).roundToInt(), bars.top),
-                max(inset, bars.right),
-                max(inset, if (compact) 0 else bars.bottom) + extraBottom,
-            )
+            view.setPadding(left, top, right, bottom)
+        }
+        apply(ViewCompat.getRootWindowInsets(view))
+        ViewCompat.setOnApplyWindowInsetsListener(view) { _, insets ->
+            apply(insets)
             insets
         }
-        view.requestApplyInsets()
-        // 立即按 edge inset 落一版，避免首帧仍用系统栏旧 padding
-        val top = (inset * topFactor).roundToInt()
-        view.setPadding(inset, top, inset, inset + extraBottom)
+        ViewCompat.requestApplyInsets(view)
+    }
+
+    private fun windowSize(context: Context): Point {
+        val windows = context.getSystemService(WindowManager::class.java)
+        if (Build.VERSION.SDK_INT >= 30) {
+            val bounds = windows.currentWindowMetrics.bounds
+            return Point(bounds.width(), bounds.height())
+        }
+        @Suppress("DEPRECATION")
+        return Point().also { windows.defaultDisplay.getRealSize(it) }
+    }
+
+    private fun roundedCornerRadius(insets: WindowInsetsCompat?, first: Int, second: Int): Int {
+        if (Build.VERSION.SDK_INT < 31) return 0
+        val window = insets?.toWindowInsets() ?: return 0
+        return maxOf(window.getRoundedCorner(first)?.radius ?: 0, window.getRoundedCorner(second)?.radius ?: 0)
+    }
+
+    private fun applyBarInsets(
+        bar: View,
+        vertical: Int,
+        left: Int,
+        right: Int,
+        shortEdge: Int,
+        radius: Int,
+        settings: WatchDisplaySettings,
+    ): Int {
+        val safeVertical = WatchDisplayGeometry.barVerticalInset(vertical, shortEdge, radius, settings.verticalPercent < 0)
+        val params = bar.layoutParams as? ViewGroup.MarginLayoutParams ?: return safeVertical
+        val arcInset = WatchDisplayGeometry.cornerSideInset(radius, safeVertical)
+        val side = if (settings.horizontalPercent < 0 && arcInset > 0) arcInset + dp(bar.context, 2f) else 0
+        val leftMargin = (side - left).coerceAtLeast(0)
+        val rightMargin = (side - right).coerceAtLeast(0)
+        if (params.leftMargin != leftMargin || params.rightMargin != rightMargin) {
+            params.leftMargin = leftMargin
+            params.rightMargin = rightMargin
+            bar.layoutParams = params
+        }
+        return safeVertical
     }
 }

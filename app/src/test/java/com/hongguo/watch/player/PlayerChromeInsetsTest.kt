@@ -98,4 +98,18 @@ class PlayerChromeInsetsTest {
         assertEquals(20, pad.bottom)
         assertTrue(pad.bottom > 0)
     }
+
+    @Test
+    fun independentVerticalMarginStillRespectsSystemCutout() {
+        val pad = PlayerChromeInsets.compute(
+            edgeInsetPx = 10,
+            topFactor = 1f,
+            system = Insets.of(18, 36, 4, 12),
+            verticalInsetPx = 24,
+        )
+        assertEquals(18, pad.left)
+        assertEquals(36, pad.top)
+        assertEquals(10, pad.right)
+        assertEquals(24, pad.bottom)
+    }
 }

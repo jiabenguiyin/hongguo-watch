@@ -8,7 +8,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** A classified source failure from the upstream status or playback model. */
-class PlaybackSourceException(val reason: Reason, val upstreamCode: Int? = null) : IOException(
+class PlaybackSourceException(
+    val reason: Reason,
+    val upstreamCode: Int? = null,
+    val modelIssue: ModelIssue? = null,
+) : IOException(
     when (reason) {
         Reason.REJECTED -> "上游拒绝播放请求（错误码 $upstreamCode），请稍后手动重试"
         Reason.HTTP_REJECTED -> when (upstreamCode) {
@@ -18,10 +22,11 @@ class PlaybackSourceException(val reason: Reason, val upstreamCode: Int? = null)
         Reason.TEMPORARY_UNAVAILABLE -> "播放服务暂时不可用（HTTP $upstreamCode），请稍后重试"
         Reason.NO_CONTENT -> "片源服务暂未返回播放信息，请稍后重试"
         Reason.INVALID_RESPONSE -> "播放信息格式异常，请稍后手动重试"
-        Reason.NO_PLAYABLE_SOURCE -> "没有可播放的视频资源，可尝试其他清晰度或剧集"
+        Reason.NO_PLAYABLE_SOURCE -> "片源服务暂未提供可播放地址，请换一集或稍后再试"
     },
 ) {
     enum class Reason { REJECTED, HTTP_REJECTED, TEMPORARY_UNAVAILABLE, NO_CONTENT, INVALID_RESPONSE, NO_PLAYABLE_SOURCE }
+    enum class ModelIssue { MODEL_MISSING, MODEL_INVALID, NO_RENDITIONS, UNUSABLE_RENDITIONS }
 }
 
 /** Pure parsing only: no device registration, requests or entitlement changes. */
@@ -57,9 +62,18 @@ internal object PlaybackModels {
         else -> null
     }
 
-    fun model(data: JSONObject, id: String): JSONObject? {
-        val entry = data.optJSONObject(id) ?: data.takeIf { it.has("video_model") }
-        return objectValue(entry?.opt("video_model"))
+    fun requireModel(entries: JSONObject, entry: JSONObject?): JSONObject {
+        val raw = entry?.opt("video_model")
+        val model = objectValue(raw)
+        checkStatus(entries, entry, model)
+        return model ?: throw PlaybackSourceException(
+            PlaybackSourceException.Reason.NO_PLAYABLE_SOURCE,
+            modelIssue = if (raw == null || raw == JSONObject.NULL) {
+                PlaybackSourceException.ModelIssue.MODEL_MISSING
+            } else {
+                PlaybackSourceException.ModelIssue.MODEL_INVALID
+            },
+        )
     }
 
     private fun url(raw: String): String? = cleanUrl(raw).trim().toHttpUrlOrNull()?.takeIf {

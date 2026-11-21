@@ -36,18 +36,20 @@ object PlayerChromeInsets {
     /**
      * @param edgeInsetPx 圆屏 / 大圆角 / 普通边距（[WatchUi.edgeInsetPx]）
      * @param system 已合并的 statusBars | navigationBars | displayCutout
+     * @param verticalInsetPx 单独设置的上下边距
      */
     fun compute(
         edgeInsetPx: Int,
         topFactor: Float,
         system: Insets,
+        verticalInsetPx: Int = edgeInsetPx,
     ): Padding {
-        val topEdge = (edgeInsetPx * topFactor).roundToInt()
+        val topEdge = (verticalInsetPx * topFactor).roundToInt()
         return Padding(
             left = max(edgeInsetPx, system.left),
             top = max(topEdge, max(system.top, 0)),
             right = max(edgeInsetPx, system.right),
-            bottom = max(edgeInsetPx, max(system.bottom, 0)),
+            bottom = max(verticalInsetPx, max(system.bottom, 0)),
         )
     }
 
@@ -90,33 +92,21 @@ object PlayerChromeInsets {
             applyEdgeFlush()
             onApplied?.invoke(pad)
         }
-        ViewCompat.setOnApplyWindowInsetsListener(chromeOverlay) { v, windowInsets ->
-            val ctx = v.context
-            applyPadding(
-                compute(
-                    edgeInsetPx = WatchUi.edgeInsetPx(ctx),
-                    topFactor = topFactor(
-                        roundLayout = WatchUi.useRoundLayout(ctx),
-                        cornerSafe = WatchUi.needsCornerSafeInset(ctx),
-                    ),
-                    system = systemChromeInsets(windowInsets),
-                ),
+        fun computePreferred(system: Insets): Padding {
+            val insets = WatchUi.preferredInsets(chromeOverlay.context)
+            return compute(
+                edgeInsetPx = insets.horizontal,
+                topFactor = insets.topFactor,
+                system = system,
+                verticalInsetPx = insets.vertical,
             )
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(chromeOverlay) { _, windowInsets ->
+            applyPadding(computePreferred(systemChromeInsets(windowInsets)))
             windowInsets
         }
-        // 首帧：尚无 inset 回调时先用圆角边距，避免顶栏控件贴边闪一下
-        val edge = WatchUi.edgeInsetPx(chromeOverlay.context)
-        val factor = topFactor(
-            roundLayout = WatchUi.useRoundLayout(chromeOverlay.context),
-            cornerSafe = WatchUi.needsCornerSafeInset(chromeOverlay.context),
-        )
-        applyPadding(
-            compute(
-                edgeInsetPx = edge,
-                topFactor = factor,
-                system = Insets.NONE,
-            ),
-        )
+        // 首帧先使用当前边距，再合并真实系统遮挡。
+        applyPadding(computePreferred(Insets.NONE))
         ViewCompat.requestApplyInsets(chromeOverlay)
     }
 }

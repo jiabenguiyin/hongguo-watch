@@ -295,6 +295,137 @@
             android:indeterminate="true"
             android:indeterminateTint="@color/accent"
             android:visibility="gone" />
+
+        <ScrollView
+            android:id="@+id/mineContent"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:overScrollMode="never"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:id="@+id/mineAccountCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_setting_block"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/watch_control_h"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="4dp">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_brand_mark" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/mineAccountName"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:ellipsize="end"
+                            android:maxLines="1"
+                            android:text="@string/mine_account_sign_in"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_body"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/mineAccountHint"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:ellipsize="end"
+                            android:maxLines="1"
+                            android:text="@string/mine_account_cloud_hint"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="@dimen/watch_meta" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:importantForAccessibility="no"
+                        android:text="@string/setting_chevron"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="16sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/mineSettingsButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/watch_pad_tight"
+                    android:background="@drawable/bg_setting_block"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/watch_control_h"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="8dp"
+                    android:paddingVertical="4dp">
+
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_settings_kernel" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/mine_settings"
+                            android:textColor="@color/text_primary"
+                            android:textSize="@dimen/watch_body"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:ellipsize="end"
+                            android:maxLines="1"
+                            android:text="@string/mine_settings_summary"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="@dimen/watch_meta" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:importantForAccessibility="no"
+                        android:text="@string/setting_chevron"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="16sp" />
+                </LinearLayout>
+            </LinearLayout>
+        </ScrollView>
     </FrameLayout>
 
     <LinearLayout
@@ -306,52 +437,49 @@
         android:orientation="horizontal"
         android:padding="2dp">
 
-        <Button
+        <TextView
             android:id="@+id/tabHome"
-            style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_marginEnd="2dp"
             android:layout_weight="1"
-            android:background="@drawable/bg_tab_active"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:minHeight="0dp"
+            android:background="@drawable/bg_top_tab_active"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
             android:paddingHorizontal="0dp"
             android:text="@string/tab_home"
-            android:textColor="@color/accent"
+            android:textColor="@color/text_primary"
             android:textSize="12sp"
             android:textStyle="bold" />
 
-        <Button
+        <TextView
             android:id="@+id/tabLibrary"
-            style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_marginHorizontal="2dp"
             android:layout_weight="1"
-            android:background="@android:color/transparent"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:minHeight="0dp"
+            android:background="@drawable/bg_top_tab_idle"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
             android:paddingHorizontal="0dp"
             android:text="@string/tab_library"
             android:textColor="@color/text_secondary"
             android:textSize="12sp" />
 
-        <Button
+        <TextView
             android:id="@+id/tabSettings"
-            style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_marginStart="2dp"
             android:layout_weight="1"
-            android:background="@android:color/transparent"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:minHeight="0dp"
+            android:background="@drawable/bg_top_tab_idle"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
             android:paddingHorizontal="0dp"
-            android:text="@string/tab_settings"
+            android:text="@string/tab_mine"
             android:textColor="@color/text_secondary"
             android:textSize="12sp" />
     </LinearLayout>

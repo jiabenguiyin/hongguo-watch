@@ -597,7 +597,8 @@ class AppSourceClient(
                     PlayerDiagLog.i(
                         "playback attempt round=$round preference=${preference.name} route=${attempt.route} " +
                             "result=${attempt.outcome} ms=${attempt.elapsedMs} leftMs=${attempt.remainingMs ?: "-"} " +
-                            "code=${attempt.code ?: "-"}",
+                            "code=${attempt.code ?: "-"}" +
+                            (attempt.modelIssue?.let { " modelIssue=${it.name}" } ?: ""),
                     )
                 },
             ) { route ->

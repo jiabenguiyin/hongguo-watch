@@ -2,7 +2,6 @@ package com.hongguo.watch.data
 
 import com.hongguo.watch.data.db.FavoriteDao
 import com.hongguo.watch.data.db.FavoriteEntity
-import com.hongguo.watch.data.db.WatchHistoryDao
 import com.hongguo.watch.data.db.WatchHistoryEntity
 import com.hongguo.watch.data.model.CatalogPage
 import com.hongguo.watch.data.model.HomeCategory
@@ -18,10 +17,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
-class ContentRepository(
+class ContentRepository internal constructor(
     private val appSource: AppSourceClient,
-    private val historyDao: WatchHistoryDao,
-    private val favoriteDao: FavoriteDao,
+    private val currentLibrary: suspend () -> LocalLibrary,
     private val settings: SettingsStore,
 ) {
     suspend fun search(query: String, page: Int = 1): SearchPage = withContext(Dispatchers.IO) {
@@ -176,7 +174,7 @@ class ContentRepository(
                 }
         }
 
-    suspend fun recentHistory(): List<WatchHistoryEntity> = historyDao.recent()
+    suspend fun recentHistory(): List<WatchHistoryEntity> = currentLibrary().history.recent()
 
     suspend fun saveProgress(
         seriesId: String,
@@ -189,7 +187,7 @@ class ContentRepository(
         source: SeriesSource,
     ) {
         // 接近片尾记为已看完本集，续播时由调用方决定切下一集；落盘仍保留真实进度。
-        historyDao.upsert(
+        currentLibrary().saveProgress(
             WatchHistoryEntity(
                 seriesId = seriesId,
                 seriesTitle = seriesTitle,
@@ -204,7 +202,7 @@ class ContentRepository(
         )
     }
 
-    suspend fun historyFor(seriesId: String): WatchHistoryEntity? = historyDao.find(seriesId)
+    suspend fun historyFor(seriesId: String): WatchHistoryEntity? = currentLibrary().history.find(seriesId)
 
     /** 续播起点：近片尾（≥95%）则从 0 起（通常应切下一集）。 */
     fun resumePositionMs(history: WatchHistoryEntity?): Long {
@@ -215,27 +213,28 @@ class ContentRepository(
         return position
     }
 
-    suspend fun clearHistory() = historyDao.clear()
+    suspend fun clearHistory() = currentLibrary().clearHistory()
 
-    suspend fun favorites(): List<FavoriteEntity> = favoriteDao.list()
+    suspend fun favorites(): List<FavoriteEntity> = currentLibrary().favorites.list()
 
     /**
      * 收藏列表用：用详情接口校正总集数，**不**用观看进度集号。
      * 网络失败时保留库内原值；校正后写回 favorites，不改 updatedAt 以免打乱排序。
      */
-    suspend fun favoritesWithResolvedEpisodeTotals(): List<FavoriteEntity> =
-        withContext(Dispatchers.IO) {
-            favoriteDao.list().map { fav ->
+    suspend fun favoritesWithResolvedEpisodeTotals(): List<FavoriteEntity> {
+        val favoriteDao = currentLibrary().favorites
+        return withContext(Dispatchers.IO) {
+            favoriteDao.list().mapNotNull { fav ->
                 val total = runCatching { resolveEpisodeTotal(fav.seriesId) }.getOrNull()
                 if (total != null && total > 0 && total != fav.episodeCount) {
                     val fixed = fav.copy(episodeCount = total)
-                    favoriteDao.upsert(fixed)
-                    fixed
+                    if (updateFavoriteMetadata(favoriteDao, fixed) > 0) fixed else favoriteDao.find(fav.seriesId)
                 } else {
                     fav
                 }
             }
         }
+    }
 
     /** 详情/分集列表 → 真实总集数；与观看进度无关。 */
     suspend fun resolveEpisodeTotal(seriesId: String): Int = withContext(Dispatchers.IO) {
@@ -243,7 +242,7 @@ class ContentRepository(
         episodeTotal(detail.series.episodeCount, detail.episodes.size)
     }
 
-    suspend fun isFavorite(seriesId: String): Boolean = favoriteDao.exists(seriesId)
+    suspend fun isFavorite(seriesId: String): Boolean = currentLibrary().favorites.exists(seriesId)
 
     suspend fun toggleFavorite(
         seriesId: String,
@@ -251,43 +250,41 @@ class ContentRepository(
         cover: String,
         source: SeriesSource,
         episodeCount: Int = 0,
-    ): Boolean {
-        return if (favoriteDao.exists(seriesId)) {
-            favoriteDao.delete(seriesId)
-            false
-        } else {
-            favoriteDao.upsert(
-                FavoriteEntity(
-                    seriesId = seriesId,
-                    seriesTitle = seriesTitle,
-                    cover = CoverUrls.normalize(cover).ifBlank { cover },
-                    source = source.name,
-                    episodeCount = episodeCount.coerceAtLeast(0),
-                    updatedAt = System.currentTimeMillis(),
-                ),
-            )
-            true
-        }
-    }
+    ): Boolean = currentLibrary().toggleFavorite(
+        FavoriteEntity(
+            seriesId = seriesId,
+            seriesTitle = seriesTitle,
+            cover = CoverUrls.normalize(cover).ifBlank { cover },
+            source = source.name,
+            episodeCount = episodeCount.coerceAtLeast(0),
+            updatedAt = System.currentTimeMillis(),
+        ),
+    )
 
-    suspend fun addFavorite(
+    suspend fun refreshFavoriteMetadata(
         seriesId: String,
         seriesTitle: String,
         cover: String,
         source: SeriesSource,
         episodeCount: Int = 0,
     ) {
-        favoriteDao.upsert(
-            FavoriteEntity(
-                seriesId = seriesId,
+        val favoriteDao = currentLibrary().favorites
+        val current = favoriteDao.find(seriesId) ?: return
+        updateFavoriteMetadata(
+            favoriteDao,
+            current.copy(
                 seriesTitle = seriesTitle,
                 cover = CoverUrls.normalize(cover).ifBlank { cover },
                 source = source.name,
-                episodeCount = episodeCount.coerceAtLeast(0),
-                updatedAt = System.currentTimeMillis(),
+                episodeCount = if (episodeCount > 0) episodeCount else current.episodeCount,
             ),
         )
     }
+
+    private suspend fun updateFavoriteMetadata(favoriteDao: FavoriteDao, record: FavoriteEntity): Int =
+        favoriteDao.updateMetadataIfCurrent(
+            record.seriesId, record.updatedAt, record.seriesTitle, record.cover, record.source, record.episodeCount,
+        )
 
     companion object {
         /** 取 series 声明集数与分集列表长度的较大值；禁止用历史进度集号冒充。 */

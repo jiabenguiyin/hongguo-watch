@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Widget.HongguoWatch.AccountAction" parent="">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:minHeight">@dimen/watch_control_h</item>
+        <item name="android:background">@drawable/bg_setting_block</item>
+        <item name="android:foreground">?attr/selectableItemBackground</item>
+        <item name="android:focusable">true</item>
+        <item name="android:gravity">center</item>
+        <item name="android:paddingHorizontal">4dp</item>
+        <item name="android:paddingVertical">3dp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">@dimen/watch_body</item>
+    </style>
+    <style name="Widget.HongguoWatch.AccountSyncButton" parent="Widget.AppCompat.Button">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">@dimen/watch_pad</item>
+        <item name="android:minHeight">@dimen/watch_control_h</item>
+        <item name="android:background">@drawable/bg_control_button</item>
+        <item name="android:paddingHorizontal">@dimen/watch_pad</item>
+        <item name="android:paddingVertical">@dimen/watch_pad_tight</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">@dimen/watch_body</item>
+    </style>
+    <style name="Widget.HongguoWatch.RedfruitInput" parent="Widget.AppCompat.EditText">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">@dimen/watch_pad</item>
+        <item name="android:minHeight">@dimen/watch_control_h</item>
+        <item name="android:saveEnabled">false</item>
+        <item name="android:importantForAutofill">noExcludeDescendants</item>
+        <item name="android:imeOptions">flagNoPersonalizedLearning</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textColorHint">@color/text_secondary</item>
+        <item name="android:textSize">@dimen/watch_body</item>
+    </style>
+</resources>

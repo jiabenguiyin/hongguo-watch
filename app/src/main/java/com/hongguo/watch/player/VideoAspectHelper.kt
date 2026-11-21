@@ -12,7 +12,7 @@ import android.widget.FrameLayout
  * - [VideoResizeMode.STRETCH] 拉伸铺满（不保持比例）
  *
  * IJK 的 TextureView 默认会把解码帧 stretch 到 View 尺寸，必须显式变换。
- * [userZoom] 为双指缩放倍率（≥1），叠在模式变换之上。
+ * 双指缩放和平移叠在模式变换之上。
  */
 enum class VideoResizeMode {
     FIT,
@@ -35,6 +35,38 @@ enum class VideoResizeMode {
 object VideoAspectHelper {
     const val MIN_USER_ZOOM = 1f
     const val MAX_USER_ZOOM = 3f
+
+    data class Transform(val zoom: Float = MIN_USER_ZOOM, val x: Float = 0f, val y: Float = 0f)
+
+    /** Video dimensions at 1× and the visible area that clips the transformed picture. */
+    data class Viewport(val width: Float, val height: Float, val videoWidth: Float, val videoHeight: Float) {
+        fun constrain(transform: Transform): Transform {
+            val zoom = transform.zoom.coerceIn(MIN_USER_ZOOM, MAX_USER_ZOOM)
+            if (zoom == MIN_USER_ZOOM) return Transform()
+            val maxX = ((videoWidth * zoom - width) / 2f).coerceAtLeast(0f)
+            val maxY = ((videoHeight * zoom - height) / 2f).coerceAtLeast(0f)
+            return Transform(zoom, transform.x.coerceIn(-maxX, maxX), transform.y.coerceIn(-maxY, maxY))
+        }
+
+        fun moveFocus(
+            transform: Transform,
+            factor: Float,
+            oldX: Float,
+            oldY: Float,
+            newX: Float,
+            newY: Float,
+        ): Transform {
+            val zoom = (transform.zoom * factor).coerceIn(MIN_USER_ZOOM, MAX_USER_ZOOM)
+            val ratio = zoom / transform.zoom
+            val cx = width / 2f
+            val cy = height / 2f
+            return constrain(Transform(
+                zoom,
+                newX - cx - (oldX - cx - transform.x) * ratio,
+                newY - cy - (oldY - cy - transform.y) * ratio,
+            ))
+        }
+    }
 
     /**
      * 计算 FIT（contain）缩放到居中所需的 scaleX / scaleY（相对 View 尺寸）。
@@ -158,14 +190,15 @@ object VideoAspectHelper {
         videoHeight: Int,
         sarNum: Int = 1,
         sarDen: Int = 1,
-        userZoom: Float = MIN_USER_ZOOM,
+        transform: Transform = Transform(),
     ) {
         val w = textureView.width.toFloat()
         val h = textureView.height.toFloat()
-        val scales = scaleFor(mode, w, h, videoWidth, videoHeight, sarNum, sarDen, userZoom)
+        val scales = scaleFor(mode, w, h, videoWidth, videoHeight, sarNum, sarDen, transform.zoom)
             ?: return
         val matrix = Matrix()
         matrix.setScale(scales.first, scales.second, w / 2f, h / 2f)
+        matrix.postTranslate(transform.x, transform.y)
         textureView.setTransform(matrix)
     }
 
@@ -184,7 +217,6 @@ object VideoAspectHelper {
             videoHeight,
             sarNum,
             sarDen,
-            MIN_USER_ZOOM,
         )
     }
 

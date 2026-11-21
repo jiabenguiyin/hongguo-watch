@@ -6,17 +6,23 @@
 
 | APK 后缀 | 适用系统 |
 | --- | --- |
-| arm64-v8a.apk | 支持 arm64-v8a 的 Android 系统 |
-| armeabi-v7a.apk | 支持 armeabi-v7a 的 Android 系统 |
+| `universal.apk` | 同时包含 64 位和 32 位 ARM 库，不确定手表支持哪种 ABI 时选这个 |
+| `arm64-v8a.apk` | 系统报告支持 `arm64-v8a`，体积较小 |
+| `armeabi-v7a.apk` | 系统报告支持 `armeabi-v7a`，体积较小 |
 
-只需安装一个包；以 Android 系统报告的 ABI 为准，不以 CPU 广告参数为准。发行包已按 ABI 拆分，并压缩原生库以减小下载体积；**仍包含兼容软解所需的 IJK/FFmpeg**，勿改装 universal 或裁掉软解库。使用 ADB 查询：
+只需安装一个 APK。以 Android 系统报告的 ABI 为准。三个包都保留兼容软解所需的 IJK/FFmpeg。
+
+三星 Galaxy Watch5（SM-R9150）无法安装时，可以先用通用包。使用 ADB 时，先按 [Wear OS 无线调试指南](https://developer.android.com/training/wearables/get-started/debug-wifi) 在手表上配对并连接，再确认目标是手表、查询 ABI 并安装。
 
 ```sh
-adb shell getprop ro.product.cpu.abilist
-adb install -r <APK文件路径>
+adb devices -l
+adb -s <手表设备编号> shell getprop ro.product.cpu.abilist
+adb -s <手表设备编号> install -r <APK文件路径>
 ```
 
-也可把 APK 发送至设备，使用系统安装器安装。根据系统提示为相应安装来源开启安装未知应用权限。
+系统报告 `arm64-v8a` 可以用 ARM64，只有 `armeabi-v7a` 就用 ARM32。通用包仍安装失败时，请记录 `adb install` 返回的 `INSTALL_FAILED_…` 错误码。
+
+有系统安装器的设备也可直接打开 APK，根据提示为对应的安装来源开启权限。
 
 0.4.4 起已发布的同证书版本通常可覆盖升级。旧随机签名包或第三方不同签名包可能无法覆盖；**卸载会清除本地历史、收藏和设置**，请勿遇到安装问题就立即卸载。
 

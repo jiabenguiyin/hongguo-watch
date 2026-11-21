@@ -10,12 +10,13 @@ import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.GestureDetector
 import android.view.MotionEvent
-import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
+import android.widget.FrameLayout
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.annotation.OptIn
@@ -148,8 +149,8 @@ class PlayerActivity : AppCompatActivity() {
     private var currentSpeed = 1.0f
     /** 画面比例：适应 / 铺满 / 拉伸。 */
     private var resizeMode: VideoResizeMode = VideoResizeMode.FIT
-    /** 双指缩放倍率（≥1）。 */
-    private var userZoom: Float = VideoAspectHelper.MIN_USER_ZOOM
+    private var videoTransform = VideoAspectHelper.Transform()
+    private lateinit var media3Content: View
 
     /** Media3 视频解码模式：默认 → 软解优先 → 仅软解。 */
     private var videoCodecMode = WatchDecodePolicy.VideoCodecMode.Default
@@ -174,40 +175,36 @@ class PlayerActivity : AppCompatActivity() {
 
     private lateinit var episodeAdapter: EpisodeAdapter
     private lateinit var audioManager: AudioManager
-    private lateinit var scaleDetector: ScaleGestureDetector
     /** 单击显隐 / 双击播停（内置长按已关；长按加速自管）。 */
     private lateinit var tapDetector: GestureDetector
     private val gestureHandler = Handler(Looper.getMainLooper())
     private var touchSlop = 0
     private var downX = 0f
     private var downY = 0f
-    /** ACTION_DOWN 时相对 playerRoot 内容区（去 padding）的 X，用于左右分区。 */
+    private var touchDownTime: Long? = null
+    private var tapCancelled = false
     private var downContentX = 0f
-    private var scrubbing = false
-    private var adjustingBrightness = false
-    private var adjustingVolume = false
     private var scrubStartPos = 0L
+    private var scrubTarget: Long? = null
     private var brightnessStart = 0f
     private var volumeStart = 0
-    private var gestureConsumedClick = false
-    private var scaling = false
+    private var previousTouchX = 0f
+    private var previousTouchY = 0f
+    private var pinchSpan = 0f
     /** 待决长按加速（手指基本不动）。 */
     private var longPressArmed = false
-    /** 长按临时加速中；松手恢复 [currentSpeed]（与倍速面板一致）。 */
-    private var speedBoostActive = false
-    private var speedBeforeBoost = 1.0f
     private var nextSeasonWork: RelatedWork? = null
     private var seasonGeneration = 0
     private var seasonPrepared = false
     /** 手表默认竖屏；可切横屏（传感器横屏，允许倒装）。 */
     private var landscapePreferred = false
 
-    private enum class GestureMode { NONE, SEEK, BRIGHTNESS, VOLUME }
+    private enum class GestureMode { NONE, BOOST, PINCH, PAN, SEEK, BRIGHTNESS, VOLUME }
 
     private var gestureMode = GestureMode.NONE
 
     private val longPressRunnable = Runnable {
-        if (!longPressArmed || locked || scaling || gestureMode != GestureMode.NONE) {
+        if (!longPressArmed || locked || gestureMode != GestureMode.NONE) {
             longPressArmed = false
             return@Runnable
         }
@@ -259,47 +256,13 @@ class PlayerActivity : AppCompatActivity() {
         val initialNumber = intent.getIntExtra(EXTRA_EPISODE_NUMBER, 1)
 
         touchSlop = ViewConfiguration.get(this).scaledTouchSlop
-        scaleDetector = ScaleGestureDetector(
-            this,
-            object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-                override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
-                    if (locked) return false
-                    scaling = true
-                    gestureConsumedClick = true
-                    cancelLongPressArm()
-                    endSpeedBoost()
-                    gestureMode = GestureMode.NONE
-                    scrubbing = false
-                    adjustingBrightness = false
-                    adjustingVolume = false
-                    binding.brightnessMeter.visibility = View.GONE
-                    binding.volumeMeter.visibility = View.GONE
-                    hideControlsJob?.cancel()
-                    return true
-                }
-
-                override fun onScale(detector: ScaleGestureDetector): Boolean {
-                    val next = (userZoom * detector.scaleFactor)
-                        .coerceIn(VideoAspectHelper.MIN_USER_ZOOM, VideoAspectHelper.MAX_USER_ZOOM)
-                    if (abs(next - userZoom) < 0.001f) return true
-                    userZoom = next
-                    applyVideoTransform()
-                    showGestureHint(
-                        getString(R.string.zoom_hint, (userZoom * 100f).roundToInt()),
-                    )
-                    return true
-                }
-
-                override fun onScaleEnd(detector: ScaleGestureDetector) {
-                    scaling = false
-                    if (userZoom < 1.05f) {
-                        userZoom = VideoAspectHelper.MIN_USER_ZOOM
-                        applyVideoTransform()
-                    }
-                    scheduleHideControls()
-                }
-            },
-        )
+        media3Content = binding.playerView.findViewById(androidx.media3.ui.R.id.exo_content_frame)
+        binding.playerRoot.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) applyVideoTransform()
+        }
+        media3Content.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (left != oldLeft || top != oldTop || right != oldRight || bottom != oldBottom) applyVideoTransform()
+        }
         binding.playerView.useController = false
         // TextureView + 保留最后一帧，减轻 OEM SurfaceView 黑屏
         binding.playerView.setKeepContentOnPlayerReset(true)
@@ -349,6 +312,7 @@ class PlayerActivity : AppCompatActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) WatchUi.applyImmersive(this)
+        else if (::tapDetector.isInitialized) cancelGesture()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -430,11 +394,6 @@ class PlayerActivity : AppCompatActivity() {
         binding.cacheButton.visibility = View.GONE
         binding.speedButton.setOnClickListener { openSpeedSheet() }
         binding.episodesButton.setOnClickListener { openEpisodesSheet() }
-        binding.controlsMidTap.setOnClickListener {
-            if (!gestureConsumedClick && !locked) toggleControls()
-            gestureConsumedClick = false
-        }
-
         binding.seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
@@ -480,7 +439,7 @@ class PlayerActivity : AppCompatActivity() {
         binding.aspectFill.setOnClickListener { applyResizeMode(VideoResizeMode.FILL) }
         binding.aspectStretch.setOnClickListener { applyResizeMode(VideoResizeMode.STRETCH) }
         binding.aspectZoomReset.setOnClickListener {
-            userZoom = VideoAspectHelper.MIN_USER_ZOOM
+            videoTransform = VideoAspectHelper.Transform()
             applyVideoTransform()
             showGestureHint(getString(R.string.zoom_reset_done))
             closeSheets()
@@ -495,27 +454,30 @@ class PlayerActivity : AppCompatActivity() {
                 override fun onDown(e: MotionEvent): Boolean = true
 
                 override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                    if (locked || gestureMode != GestureMode.NONE || scaling) return false
-                    if (binding.sheetScrim.visibility == View.VISIBLE) {
-                        closeSheets()
-                    } else {
-                        toggleControls()
-                    }
-                    gestureConsumedClick = true
-                    return true
+                    if (locked || gestureMode != GestureMode.NONE) return false
+                    return binding.gestureLayer.performClick()
                 }
 
-                override fun onDoubleTap(e: MotionEvent): Boolean {
-                    if (locked || gestureMode != GestureMode.NONE || scaling) return false
-                    togglePlayPauseGesture()
-                    gestureConsumedClick = true
+                override fun onDoubleTap(e: MotionEvent): Boolean = true
+
+                override fun onDoubleTapEvent(e: MotionEvent): Boolean {
+                    if (e.actionMasked == MotionEvent.ACTION_UP && !locked && gestureMode == GestureMode.NONE) {
+                        togglePlayPauseGesture()
+                    }
                     return true
                 }
             },
         ).also { it.setIsLongpressEnabled(false) }
-        val listener = View.OnTouchListener { _, event -> handleGesture(event) }
-        binding.gestureLayer.setOnTouchListener(listener)
-        binding.controlsMidTap.setOnTouchListener(listener)
+        binding.gestureLayer.setOnClickListener {
+            if (locked) {
+                if (unlockChipVisible) hideUnlockChip() else showUnlockChip(autoHide = true)
+            } else if (binding.sheetScrim.visibility == View.VISIBLE) {
+                closeSheets()
+            } else {
+                toggleControls()
+            }
+        }
+        binding.gestureLayer.setOnTouchListener { _, event -> handleGesture(event) }
     }
 
     private fun armLongPress() {
@@ -596,6 +558,15 @@ class PlayerActivity : AppCompatActivity() {
             seasonLp.marginEnd = h
             binding.seasonBanner.layoutParams = seasonLp
         }
+        (binding.gestureHint.layoutParams as FrameLayout.LayoutParams).let { lp ->
+            val top = topSafe + WatchUi.dp(this, 4f)
+            if (lp.topMargin != top || lp.marginStart != sidePad || lp.marginEnd != sidePad) {
+                lp.topMargin = top
+                lp.marginStart = sidePad
+                lp.marginEnd = sidePad
+                binding.gestureHint.layoutParams = lp
+            }
+        }
         // 顶栏行：左右安全边（顶已由 status strip 承担）
         val topExtra = when {
             round -> WatchUi.dp(this, 6f)
@@ -622,9 +593,9 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun setLocked(value: Boolean) {
+        cancelGesture()
         locked = value
         if (locked) {
-            endSpeedBoost()
             closeSheets()
             hideControls()
             // 防误触：藏控件、吞手势；画面保持可见；小解锁钮可自动隐藏
@@ -632,7 +603,7 @@ class PlayerActivity : AppCompatActivity() {
             binding.miniProgress.visibility = View.GONE
             binding.brightnessMeter.visibility = View.GONE
             binding.volumeMeter.visibility = View.GONE
-            binding.gestureHint.visibility = View.GONE
+            hideGestureHint()
             showUnlockChip(autoHide = true)
         } else {
             hideUnlockChip()
@@ -690,176 +661,217 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun handleGesture(event: MotionEvent): Boolean {
-        if (locked) {
-            cancelLongPressArm()
-            // 吞掉亮度/音量/进度；点空白：有解锁钮则藏、无则唤出；真正解锁只靠小按钮
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    downX = event.x
-                    downY = event.y
-                }
-                MotionEvent.ACTION_UP -> {
-                    val dx = abs(event.x - downX)
-                    val dy = abs(event.y - downY)
-                    if (dx <= touchSlop && dy <= touchSlop) {
-                        if (unlockChipVisible) {
-                            hideUnlockChip()
-                        } else {
-                            showUnlockChip(autoHide = true)
-                        }
-                    }
-                }
-            }
-            return true
-        }
-
-        val wasScaling = scaling
-        scaleDetector.onTouchEvent(event)
-        // 双指 / 缩放独占：取消长按与滑动，不启动 seek/亮度
-        if (scaling || wasScaling || PlayerGestureArbiter.isMultiTouch(event.pointerCount)) {
-            cancelLongPressArm()
-            endSpeedBoost()
-            when (event.actionMasked) {
-                MotionEvent.ACTION_POINTER_DOWN,
-                MotionEvent.ACTION_UP,
-                MotionEvent.ACTION_CANCEL,
-                -> {
-                    gestureMode = GestureMode.NONE
-                    scrubbing = false
-                    adjustingBrightness = false
-                    adjustingVolume = false
-                    binding.brightnessMeter.visibility = View.GONE
-                    binding.volumeMeter.visibility = View.GONE
-                    if (event.actionMasked != MotionEvent.ACTION_POINTER_DOWN && !scaling) {
-                        scheduleHideControls()
-                    }
-                }
-            }
-            return true
-        }
-
-        val slop = touchSlop.toFloat()
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                downX = event.x
-                downY = event.y
-                downContentX = eventContentX(event)
-                scrubbing = false
-                adjustingBrightness = false
-                adjustingVolume = false
-                gestureMode = GestureMode.NONE
-                gestureConsumedClick = false
+        val action = event.actionMasked
+        if (action == MotionEvent.ACTION_DOWN) {
+            touchDownTime = event.downTime
+            downX = event.x
+            downY = event.y
+            downContentX = downX + binding.gestureLayer.left - binding.playerRoot.paddingLeft
+            tapCancelled = false
+            if (!locked) {
+                hideControlsJob?.cancel()
                 scrubStartPos = activePosition()
                 brightnessStart = currentBrightness()
                 volumeStart = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                armLongPress()
                 tapDetector.onTouchEvent(event)
-                return true
+                armLongPress()
             }
-            MotionEvent.ACTION_MOVE -> {
-                val dx = event.x - downX
-                val dy = event.y - downY
-                if (gestureMode == GestureMode.NONE) {
-                    if (PlayerGestureArbiter.shouldClaimSwipe(dx, dy, slop)) {
-                        cancelLongPressArm()
-                        endSpeedBoost()
-                        gestureMode = classifyGesture(downContentX, dx, dy)
-                        gestureConsumedClick = true
-                        hideControlsJob?.cancel()
-                    } else if (PlayerGestureArbiter.shouldCancelLongPress(dx, dy, slop)) {
-                        cancelLongPressArm()
-                    }
-                }
-                // 未认领滑动时继续喂给 tapDetector（单击/双击）；认领后不再喂
-                if (gestureMode == GestureMode.NONE) {
-                    tapDetector.onTouchEvent(event)
-                }
-                when (gestureMode) {
-                    GestureMode.SEEK -> {
-                        scrubbing = true
-                        showControls(autoHide = false)
-                        val duration = activeDuration().takeIf { it > 0 } ?: return true
-                        val width = playerContentWidth()
-                        val delta = ((dx / width) * duration * 0.5f).toLong()
-                        val target = (scrubStartPos + delta).coerceIn(0L, duration)
-                        binding.seekBar.progress = ((target * 1000) / duration).toInt().coerceIn(0, 1000)
-                        binding.timeCurrent.text = formatTime(target)
-                        val sign = if (delta >= 0) "+" else "−"
-                        showGestureHint("$sign${formatTime(abs(delta))}  ${formatTime(target)}")
-                    }
-                    GestureMode.BRIGHTNESS -> {
-                        adjustingBrightness = true
-                        val height = playerContentHeight()
-                        val delta = (-dy / height) // 上滑增亮
-                        val next = (brightnessStart + delta).coerceIn(0.05f, 1f)
-                        applyBrightness(next)
-                        binding.brightnessMeter.visibility = View.VISIBLE
-                        binding.volumeMeter.visibility = View.GONE
-                        binding.brightnessBar.progress = (next * 100).toInt()
-                        showGestureHint("${getString(R.string.brightness)} ${(next * 100).toInt()}%")
-                    }
-                    GestureMode.VOLUME -> {
-                        adjustingVolume = true
-                        val height = playerContentHeight()
-                        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                            .coerceAtLeast(1)
-                        val delta = ((-dy / height) * maxVol).toInt()
-                        val next = (volumeStart + delta).coerceIn(0, maxVol)
-                        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, next, 0)
-                        binding.volumeMeter.visibility = View.VISIBLE
-                        binding.brightnessMeter.visibility = View.GONE
-                        binding.volumeBar.progress = (next * 100 / maxVol)
-                        showGestureHint("${getString(R.string.volume)} ${next * 100 / maxVol}%")
-                    }
-                    GestureMode.NONE -> Unit
-                }
-                return true
+            return true
+        }
+
+        if (touchDownTime != event.downTime) return true
+        if (locked) {
+            if (action == MotionEvent.ACTION_POINTER_DOWN ||
+                action == MotionEvent.ACTION_MOVE &&
+                PlayerGestureArbiter.shouldCancelLongPress(event.x - downX, event.y - downY, touchSlop.toFloat())
+            ) {
+                tapCancelled = true
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                val boosting = speedBoostActive
-                val claimed = gestureMode
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                touchDownTime = null
+                if (action == MotionEvent.ACTION_UP && !tapCancelled) binding.gestureLayer.performClick()
+            }
+            return true
+        }
+
+        // A claimed hold owns this stream, including drift and extra fingers, until it ends.
+        if (gestureMode == GestureMode.BOOST) {
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) finishGesture(false)
+            return true
+        }
+
+        if (action == MotionEvent.ACTION_POINTER_DOWN) {
+            if (gestureMode != GestureMode.PINCH) {
                 cancelLongPressArm()
-                endSpeedBoost()
-                when (claimed) {
-                    GestureMode.SEEK -> {
-                        val duration = activeDuration().takeIf { it > 0 }
-                        if (duration != null) {
-                            val target = duration * binding.seekBar.progress / 1000
-                            seekActive(target)
-                            saveProgress(force = true)
-                        }
-                        scrubbing = false
-                        scheduleHideControls()
-                    }
-                    GestureMode.BRIGHTNESS, GestureMode.VOLUME -> {
-                        binding.brightnessMeter.visibility = View.GONE
-                        binding.volumeMeter.visibility = View.GONE
-                        scheduleHideControls()
-                    }
-                    GestureMode.NONE -> {
-                        // 单击显隐 / 双击播停由 tapDetector 确认；长按加速在松手时已恢复
-                        if (!boosting) {
-                            tapDetector.onTouchEvent(event)
-                        }
-                    }
-                }
-                gestureMode = GestureMode.NONE
-                return true
+                cancelTap()
+                clearSwipeFeedback()
+                gestureMode = GestureMode.PINCH
+                hideControls()
+                hideGestureHint()
+            }
+            updatePinch(event)
+            return true
+        }
+
+        if (gestureMode == GestureMode.PINCH) {
+            when (action) {
+                MotionEvent.ACTION_MOVE, MotionEvent.ACTION_POINTER_UP -> updatePinch(event)
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> finishGesture(false)
+            }
+            return true
+        }
+
+        when (action) {
+            MotionEvent.ACTION_MOVE -> handleSwipe(event)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (gestureMode == GestureMode.NONE && !tapCancelled) tapDetector.onTouchEvent(event)
+                finishGesture(action == MotionEvent.ACTION_UP)
             }
         }
-        return false
+        return true
     }
 
-    /**
-     * 左右亮度/音量分区：坐标与宽度均相对 [playerRoot] **内容区**（去安全边 padding）。
-     * 横屏 50%/50%；竖屏仍为左 1/3 / 右 1/3（中间优先进度）。见 [PlayerGestureZones]。
-     */
-    private fun classifyGesture(startXInContent: Float, dx: Float, dy: Float): GestureMode {
+    private fun handleSwipe(event: MotionEvent) {
+        val dx = event.x - downX
+        val dy = event.y - downY
+        val slop = touchSlop.toFloat()
+        if (gestureMode == GestureMode.NONE) {
+            if (PlayerGestureArbiter.shouldCancelLongPress(dx, dy, slop)) {
+                cancelLongPressArm()
+                cancelTap()
+            }
+            if (!PlayerGestureArbiter.shouldClaimSwipe(dx, dy, slop)) return
+            gestureMode = if (videoTransform.zoom > VideoAspectHelper.MIN_USER_ZOOM) {
+                previousTouchX = downX
+                previousTouchY = downY
+                hideControls()
+                hideGestureHint()
+                GestureMode.PAN
+            } else {
+                classifyGesture(downContentX, dx, dy)
+            }
+            hideControlsJob?.cancel()
+        }
+
+        when (gestureMode) {
+            GestureMode.PAN -> {
+                val viewport = videoViewport() ?: return
+                videoTransform = viewport.moveFocus(
+                    videoTransform, 1f, previousTouchX, previousTouchY, event.x, event.y,
+                )
+                previousTouchX = event.x
+                previousTouchY = event.y
+                applyVideoTransform()
+            }
+            GestureMode.SEEK -> {
+                val duration = activeDuration().takeIf { it > 0 } ?: return
+                val delta = ((dx / playerContentWidth()) * duration * 0.5f).toLong()
+                val target = (scrubStartPos + delta).coerceIn(0L, duration)
+                scrubTarget = target
+                val progress = ((target * 1000) / duration).toInt().coerceIn(0, 1000)
+                binding.seekBar.progress = progress
+                binding.miniProgress.progress = progress
+                binding.timeCurrent.text = formatTime(target)
+                val sign = if (delta >= 0) "+" else "−"
+                showGestureHint("$sign${formatTime(abs(delta))}  ${formatTime(target)}")
+            }
+            GestureMode.BRIGHTNESS -> {
+                val next = (brightnessStart - dy / playerContentHeight()).coerceIn(0.05f, 1f)
+                applyBrightness(next)
+                binding.brightnessMeter.visibility = View.VISIBLE
+                binding.brightnessBar.progress = (next * 100).toInt()
+            }
+            GestureMode.VOLUME -> {
+                val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+                val delta = ((-dy / playerContentHeight()) * maxVol).toInt()
+                val next = (volumeStart + delta).coerceIn(0, maxVol)
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, next, 0)
+                binding.volumeMeter.visibility = View.VISIBLE
+                binding.volumeBar.progress = next * 100 / maxVol
+            }
+            else -> Unit
+        }
+    }
+
+    private fun updatePinch(event: MotionEvent) {
+        val lifted = if (event.actionMasked == MotionEvent.ACTION_POINTER_UP) event.actionIndex else -1
+        if (event.pointerCount - (if (lifted >= 0) 1 else 0) < 2) {
+            pinchSpan = 0f
+            return
+        }
+        val first = if (lifted == 0) 1 else 0
+        val second = if (lifted == 0 || lifted == 1) 2 else 1
+        val x = (event.getX(first) + event.getX(second)) / 2f
+        val y = (event.getY(first) + event.getY(second)) / 2f
+        val span = PlayerGestureArbiter.movement(
+            event.getX(second) - event.getX(first), event.getY(second) - event.getY(first),
+        ).coerceAtLeast(touchSlop.toFloat().coerceAtLeast(1f))
+        // Re-anchor when the pointer set changes. The platform detector's minimum span can
+        // exceed the width of a watch, so scale from the actual spacing of the fingers.
+        if (event.actionMasked == MotionEvent.ACTION_MOVE && pinchSpan > 0f) {
+            val viewport = videoViewport()
+            if (viewport != null) {
+                val oldPercent = (videoTransform.zoom * 100f).roundToInt()
+                videoTransform = viewport.moveFocus(videoTransform, span / pinchSpan, previousTouchX, previousTouchY, x, y)
+                applyVideoTransform()
+                val percent = (videoTransform.zoom * 100f).roundToInt()
+                if (percent != oldPercent) showGestureHint(getString(R.string.zoom_hint, percent))
+            }
+        }
+        previousTouchX = x
+        previousTouchY = y
+        pinchSpan = span
+    }
+
+    private fun finishGesture(commitSeek: Boolean) {
+        cancelLongPressArm()
+        val target = scrubTarget
+        endSpeedBoost()
+        gestureMode = GestureMode.NONE
+        touchDownTime = null
+        pinchSpan = 0f
+        clearSwipeFeedback()
+        if (commitSeek && target != null) {
+            seekActive(target)
+            saveProgress(force = true)
+        }
+        if (controlsVisible) scheduleHideControls()
+    }
+
+    private fun clearSwipeFeedback() {
+        val hadSeek = scrubTarget != null
+        scrubTarget = null
+        binding.brightnessMeter.visibility = View.GONE
+        binding.volumeMeter.visibility = View.GONE
+        if (hadSeek) updateSeekUi()
+    }
+
+    private fun cancelGesture() {
+        if (touchDownTime == null) return
+        cancelTap()
+        finishGesture(false)
+        hideGestureHint()
+    }
+
+    private fun cancelTap() {
+        if (tapCancelled) return
+        tapCancelled = true
+        val down = touchDownTime ?: return
+        val cancel = MotionEvent.obtain(down, SystemClock.uptimeMillis(), MotionEvent.ACTION_CANCEL, downX, downY, 0)
+        try {
+            tapDetector.onTouchEvent(cancel)
+        } finally {
+            cancel.recycle()
+        }
+    }
+
+    /** 左右分区沿全屏手势层的宽度计算。 */
+    private fun classifyGesture(startX: Float, dx: Float, dy: Float): GestureMode {
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
             landscapePreferred
         return when (
             PlayerGestureZones.classify(
-                startXInContent = startXInContent,
+                startXInContent = startX,
                 dx = dx,
                 dy = dy,
                 contentWidth = playerContentWidth(),
@@ -870,13 +882,6 @@ class PlayerActivity : AppCompatActivity() {
             PlayerGestureZones.Mode.VOLUME -> GestureMode.VOLUME
             PlayerGestureZones.Mode.SEEK -> GestureMode.SEEK
         }
-    }
-
-    /** 触点相对 playerRoot 内容区左缘的 X（兼容 gestureLayer / controlsMidTap 等不同接收 View）。 */
-    private fun eventContentX(event: MotionEvent): Float {
-        val loc = IntArray(2)
-        binding.playerRoot.getLocationOnScreen(loc)
-        return event.rawX - loc[0] - binding.playerRoot.paddingLeft
     }
 
     private fun playerContentWidth(): Int = PlayerGestureZones.contentWidth(
@@ -919,6 +924,7 @@ class PlayerActivity : AppCompatActivity() {
         controlsVisible = true
         binding.controlsOverlay.visibility = View.VISIBLE
         binding.miniProgress.visibility = View.GONE
+        binding.seasonBanner.visibility = if (nextSeasonWork != null) View.VISIBLE else View.GONE
         if (autoHide) scheduleHideControls() else hideControlsJob?.cancel()
     }
 
@@ -926,6 +932,7 @@ class PlayerActivity : AppCompatActivity() {
         if (binding.sheetScrim.visibility == View.VISIBLE) return
         controlsVisible = false
         binding.controlsOverlay.visibility = View.GONE
+        binding.seasonBanner.visibility = View.GONE
         binding.miniProgress.visibility = if (locked) View.GONE else View.VISIBLE
         hideControlsJob?.cancel()
         updateSeekUi()
@@ -935,9 +942,7 @@ class PlayerActivity : AppCompatActivity() {
         hideControlsJob?.cancel()
         hideControlsJob = lifecycleScope.launch {
             delay(3_200)
-            if (!userSeeking && !scrubbing && !adjustingBrightness && !adjustingVolume &&
-                !scaling && isActivelyPlaying() && !locked
-            ) {
+            if (!userSeeking && touchDownTime == null && isActivelyPlaying() && !locked) {
                 hideControls()
             }
         }
@@ -1006,6 +1011,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun applyResizeMode(mode: VideoResizeMode) {
         resizeMode = mode
+        videoTransform = videoTransform.copy(x = 0f, y = 0f)
         applyVideoTransform()
         refreshAspectUi()
         showGestureHint(
@@ -1035,25 +1041,25 @@ class PlayerActivity : AppCompatActivity() {
 
     @OptIn(UnstableApi::class)
     private fun applyVideoTransform() {
-        val zoom = userZoom.coerceIn(VideoAspectHelper.MIN_USER_ZOOM, VideoAspectHelper.MAX_USER_ZOOM)
-        userZoom = zoom
-        ijkEngine?.setAspect(resizeMode, zoom)
-        binding.playerView.resizeMode = media3ResizeMode(resizeMode)
-        val applyPivotAndScale = {
-            val w = binding.playerView.width
-            val h = binding.playerView.height
-            if (w > 0 && h > 0) {
-                binding.playerView.pivotX = w / 2f
-                binding.playerView.pivotY = h / 2f
-            }
-            binding.playerView.scaleX = zoom
-            binding.playerView.scaleY = zoom
+        val mode = media3ResizeMode(resizeMode)
+        if (binding.playerView.resizeMode != mode) binding.playerView.resizeMode = mode
+        videoViewport()?.let { videoTransform = it.constrain(videoTransform) }
+        ijkEngine?.setAspect(resizeMode, videoTransform)
+        // Keep PlayerView as the clipping viewport so FILL retains its offscreen picture for panning.
+        media3Content.scaleX = videoTransform.zoom
+        media3Content.scaleY = videoTransform.zoom
+        media3Content.translationX = videoTransform.x
+        media3Content.translationY = videoTransform.y
+    }
+
+    private fun videoViewport(): VideoAspectHelper.Viewport? {
+        if (activeKernel == PlayerKernel.IJK) return ijkEngine?.videoViewport(resizeMode)
+        val width = binding.playerView.width.toFloat()
+        val height = binding.playerView.height.toFloat()
+        if (!videoFrameRendered || width <= 0f || height <= 0f || media3Content.width <= 0 || media3Content.height <= 0) {
+            return null
         }
-        if (binding.playerView.width > 0) {
-            applyPivotAndScale()
-        } else {
-            binding.playerView.post { applyPivotAndScale() }
-        }
+        return VideoAspectHelper.Viewport(width, height, media3Content.width.toFloat(), media3Content.height.toFloat())
     }
 
     @OptIn(UnstableApi::class)
@@ -1207,26 +1213,21 @@ class PlayerActivity : AppCompatActivity() {
 
     /** 长按临时 2x；不改用户倍速偏好，松手恢复 [currentSpeed]。 */
     private fun startSpeedBoost() {
-        if (speedBoostActive || locked || !hasActiveEngine()) return
-        speedBoostActive = true
-        speedBeforeBoost = currentSpeed
+        if (locked || !isActivelyPlaying()) return
+        cancelTap()
+        gestureMode = GestureMode.BOOST
+        hideControls()
         setActiveSpeed(LONG_PRESS_BOOST_SPEED)
         binding.speedButton.text = SettingsStore.formatSpeed(LONG_PRESS_BOOST_SPEED)
-        hintJob?.cancel()
-        binding.gestureHint.text = getString(
-            R.string.speed_boost_hint,
-            SettingsStore.formatSpeed(LONG_PRESS_BOOST_SPEED),
-        )
-        binding.gestureHint.visibility = View.VISIBLE
+        showGestureHint(SettingsStore.formatSpeed(LONG_PRESS_BOOST_SPEED))
     }
 
     private fun endSpeedBoost() {
-        if (!speedBoostActive) return
-        speedBoostActive = false
+        if (gestureMode != GestureMode.BOOST) return
+        gestureMode = GestureMode.NONE
         setActiveSpeed(currentSpeed)
         refreshSpeedUi()
-        hintJob?.cancel()
-        binding.gestureHint.visibility = View.GONE
+        hideGestureHint()
     }
 
     private fun refreshEpisodePicker() {
@@ -1582,13 +1583,14 @@ class PlayerActivity : AppCompatActivity() {
 
                 override fun onVideoSize(width: Int, height: Int, sarNum: Int, sarDen: Int) {
                     PlayerDiagLog.i(
-                        "video size ${width}x$height sar=$sarNum:$sarDen mode=$resizeMode zoom=$userZoom",
+                        "video size ${width}x$height sar=$sarNum:$sarDen mode=$resizeMode zoom=${videoTransform.zoom}",
                     )
+                    applyVideoTransform()
                 }
             },
         )
         ijkEngine = engine
-        engine.setAspect(resizeMode, userZoom)
+        engine.setAspect(resizeMode, videoTransform)
         engine.start(stream, remote, positionMs, currentSpeed)
         startProgressLoop()
         updatePlayPause()
@@ -1722,6 +1724,7 @@ class PlayerActivity : AppCompatActivity() {
 
             override fun onRenderedFirstFrame() {
                 videoFrameRendered = true
+                applyVideoTransform()
                 firstFrameWatchJob?.cancel()
                 PlayerDiagLog.markFirstFrame()
                 if (loadingWanted) {
@@ -1735,7 +1738,7 @@ class PlayerActivity : AppCompatActivity() {
                     applyVideoTransform()
                     PlayerDiagLog.i(
                         "video size ${videoSize.width}x${videoSize.height} " +
-                            "pw=${videoSize.pixelWidthHeightRatio} mode=$resizeMode zoom=$userZoom",
+                            "pw=${videoSize.pixelWidthHeightRatio} mode=$resizeMode zoom=${videoTransform.zoom}",
                     )
                 }
             }
@@ -2175,7 +2178,7 @@ class PlayerActivity : AppCompatActivity() {
             if (next != null) {
                 binding.seasonBanner.text =
                     getString(R.string.next_season_banner, next.series.title)
-                binding.seasonBanner.visibility = View.VISIBLE
+                binding.seasonBanner.visibility = if (controlsVisible && !locked) View.VISIBLE else View.GONE
             } else {
                 binding.seasonBanner.visibility = View.GONE
             }
@@ -2229,7 +2232,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun updateSeekUi() {
         if (!hasActiveEngine()) return
-        if (userSeeking || scrubbing) return
+        if (userSeeking || scrubTarget != null) return
         val duration = activeDuration().takeIf { it > 0 } ?: 0L
         val position = activePosition()
         if (duration > 0) {
@@ -2262,6 +2265,11 @@ class PlayerActivity : AppCompatActivity() {
             delay(700)
             binding.gestureHint.visibility = View.GONE
         }
+    }
+
+    private fun hideGestureHint() {
+        hintJob?.cancel()
+        binding.gestureHint.visibility = View.GONE
     }
 
     private var lastHistoryWriteMs = 0L
@@ -2297,6 +2305,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun releasePlayer(save: Boolean = true) {
+        cancelGesture()
         progressJob?.cancel()
         firstFrameWatchJob?.cancel()
         stallWatchJob?.cancel()
@@ -2338,7 +2347,7 @@ class PlayerActivity : AppCompatActivity() {
             isActivelyPlaying = isActivelyPlaying(),
         )
         playerForeground = false
-        endSpeedBoost()
+        cancelGesture()
         if (continuePlay) {
             // 息屏续听：不停播、不取消取流；清亮屏锁、持有 PARTIAL_WAKE_LOCK
             saveProgress(force = true)

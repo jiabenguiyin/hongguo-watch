@@ -12,8 +12,8 @@ android {
         applicationId = "com.hongguo.watch"
         minSdk = 24
         targetSdk = 34
-        versionCode = 43
-        versionName = "0.4.37"
+        versionCode = 44
+        versionName = "0.4.38"
         resourceConfigurations += listOf("zh", "en")
         // 可选诊断上传端点（构建时注入）；空则走公开粘贴服务。切勿把密钥写进仓库。
         val diagUrl = (System.getenv("HG_DIAG_UPLOAD_URL") ?: "")
@@ -140,9 +140,11 @@ android {
             )
         }
         // 压缩 APK 内 .so（含 IJK/FFmpeg），减小下载体积；安装时仍解压到 lib 目录。
-        // 不删除任何 ABI / codec 原生库，保留 CD12 Max 软解路径。
+        // 保留两种 ARM 架构的 IJK/FFmpeg 库，兼容 CD12 Max 软解路径。
         jniLibs {
             useLegacyPackaging = true
+            // DataStore 自带 x86 库，IJK 只支持 ARM；通用包只声明完整支持的 ABI。
+            excludes += setOf("/lib/x86/**", "/lib/x86_64/**")
         }
     }
 
@@ -151,7 +153,7 @@ android {
             isEnable = true
             reset()
             include("armeabi-v7a", "arm64-v8a")
-            isUniversalApk = false
+            isUniversalApk = true
         }
     }
 }

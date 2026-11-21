@@ -6,6 +6,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@android:color/black"
+    android:splitMotionEvents="false"
     android:keepScreenOn="true">
 
     <!-- Media3 默认路径（TextureView） -->
@@ -36,6 +37,7 @@
         android:layout_height="match_parent"
         android:background="@android:color/transparent"
         android:clickable="true"
+        android:contentDescription="@string/cd_player_controls"
         android:focusable="true" />
 
     <!-- 控件隐藏时贴物理底边；勿加 bottomMargin 圆角上浮（0.4.31 回归） -->
@@ -144,12 +146,14 @@
         android:id="@+id/gestureHint"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:background="@drawable/bg_panel"
-        android:paddingHorizontal="12dp"
-        android:paddingVertical="8dp"
+        android:layout_gravity="top|center_horizontal"
+        android:background="@drawable/bg_side_meter"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:paddingHorizontal="7dp"
+        android:paddingVertical="3dp"
         android:textColor="@color/text_primary"
-        android:textSize="15sp"
+        android:textSize="@dimen/watch_meta"
         android:textStyle="bold"
         android:visibility="gone" />
 
@@ -329,7 +333,7 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- 中区：左侧锁定 · 点按显隐（手表习惯靠左） -->
+        <!-- 中区只保留锁定按钮，空白区域由下方的常驻手势层接收。 -->
         <LinearLayout
             android:id="@+id/midControls"
             android:layout_width="match_parent"
@@ -349,14 +353,6 @@
                 android:scaleType="centerInside"
                 android:src="@drawable/ic_lock" />
 
-            <View
-                android:id="@+id/controlsMidTap"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:background="@android:color/transparent"
-                android:clickable="true"
-                android:focusable="true" />
         </LinearLayout>
 
         <!-- 底栏贴物理底边；paddingBottom 由代码清零，圆角安全边只垫 bottomButtons -->

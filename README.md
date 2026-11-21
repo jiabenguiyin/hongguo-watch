@@ -54,7 +54,7 @@ Lightweight short-drama player for Android watches and small-screen devices.
 
 有声无画、卡顿、封面异常、安装失败？先查看 [常见问题](docs/install.md#常见问题)，再按 [兼容性测试指南](docs/compatibility.md) 提交设备与播放信息。也可在应用设置查看官方项目交流群（QQ群：1130845653）。
 
-当前版本部分播放失败时会尝试向公共粘贴服务上传诊断。分享诊断前请检查是否包含私人信息，详情见 [诊断与隐私](docs/compatibility.md#诊断与隐私)。
+播放失败时诊断留在本机。需要反馈时，可在设置里手动上传并复制链接。默认使用第三方粘贴服务，详情见 [诊断与隐私](docs/compatibility.md#诊断与隐私)。
 
 ## 开发
 

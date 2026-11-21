@@ -12,7 +12,7 @@ enum class HomeNav {
 
 /**
  * 首页顶栏与二级芯片可见性、默认选中分类。
- * 底栏：首页 / 库（收藏·历史分段）/ 设置。
+ * 底栏：首页 / 库（收藏·历史分段）/ 我的。
  */
 object HomeNavPolicy {
     const val BANNER_PAGE_COUNT = 3

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_section_playback">播放</string>
+    <string name="settings_section_compatibility">播放兼容性</string>
+    <string name="settings_section_storage">存储与记录</string>
+    <string name="settings_section_help">关于与反馈</string>
+    <string name="settings_back">返回</string>
+    <string name="settings_display_custom">已自定义</string>
+    <string name="settings_screen_off_hint">屏幕关闭后继续播放声音，开启会增加耗电。</string>
+    <string name="settings_clear_watch_history">清空本机观看历史</string>
+    <string name="settings_clear_watch_history_confirm">清空本机观看历史？</string>
+    <string name="settings_clear_temporary_cache">清除临时缓存</string>
+</resources>

@@ -8,7 +8,8 @@ import kotlin.math.roundToInt
 object WatchDialogLayout {
     /** 内容区宽度 = 屏宽 − 两侧圆角安全边。 */
     fun contentWidthPx(screenWidthPx: Int, edgeInsetPx: Int, minWidthPx: Int): Int {
-        return (screenWidthPx - edgeInsetPx * 2).coerceAtLeast(minWidthPx)
+        val width = screenWidthPx.coerceAtLeast(1)
+        return (width - edgeInsetPx * 2).coerceIn(minWidthPx.coerceIn(1, width), width)
     }
 
     /**

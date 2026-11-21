@@ -583,6 +583,41 @@ class MobilePlaybackTest {
     }
 
     @Test
+    fun emptyModelsAndUnusableVideoTabRetainDistinctDiagnosticCauses() {
+        val cases = listOf(
+            """{"code":0,"data":{"video_model_data":{}}}""" to
+                PlaybackSourceException.ModelIssue.MODEL_MISSING,
+            """{"code":0,"data":{"video_model_data":{"123":{"video_model":"not a model"}}}}""" to
+                PlaybackSourceException.ModelIssue.MODEL_INVALID,
+            """{"code":0,"data":{"video_model_data":{"123":{"video_model":{"video_list":[]}}}}}""" to
+                PlaybackSourceException.ModelIssue.NO_RENDITIONS,
+            """{"code":0,"data":{"video_model_data":{"123":{"video_model":{"video_list":[{"codec_type":"bytevc2"}]}}}}}""" to
+                PlaybackSourceException.ModelIssue.UNUSABLE_RENDITIONS,
+        )
+        val expectedRoutes = listOf("primary-b", "video-tab", "primary-a", "primary-hl", "primary-lf", "preload")
+        for ((videoTabBody, issue) in cases) {
+            val reports = mutableListOf<PlaybackRouteAttempt>()
+            val error = assertThrows(PlaybackSourceException::class.java) {
+                MobilePlayback.ladder(
+                    "123",
+                    device,
+                    http(listOf("", videoTabBody, "", "", "", "")),
+                    passthroughSigner,
+                    1000,
+                    onAttempt = { reports += it },
+                )
+            }
+            assertEquals(PlaybackSourceException.Reason.NO_PLAYABLE_SOURCE, error.reason)
+            assertEquals(issue, error.modelIssue)
+            assertEquals(expectedRoutes, reports.map { it.route })
+            assertEquals(listOf("empty", "no_playable_source", "empty", "empty", "empty", "empty"), reports.map { it.outcome })
+            assertEquals(issue, reports.single { it.route == "video-tab" }.modelIssue)
+            assertEquals(5, reports.count { it.outcome == "empty" && it.code == 200 && it.modelIssue == null })
+            assertEquals(false, (error.suppressed.single() as EmptyPlaybackResponseException).allCompatibilityModelsEmpty)
+        }
+    }
+
+    @Test
     fun malformedOrUnrecognizedBodyStopsWithoutRotating() {
         val paths = mutableListOf<String>()
         val failure = assertThrows(PlaybackSourceException::class.java) {

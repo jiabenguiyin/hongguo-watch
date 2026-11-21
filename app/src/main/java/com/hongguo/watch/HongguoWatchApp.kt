@@ -9,7 +9,7 @@ import coil.memory.MemoryCache
 import coil.request.CachePolicy
 import com.hongguo.watch.data.AppContainer
 import com.hongguo.watch.data.UpdateApkInstaller
-import com.hongguo.watch.ui.WatchUi
+import com.hongguo.watch.ui.WatchDisplaySettings
 import com.hongguo.watch.upstream.VendorConstants
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +32,7 @@ class HongguoWatchApp : Application(), ImageLoaderFactory {
                 .onFailure { Log.w("UpdateApk", "cold-start cleanup: ${it.message}") }
         }
         appScope.launch {
-            WatchUi.setRoundAdaptOverride(container.settings.roundAdaptOverrideNow())
+            WatchDisplaySettings.migrateShape(this@HongguoWatchApp, container.settings.roundAdaptOverrideNow())
         }
     }
 

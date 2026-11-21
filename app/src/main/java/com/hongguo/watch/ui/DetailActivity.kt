@@ -9,7 +9,6 @@ import android.util.TypedValue
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
@@ -32,7 +31,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-class DetailActivity : AppCompatActivity() {
+class DetailActivity : WatchDisplayActivity() {
     private lateinit var binding: ActivityDetailBinding
     private lateinit var toolbarClock: WatchToolbarClock
     private lateinit var adapter: EpisodeAdapter
@@ -68,7 +67,7 @@ class DetailActivity : AppCompatActivity() {
         binding = ActivityDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
-        WatchUi.applySafePadding(binding.detailRoot)
+        WatchUi.applySafePadding(binding.detailRoot, topChrome = binding.detailToolbar)
         toolbarClock = WatchToolbarClock(this, binding.toolbarClock)
 
         seriesId = intent.getStringExtra(EXTRA_SERIES_ID).orEmpty()
@@ -161,7 +160,9 @@ class DetailActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (recreateForDisplaySizeChange()) return
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
+        WatchUi.applySafePadding(binding.detailRoot, topChrome = binding.detailToolbar)
         lifecycleScope.launch {
             refreshFavoriteUi()
             refreshDownloadChrome()
@@ -231,7 +232,7 @@ class DetailActivity : AppCompatActivity() {
                 refreshDownloadChrome()
                 if (favorited) {
                     val total = ContentRepository.episodeTotal(episodeCount, episodes.size)
-                    repo.addFavorite(
+                    repo.refreshFavoriteMetadata(
                         seriesId = seriesId,
                         seriesTitle = seriesTitle,
                         cover = cover,

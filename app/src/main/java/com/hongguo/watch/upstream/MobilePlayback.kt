@@ -35,6 +35,7 @@ internal data class PlaybackRouteAttempt(
     val elapsedMs: Long,
     val remainingMs: Long?,
     val code: Int? = null,
+    val modelIssue: PlaybackSourceException.ModelIssue? = null,
 )
 
 internal object MobilePlayback {
@@ -85,7 +86,13 @@ internal object MobilePlayback {
             followupAvailable.also { followupAvailable = false }
         }
         var attempt = 0
-        fun report(route: Route, outcome: String, start: Long, code: Int? = null) {
+        fun report(
+            route: Route,
+            outcome: String,
+            start: Long,
+            code: Int? = null,
+            modelIssue: PlaybackSourceException.ModelIssue? = null,
+        ) {
             val finished = System.nanoTime()
             val remaining = RequestScope.remainingNanos(finished)
             onAttempt(PlaybackRouteAttempt(
@@ -95,6 +102,7 @@ internal object MobilePlayback {
                 remaining.takeUnless { it == Long.MAX_VALUE }
                     ?.let { TimeUnit.NANOSECONDS.toMillis(it.coerceAtLeast(0)) },
                 code,
+                modelIssue,
             ))
         }
         while (pending.isNotEmpty()) {
@@ -152,7 +160,8 @@ internal object MobilePlayback {
                     pending.addFirst(Route.VIDEO_TAB)
                 }
             } catch (e: IOException) {
-                report(route, outcome(e), start, (e as? PlaybackSourceException)?.upstreamCode)
+                val sourceFailure = e as? PlaybackSourceException
+                report(route, outcome(e), start, sourceFailure?.upstreamCode, sourceFailure?.modelIssue)
                 RequestScope.ensureWithinDeadline()
                 val routeUnavailable = e is PlaybackSourceException && when (e.reason) {
                     PlaybackSourceException.Reason.NO_CONTENT,
@@ -256,12 +265,7 @@ internal object MobilePlayback {
             val stage = if (preload) "preload" else "mobile-model"
             val data = modelData(response, stage, host)
             val entries = data.optJSONObject("1004") ?: data
-            val entry = entries.optJSONObject(id)
-            val model = PlaybackModels.objectValue(entry?.opt("video_model"))
-            PlaybackModels.checkStatus(entries, entry, model)
-            if (model == null) {
-                throw PlaybackSourceException(PlaybackSourceException.Reason.NO_PLAYABLE_SOURCE)
-            }
+            val model = PlaybackModels.requireModel(entries, entries.optJSONObject(id))
             ladderFromModel(model, http, routeDeadline, id, claimFollowup)
         }
     }
@@ -315,11 +319,7 @@ internal object MobilePlayback {
             val data = modelData(response, "video-tab", PlayRetryPlan.hosts.first())
             val entries = data.optJSONObject("video_model_data") ?: data
             val entry = entries.optJSONObject(id)
-            val model = PlaybackModels.model(entries, id)
-            PlaybackModels.checkStatus(entries, entry, model)
-            if (model == null) {
-                throw PlaybackSourceException(PlaybackSourceException.Reason.NO_PLAYABLE_SOURCE)
-            }
+            val model = PlaybackModels.requireModel(entries, entry ?: entries.takeIf { it.has("video_model") })
             // A direct unkeyed model can be played as before, but doesn't prove which episode
             // an additional model request belongs to.
             val episodeId = id.takeIf { entry != null }
@@ -342,7 +342,14 @@ internal object MobilePlayback {
             PlaybackModelFollowup.read(model, http, end, episodeId = episodeId, claimAttempt = claimFollowup)
                 ?.let { return it }
         }
-        throw PlaybackSourceException(PlaybackSourceException.Reason.NO_PLAYABLE_SOURCE)
+        throw PlaybackSourceException(
+            PlaybackSourceException.Reason.NO_PLAYABLE_SOURCE,
+            modelIssue = if (parsed.diag.isEmpty()) {
+                PlaybackSourceException.ModelIssue.NO_RENDITIONS
+            } else {
+                PlaybackSourceException.ModelIssue.UNUSABLE_RENDITIONS
+            },
+        )
     }
 
     private fun modelData(response: Response, stage: String, host: String): JSONObject {

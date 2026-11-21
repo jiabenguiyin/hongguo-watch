@@ -21,6 +21,10 @@ replay_pid*
 # Kotlin
 .kotlin/
 
+# Python cache files
+__pycache__/
+*.py[cod]
+
 # Android / Gradle
 *.iml
 .gradle/

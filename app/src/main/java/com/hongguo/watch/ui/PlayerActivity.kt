@@ -20,7 +20,6 @@ import android.widget.FrameLayout
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.annotation.OptIn
-import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -38,7 +37,6 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.recyclerview.widget.GridLayoutManager
 import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
-import com.hongguo.watch.data.DiagUploader
 import com.hongguo.watch.data.NoPlayableRenditionException
 import com.hongguo.watch.data.SettingsStore
 import com.hongguo.watch.data.model.Episode
@@ -91,7 +89,7 @@ import kotlin.math.roundToInt
  * 手表全屏播放：锁定、左亮度/右音量、横滑进度、图标控件；
  * 末集结束按 hongguoTV 模式无缝跨季连播（预取元数据，不预取流）。
  */
-class PlayerActivity : AppCompatActivity() {
+class PlayerActivity : WatchDisplayActivity() {
     private lateinit var binding: ActivityPlayerBinding
     private var player: ExoPlayer? = null
     private var ijkEngine: IjkPlayerEngine? = null
@@ -158,9 +156,8 @@ class PlayerActivity : AppCompatActivity() {
     private var forceAvcOnly = false
     private var videoFrameRendered = false
     private var firstFrameWatchJob: Job? = null
-    /** 0=未回退；1=切 IJK 软解；2=Media3 仅软解/AVC；≥2 后上传诊断。 */
+    /** 0=未回退；1=切 IJK 软解；2=Media3 仅软解/AVC。 */
     private var blackScreenRecoveryStage = 0
-    private var diagUploadJob: Job? = null
     /** 当前集阶梯缓存（失败切流复用，避免每次重拉）。 */
     private var ladderRenditions: List<Rendition> = emptyList()
     private var ladderEpisodeId: String? = null
@@ -247,13 +244,12 @@ class PlayerActivity : AppCompatActivity() {
         source = runCatching {
             SeriesSource.valueOf(intent.getStringExtra(EXTRA_SOURCE) ?: SeriesSource.APP.name)
         }.getOrDefault(SeriesSource.APP)
-        startPositionMs = intent.getLongExtra(EXTRA_START_POSITION_MS, 0L)
-
         episodeIds = intent.getStringArrayListExtra(EXTRA_EPISODE_IDS)?.toList().orEmpty()
         episodeNumbers = intent.getIntegerArrayListExtra(EXTRA_EPISODE_NUMBERS)?.toList().orEmpty()
 
         val initialEpisodeId = intent.getStringExtra(EXTRA_EPISODE_ID)
-        val initialNumber = intent.getIntExtra(EXTRA_EPISODE_NUMBER, 1)
+        val initialNumber = intent.getIntExtra(EXTRA_EPISODE_NUMBER, 0)
+        val initialPositionMs = intent.getLongExtra(EXTRA_START_POSITION_MS, 0L)
 
         touchSlop = ViewConfiguration.get(this).scaledTouchSlop
         media3Content = binding.playerView.findViewById(androidx.media3.ui.R.id.exo_content_frame)
@@ -297,13 +293,16 @@ class PlayerActivity : AppCompatActivity() {
                         cover = detail.series.cover
                     }
             }
-            episodeIndex = episodeIds.indexOf(initialEpisodeId).takeIf { it >= 0 }
-                ?: (initialNumber - 1).coerceAtLeast(0)
-            if (episodeIds.isEmpty()) {
+            val initialEpisode = selectInitialEpisode(
+                episodeIds, episodeNumbers, initialEpisodeId, initialNumber, initialPositionMs,
+            )
+            if (initialEpisode == null) {
                 Toast.makeText(this@PlayerActivity, R.string.error_no_play_url, Toast.LENGTH_LONG).show()
                 finish()
                 return@launch
             }
+            episodeIndex = initialEpisode.index
+            startPositionMs = initialEpisode.positionMs
             refreshEpisodePicker()
             loadCurrent()
         }
@@ -511,23 +510,11 @@ class PlayerActivity : AppCompatActivity() {
         }
         val round = WatchUi.useRoundLayout(this)
         val cornerSafe = WatchUi.needsCornerSafeInset(this)
+        val preferred = WatchUi.preferredInsets(this)
         val safe = chromeSafePad
-        val sidePad = when {
-            safe != null -> maxOf(safe.left, safe.right)
-            round -> WatchUi.edgeInsetPx(this).coerceAtLeast(WatchUi.dp(this, 14f))
-            cornerSafe -> WatchUi.dp(this, 12f)
-            else -> WatchUi.dp(this, 10f)
-        }
-        val topSafe = safe?.top ?: when {
-            round -> WatchUi.edgeInsetPx(this)
-            cornerSafe -> (WatchUi.edgeInsetPx(this) * 0.95f).roundToInt()
-            else -> WatchUi.dp(this, 8f)
-        }
-        val bottomSafe = safe?.bottom ?: when {
-            round -> WatchUi.dp(this, 12f)
-            cornerSafe -> WatchUi.dp(this, 10f)
-            else -> WatchUi.dp(this, 8f)
-        }
+        val sidePad = safe?.let { maxOf(it.left, it.right) } ?: preferred.horizontal
+        val topSafe = safe?.top ?: preferred.top
+        val bottomSafe = safe?.bottom ?: preferred.vertical
         // 状态条：顶/左右吃系统栏与圆角，背景仍由 topChrome 铺满
         binding.playerStatusStrip.setPadding(
             sidePad,
@@ -543,6 +530,32 @@ class PlayerActivity : AppCompatActivity() {
             sidePad,
             bottomSafe,
         )
+        val available = resources.displayMetrics.widthPixels - sidePad * 2
+        // Leave space for all five actions when large UI settings narrow the controls row.
+        val compact = available < WatchUi.dp(this, 208f)
+        listOf(
+            binding.episodesButton to android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+            binding.playPauseButton to resources.getDimensionPixelSize(R.dimen.watch_play_h),
+            binding.speedButton to android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).forEach { (button, normalWidth) ->
+            val params = button.layoutParams as android.widget.LinearLayout.LayoutParams
+            val width = if (compact) 0 else normalWidth
+            val weight = if (compact) 1f else 0f
+            if (params.width != width || params.weight != weight) {
+                params.width = width
+                params.weight = weight
+                button.layoutParams = params
+                if (button is android.widget.TextView) {
+                    val h = WatchUi.dp(this, if (compact) 2f else 10f)
+                    button.setPadding(h, button.paddingTop, h, button.paddingBottom)
+                }
+            }
+        }
+        val iconPad = WatchUi.dp(this, if (compact) 5f else 8f)
+        val playPad = WatchUi.dp(this, if (compact) 6f else 14f)
+        binding.prevButton.setPadding(iconPad, iconPad, iconPad, iconPad)
+        binding.nextButton.setPadding(iconPad, iconPad, iconPad, iconPad)
+        binding.playPauseButton.setPadding(playPad, playPad, playPad, playPad)
         val timeRow = binding.timeCurrent.parent as? android.view.View
         timeRow?.setPadding(sidePad, timeRow.paddingTop, sidePad, timeRow.paddingBottom)
         binding.seekBar.setPadding(sidePad, binding.seekBar.paddingTop, sidePad, binding.seekBar.paddingBottom)
@@ -1453,7 +1466,6 @@ class PlayerActivity : AppCompatActivity() {
                 ).show()
                 binding.retryButton.visibility = View.VISIBLE
                 setLoadingIndicator(visible = false, immediate = true)
-                uploadDiagnosticsAsync("fetch_or_start_failed")
             }
         }
     }
@@ -1584,7 +1596,6 @@ class PlayerActivity : AppCompatActivity() {
                         message ?: "播放失败",
                         Toast.LENGTH_LONG,
                     ).show()
-                    uploadDiagnosticsAsync("ijk_error")
                 }
 
                 override fun onVideoSize(width: Int, height: Int, sarNum: Int, sarDen: Int) {
@@ -1779,7 +1790,6 @@ class PlayerActivity : AppCompatActivity() {
                 setLoadingIndicator(visible = false, immediate = true)
                 if (!locked) showControls(autoHide = false)
                 Toast.makeText(this@PlayerActivity, error.message ?: "播放失败", Toast.LENGTH_LONG).show()
-                uploadDiagnosticsAsync(reason)
             }
         })
 
@@ -1851,11 +1861,10 @@ class PlayerActivity : AppCompatActivity() {
                 "first_frame_timeout"
             }
             if (!tryPlaybackFailover(stream, activePosition(), reason = reason)) {
-                uploadDiagnosticsAsync(reason)
                 binding.retryButton.visibility = View.VISIBLE
                 Toast.makeText(
                     this@PlayerActivity,
-                    R.string.player_black_diag_hint,
+                    R.string.player_no_picture,
                     Toast.LENGTH_LONG,
                 ).show()
             }
@@ -1892,7 +1901,6 @@ class PlayerActivity : AppCompatActivity() {
                     R.string.player_stall_failed,
                     Toast.LENGTH_LONG,
                 ).show()
-                uploadDiagnosticsAsync("stall_timeout")
             }
         }
     }
@@ -2061,32 +2069,6 @@ class PlayerActivity : AppCompatActivity() {
         Toast.makeText(this, R.string.player_retry_compat, Toast.LENGTH_SHORT).show()
         loadCurrent()
         return true
-    }
-
-    private fun uploadDiagnosticsAsync(reason: String) {
-        if (diagUploadJob?.isActive == true) return
-        diagUploadJob = lifecycleScope.launch {
-            val outcome = runCatching {
-                val report = PlayerDiagLog.buildReport(this@PlayerActivity, reason)
-                withContext(Dispatchers.IO) { DiagUploader.upload(report) }
-            }
-            outcome.onSuccess { result ->
-                PlayerDiagLog.i("diag uploaded via ${result.channel}")
-                if (!isDestroyed) {
-                    watchSafeDiagToast(result.url)
-                }
-            }.onFailure { err ->
-                PlayerDiagLog.e("diag upload failed", err)
-            }
-        }
-    }
-
-    private fun watchSafeDiagToast(url: String) {
-        Toast.makeText(
-            this,
-            getString(R.string.diag_uploaded_toast, url.takeLast(48)),
-            Toast.LENGTH_LONG,
-        ).show()
     }
 
     private fun updatePlayPause() {

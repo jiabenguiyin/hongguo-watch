@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mine_account_title">红果账号</string>
+    <string name="mine_account_sign_in">登录红果账号</string>
+    <string name="mine_account_cloud_hint">查看云端历史和收藏</string>
+    <string name="mine_account_connected">查看云端历史和收藏</string>
+    <string name="mine_account_signed_out">登录后查看云端历史和收藏</string>
+    <string name="mine_account_signed_in">已登录 %1$s · 云端收藏 %2$d · 历史 %3$d</string>
+    <string name="mine_account_loading">正在读取账号信息…</string>
+    <string name="mine_favorites">我的收藏</string>
+    <string name="mine_history">观看历史</string>
+    <string name="mine_offline">离线缓存</string>
+    <string name="mine_library_hint">收藏、历史和离线内容都在“库”里管理</string>
+    <string name="mine_settings_section">应用设置</string>
+    <string name="mine_settings">设置</string>
+    <string name="mine_settings_hint">播放、显示、线路、缓存与更新</string>
+    <string name="mine_settings_summary">播放、显示和线路</string>
+</resources>

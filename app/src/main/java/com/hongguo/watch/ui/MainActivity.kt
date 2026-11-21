@@ -15,9 +15,10 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.hongguo.watch.HongguoWatchApp
@@ -28,14 +29,16 @@ import com.hongguo.watch.data.cache.VideoCacheManager
 import com.hongguo.watch.data.model.HomeCategory
 import com.hongguo.watch.data.model.Series
 import com.hongguo.watch.data.model.SeriesSource
+import com.hongguo.watch.data.redfruit.RedfruitAccountState
 import com.hongguo.watch.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : WatchDisplayActivity() {
     private lateinit var binding: ActivityMainBinding
     /** 顶栏 HH:mm（首页 / 库页共用 brandRow）。 */
     private lateinit var toolbarClock: WatchToolbarClock
@@ -51,9 +54,10 @@ class MainActivity : AppCompatActivity() {
     private var selectedCategoryId: String = HomeCategory.ID_RECOMMEND
     private var categoryChipViews: List<TextView> = emptyList()
     private var visibleChipCategories: List<HomeCategory> = emptyList()
-    private var lastRoundLayout: Boolean = false
+    private var lastDisplaySettings = WatchDisplaySettings()
     /** 进程内首次 onResume：与 Application 冷启动清盘汇合后再决定是否 toast。 */
     private var startupApkCleanupDone = false
+    private var firstResume = true
 
     /** 首页分类流分页状态（推荐 / 榜单 / 题材）。 */
     private val feedItems = mutableListOf<Series>()
@@ -136,6 +140,7 @@ class MainActivity : AppCompatActivity() {
                     else -> showHome(forceReload = true, fromSwipe = true)
                 }
                 Mode.LIBRARY -> showLibrary(fromSwipe = true)
+                Mode.MINE -> Unit
             }
         }
         binding.navRecommend.setOnClickListener { selectHomeNav(HomeNav.RECOMMEND) }
@@ -144,9 +149,7 @@ class MainActivity : AppCompatActivity() {
         binding.navSearch.setOnClickListener { selectHomeNav(HomeNav.SEARCH) }
         binding.tabHome.setOnClickListener { showHome() }
         binding.tabLibrary.setOnClickListener { showLibrary() }
-        binding.tabSettings.setOnClickListener {
-            startActivity(Intent(this, SettingsActivity::class.java))
-        }
+        binding.tabSettings.setOnClickListener { showMine() }
         binding.segmentFavorites.setOnClickListener {
             showLibrary(segment = LibrarySegmentPolicy.Segment.FAVORITES)
         }
@@ -156,18 +159,67 @@ class MainActivity : AppCompatActivity() {
         binding.segmentOffline.setOnClickListener {
             showLibrary(segment = LibrarySegmentPolicy.Segment.OFFLINE)
         }
+        binding.mineAccountCard.setOnClickListener {
+            startActivity(Intent(this, AccountSyncActivity::class.java))
+        }
+        binding.mineSettingsButton.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
 
-        if (intent.getBooleanExtra(EXTRA_OPEN_LIBRARY_OFFLINE, false)) {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                container.redfruitAccount.status.collect { state ->
+                    if (mode == Mode.MINE) renderMineAccount(state)
+                }
+            }
+        }
+
+        if (savedInstanceState != null) {
+            homeNav = HomeNav.entries.firstOrNull { it.name == savedInstanceState.getString(STATE_HOME_NAV) }
+                ?: HomeNav.RECOMMEND
+            selectedCategoryId = savedInstanceState.getString(STATE_CATEGORY) ?: HomeCategory.ID_RECOMMEND
+            librarySegment = LibrarySegmentPolicy.Segment.entries.firstOrNull {
+                it.name == savedInstanceState.getString(STATE_LIBRARY_SEGMENT)
+            } ?: LibrarySegmentPolicy.Segment.FAVORITES
+            mode = Mode.entries.firstOrNull {
+                it.name == savedInstanceState.getString(STATE_MODE)
+            } ?: if (savedInstanceState.getBoolean(STATE_LIBRARY)) Mode.LIBRARY else Mode.HOME
+            when (mode) {
+                Mode.MINE -> showMine()
+                Mode.LIBRARY -> showLibrary()
+                Mode.HOME -> when {
+                    homeNav == HomeNav.SEARCH -> {
+                        binding.searchInput.setText(savedInstanceState.getString(STATE_SEARCH).orEmpty())
+                        runSearch()
+                    }
+                    else -> showHome()
+                }
+            }
+        } else if (intent.hasExtra(EXTRA_OPEN_LIBRARY_SEGMENT)) {
+            showLibrary(segment = requestedLibrarySegment(intent))
+        } else if (intent.getBooleanExtra(EXTRA_OPEN_LIBRARY_OFFLINE, false)) {
             showLibrary(segment = LibrarySegmentPolicy.Segment.OFFLINE)
         } else {
             showHome()
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(STATE_MODE, mode.name)
+        outState.putString(STATE_HOME_NAV, homeNav.name)
+        outState.putString(STATE_CATEGORY, selectedCategoryId)
+        outState.putBoolean(STATE_LIBRARY, mode == Mode.LIBRARY)
+        outState.putString(STATE_LIBRARY_SEGMENT, librarySegment.name)
+        outState.putString(STATE_SEARCH, lastQuery)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getBooleanExtra(EXTRA_OPEN_LIBRARY_OFFLINE, false)) {
+        if (intent.hasExtra(EXTRA_OPEN_LIBRARY_SEGMENT)) {
+            showLibrary(segment = requestedLibrarySegment(intent))
+        } else if (intent.getBooleanExtra(EXTRA_OPEN_LIBRARY_OFFLINE, false)) {
             showLibrary(segment = LibrarySegmentPolicy.Segment.OFFLINE)
         }
     }
@@ -179,6 +231,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        container.accountSync.onForeground()
+        if (recreateForDisplaySizeChange()) return
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
         // 版本跃迁 / 安装后残留：首页恢复时再扫；仅当实际删掉更新包时 toast
         lifecycleScope.launch(Dispatchers.IO) {
@@ -202,26 +256,31 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        val round = WatchUi.useRoundLayout(this)
-        if (round != lastRoundLayout) {
+        if (WatchDisplaySettings.load(this) != lastDisplaySettings) {
             applyWatchChrome()
-            if (mode == Mode.HOME) renderSubChips()
+            if (mode == Mode.HOME) {
+                if (homeNav == HomeNav.SEARCH) renderSearchChips() else renderSubChips()
+            }
+        }
+        if (firstResume) {
+            firstResume = false
+            return
         }
         when (mode) {
             Mode.LIBRARY -> showLibrary()
-            Mode.HOME -> if (homeNav != HomeNav.SEARCH || lastQuery.isBlank()) {
-                if (homeNav != HomeNav.SEARCH) showHome()
-            }
+            Mode.HOME -> Unit
+            Mode.MINE -> showMine()
         }
     }
 
-    /** 圆/方屏边距与空态留白；设置页改圆屏适配后回首页会重算。 */
+    /** 设置变化后重算首页边距。 */
     private fun applyWatchChrome() {
-        lastRoundLayout = WatchUi.useRoundLayout(this)
+        lastDisplaySettings = WatchDisplaySettings.load(this)
+        val round = WatchUi.useRoundLayout(this)
         val cornerSafe = WatchUi.needsCornerSafeInset(this)
-        WatchUi.applySafePadding(binding.mainRoot, extraBottom = 0)
+        WatchUi.applySafePadding(binding.mainRoot, topChrome = binding.brandRow, bottomChrome = binding.tabBar)
         val listBottom = when {
-            lastRoundLayout -> WatchUi.dp(this, 14f)
+            round -> WatchUi.dp(this, 14f)
             cornerSafe -> WatchUi.dp(this, 10f)
             else -> WatchUi.dp(this, 6f)
         }
@@ -232,7 +291,7 @@ class MainActivity : AppCompatActivity() {
             listBottom,
         )
         val emptyPad = when {
-            lastRoundLayout -> WatchUi.dp(this, 28f)
+            round -> WatchUi.dp(this, 28f)
             cornerSafe -> WatchUi.dp(this, 22f)
             else -> WatchUi.dp(this, 20f)
         }
@@ -283,23 +342,7 @@ class MainActivity : AppCompatActivity() {
                 adapter.showResumeHint = false
                 listJob = lifecycleScope.launch {
                     try {
-                        ensureCategories(token)
-                        if (token != listGeneration || mode != Mode.HOME) return@launch
-                        selectedCategoryId = HomeNavPolicy.resolveSelectedCategoryId(
-                            homeNav,
-                            selectedCategoryId,
-                            categories,
-                        )
-                        renderSubChips()
-                        if (homeNav == HomeNav.CATEGORY &&
-                            HomeNavPolicy.genreCategories(categories).isEmpty()
-                        ) {
-                            adapter.submit(emptyList())
-                            binding.emptyView.visibility = View.VISIBLE
-                            binding.emptyView.text = getString(R.string.empty_category)
-                            return@launch
-                        }
-                        loadSelectedCategory(token)
+                        loadHomeNavigation(token)
                     } catch (e: Exception) {
                         if (token != listGeneration || mode != Mode.HOME) return@launch
                         showHomeError(e)
@@ -332,7 +375,7 @@ class MainActivity : AppCompatActivity() {
         highlightHomeNav()
         binding.brandTitle.text = getString(R.string.app_name)
         binding.emptyView.visibility = View.GONE
-        val clear = ListTabPolicy.shouldClearHomeAdapter(switchingToHome, forceReload)
+        val clear = ListTabPolicy.shouldClearHomeAdapter(switchingToHome, forceReload && !fromSwipe)
         val hadContent = adapter.itemCount > 0
         applyListLoading(
             ListLoadingPolicy.choose(
@@ -346,18 +389,15 @@ class MainActivity : AppCompatActivity() {
         if (clear) binding.seriesList.scrollToPosition(0)
         listJob = lifecycleScope.launch {
             try {
-                ensureCategories(token, force = forceReload)
-                if (token != listGeneration || mode != Mode.HOME) return@launch
-                selectedCategoryId = HomeNavPolicy.resolveSelectedCategoryId(
-                    homeNav,
-                    selectedCategoryId,
-                    categories,
-                )
-                renderSubChips()
-                loadSelectedCategory(token)
+                loadHomeNavigation(token, forceCategories = forceReload)
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 if (token != listGeneration || mode != Mode.HOME) return@launch
-                showHomeError(e)
+                if (hadContent && !clear) {
+                    Toast.makeText(this@MainActivity, R.string.error_network, Toast.LENGTH_SHORT).show()
+                } else {
+                    showHomeError(e)
+                }
             } finally {
                 if (token == listGeneration) {
                     applyListLoading(ListLoadingPolicy.Indicator.NONE)
@@ -366,10 +406,28 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private suspend fun loadHomeNavigation(token: Int, forceCategories: Boolean = false) {
+        // 推荐和榜单已有本地分类，只在题材页请求题材列表。
+        if (homeNav == HomeNav.CATEGORY) {
+            ensureCategories(token, force = forceCategories)
+        }
+        if (token != listGeneration || mode != Mode.HOME) return
+        selectedCategoryId = HomeNavPolicy.resolveSelectedCategoryId(homeNav, selectedCategoryId, categories)
+        renderSubChips()
+        if (homeNav == HomeNav.CATEGORY && HomeNavPolicy.genreCategories(categories).isEmpty()) {
+            adapter.submit(emptyList())
+            binding.emptyView.visibility = View.VISIBLE
+            binding.emptyView.text = getString(R.string.empty_category)
+            return
+        }
+        loadSelectedCategory(token)
+    }
+
     private suspend fun ensureCategories(token: Int, force: Boolean = false) {
         if (!force && categoriesReady) return
-        categories = repo.homeCategories()
+        val loaded = repo.homeCategories()
         if (token != listGeneration || mode != Mode.HOME) return
+        categories = loaded
         categoriesReady = true
         if (categories.none { it.id == selectedCategoryId }) {
             selectedCategoryId = HomeCategory.ID_RECOMMEND
@@ -421,6 +479,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun applyHomeChrome() {
         val home = mode == Mode.HOME
+        binding.mineContent.visibility = View.GONE
+        binding.swipeRefresh.visibility = View.VISIBLE
         binding.homeNavScroll.visibility =
             if (HomeNavPolicy.showHomeNavChrome(home)) View.VISIBLE else View.GONE
         binding.brandRow.visibility = View.VISIBLE
@@ -438,6 +498,39 @@ class MainActivity : AppCompatActivity() {
         if (home && homeNav == HomeNav.SEARCH) {
             renderSearchChips()
         }
+    }
+
+    private fun showMine() {
+        mode = Mode.MINE
+        beginListLoad(clearAdapter = false)
+        highlightBottomTabs(mine = true)
+        hideKeyboard()
+        binding.brandTitle.text = getString(R.string.tab_mine)
+        binding.homeNavScroll.visibility = View.GONE
+        binding.searchRow.visibility = View.GONE
+        binding.categoryScroll.visibility = View.GONE
+        binding.librarySegmentRow.visibility = View.GONE
+        binding.libraryCacheHook.visibility = View.GONE
+        binding.pageSubtitle.visibility = View.GONE
+        binding.swipeRefresh.visibility = View.GONE
+        binding.emptyView.visibility = View.GONE
+        binding.loading.visibility = View.GONE
+        binding.mineContent.visibility = View.VISIBLE
+        renderMineAccount(container.redfruitAccount.status.value)
+    }
+
+    private fun renderMineAccount(state: RedfruitAccountState) {
+        val name = state.accountName?.takeIf { it.isNotBlank() }
+        binding.mineAccountName.text = name ?: getString(
+            if (state.restoring) R.string.mine_account_title else R.string.mine_account_sign_in,
+        )
+        binding.mineAccountHint.setText(
+            when {
+                name != null -> R.string.mine_account_connected
+                state.restoring -> R.string.mine_account_loading
+                else -> R.string.mine_account_cloud_hint
+            },
+        )
     }
 
     private fun highlightHomeNav() {
@@ -497,8 +590,28 @@ class MainActivity : AppCompatActivity() {
         val feedToken = feedGeneration
         val page = fetchFeedPage(cat, page = 1, offset = 0, sessionId = "")
         if (!canMutateHomeFeed(listToken, feedToken)) return
-        applyFeedPage(cat, page, append = false)
-        fillFeedUntilScrollable(cat, listToken, feedToken)
+        feedLoadingMore = true
+        try {
+            val continueFilling = if (cat.isRecommend) {
+                FeedPagingPolicy.showRecommendationStart(
+                    page,
+                    fetchNext = { previous ->
+                        fetchFeedPage(cat, previous.page + 1, previous.nextOffset, previous.sessionId)
+                    },
+                ) { batch, append ->
+                    if (canMutateHomeFeed(listToken, feedToken)) applyFeedPage(cat, batch, append)
+                }
+            } else {
+                applyFeedPage(cat, page, append = false)
+                true
+            }
+            if (!canMutateHomeFeed(listToken, feedToken)) return
+            if (continueFilling && (!cat.isRecommend || feedItems.size < FeedPagingPolicy.INITIAL_BATCH_TARGET)) {
+                fillFeedUntilScrollable(cat, listToken, feedToken)
+            }
+        } finally {
+            if (feedToken == feedGeneration) feedLoadingMore = false
+        }
     }
 
     /**
@@ -516,16 +629,26 @@ class MainActivity : AppCompatActivity() {
             FeedPagingPolicy.shouldContinueInitialFill(feedItems.size, feedHasMore, pages)
         ) {
             pages++
-            val page = fetchFeedPage(
-                cat,
-                page = feedPage + 1,
-                offset = feedOffset,
-                sessionId = feedSession,
-            )
+            val page = try {
+                fetchFeedPage(
+                    cat,
+                    page = feedPage + 1,
+                    offset = feedOffset,
+                    sessionId = feedSession,
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Keep the first page visible; a later scroll can retry this page.
+                break
+            }
             if (!canMutateHomeFeed(listToken, feedToken)) return
             val before = feedItems.size
+            val previousOffset = feedOffset
             applyFeedPage(cat, page, append = true)
-            if (feedItems.size <= before) break
+            if (feedOffset <= previousOffset || (!cat.isRecommend && feedItems.size <= before) ||
+                (cat.isRecommend && feedItems.size >= FeedPagingPolicy.INITIAL_BATCH_TARGET)
+            ) break
         }
     }
 
@@ -563,8 +686,8 @@ class MainActivity : AppCompatActivity() {
         append: Boolean,
     ) {
         if (mode != Mode.HOME || homeNav == HomeNav.SEARCH) return
-        val seen = feedItems.map { it.id }.toHashSet()
-        val fresh = page.items.filter { it.id !in seen }
+        val seen = if (append) feedItems.mapTo(HashSet()) { it.id } else HashSet()
+        val fresh = page.items.filter { seen.add(it.id) }
         if (append) {
             val advanced = page.nextOffset > feedOffset
             feedOffset = page.nextOffset.coerceAtLeast(feedOffset)
@@ -576,7 +699,8 @@ class MainActivity : AppCompatActivity() {
             }
             val startRank = feedRankBase + feedItems.size
             feedItems += fresh
-            feedHasMore = page.hasMore
+            feedHasMore = page.hasMore && advanced
+            binding.emptyView.visibility = View.GONE
             val rows = if (cat.isRank) {
                 fresh.mapIndexed { index, series ->
                     HomeRow.Item(series, rank = startRank + index + 1)
@@ -988,6 +1112,8 @@ class MainActivity : AppCompatActivity() {
         librarySegment = segment
         highlightBottomTabs(library = true)
         hideKeyboard()
+        binding.mineContent.visibility = View.GONE
+        binding.swipeRefresh.visibility = View.VISIBLE
         binding.homeNavScroll.visibility = View.GONE
         binding.searchRow.visibility = View.GONE
         binding.categoryScroll.visibility = View.GONE
@@ -1315,7 +1441,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 库页横滑只切换收藏/历史/离线；到边停住，绝不切底栏首页/设置。
+     * 库页横滑只切换收藏/历史/离线；到边停住，绝不切底栏首页/我的。
      * 水平认领后 requestDisallowIntercept，避免被 SwipeRefresh / 父级跟手带走。
      */
     @SuppressLint("ClickableViewAccessibility")
@@ -1432,23 +1558,21 @@ class MainActivity : AppCompatActivity() {
     private fun highlightBottomTabs(
         home: Boolean = false,
         library: Boolean = false,
+        mine: Boolean = false,
     ) {
-        val accent = ContextCompat.getColor(this, R.color.accent)
+        val active = ContextCompat.getColor(this, R.color.text_primary)
         val muted = ContextCompat.getColor(this, R.color.text_secondary)
-        binding.tabHome.setTextColor(if (home) accent else muted)
-        binding.tabLibrary.setTextColor(if (library) accent else muted)
-        binding.tabSettings.setTextColor(muted)
-        binding.tabHome.setBackgroundResource(
-            if (home) R.drawable.bg_tab_active else android.R.color.transparent,
-        )
-        binding.tabLibrary.setBackgroundResource(
-            if (library) R.drawable.bg_tab_active else android.R.color.transparent,
-        )
-        binding.tabSettings.setBackgroundResource(android.R.color.transparent)
-        binding.tabHome.paint.isFakeBoldText = home
-        binding.tabLibrary.paint.isFakeBoldText = library
-        binding.tabHome.invalidate()
-        binding.tabLibrary.invalidate()
+        fun style(view: TextView, selected: Boolean) {
+            view.setTextColor(if (selected) active else muted)
+            view.setBackgroundResource(
+                if (selected) R.drawable.bg_top_tab_active else R.drawable.bg_top_tab_idle,
+            )
+            view.paint.isFakeBoldText = selected
+            view.invalidate()
+        }
+        style(binding.tabHome, home)
+        style(binding.tabLibrary, library)
+        style(binding.tabSettings, mine)
     }
 
     private fun hideKeyboard() {
@@ -1457,10 +1581,22 @@ class MainActivity : AppCompatActivity() {
         binding.searchInput.clearFocus()
     }
 
-    private enum class Mode { HOME, LIBRARY }
+    private enum class Mode { HOME, LIBRARY, MINE }
+
+    private fun requestedLibrarySegment(intent: Intent): LibrarySegmentPolicy.Segment =
+        LibrarySegmentPolicy.Segment.entries.firstOrNull {
+            it.name == intent.getStringExtra(EXTRA_OPEN_LIBRARY_SEGMENT)
+        } ?: LibrarySegmentPolicy.Segment.FAVORITES
 
     companion object {
         const val EXTRA_OPEN_LIBRARY_OFFLINE = "open_library_offline"
+        const val EXTRA_OPEN_LIBRARY_SEGMENT = "open_library_segment"
+        private const val STATE_MODE = "mode"
+        private const val STATE_HOME_NAV = "homeNav"
+        private const val STATE_CATEGORY = "selectedCategory"
+        private const val STATE_LIBRARY = "showLibrary"
+        private const val STATE_LIBRARY_SEGMENT = "librarySegment"
+        private const val STATE_SEARCH = "searchQuery"
         private const val SEARCH_CHIP_ALL = "all"
         private const val SEARCH_CHIP_SHORT = "short"
         private const val SEARCH_CHIP_COMIC = "comic"

@@ -1,19 +1,24 @@
 package com.hongguo.watch.data
 
 import android.content.Context
+import com.hongguo.watch.BuildConfig
 import com.hongguo.watch.data.cache.VideoCacheManager
 import com.hongguo.watch.data.db.AppDatabase
+import com.hongguo.watch.data.redfruit.RedfruitAccountManager
+import com.hongguo.watch.data.sync.AccountSyncManager
+import com.hongguo.watch.data.sync.SyncTransport
 
 class AppContainer(context: Context) {
     private val appContext = context.applicationContext
-    private val database = AppDatabase.create(appContext)
+    private val guestLibrary = LocalLibrary(AppDatabase.create(appContext))
+    internal val accountSync = AccountSyncManager(appContext, guestLibrary, SyncTransport(BuildConfig.SYNC_URL))
+    internal val redfruitAccount = RedfruitAccountManager(appContext)
     val settings = SettingsStore(appContext)
     /** 预算按本机存储动态计算，见 [com.hongguo.watch.data.cache.VideoCacheBudget]。 */
     val videoCache = VideoCacheManager(context = appContext)
     val repository = ContentRepository(
         appSource = AppSourceClient(appContext),
-        historyDao = database.watchHistoryDao(),
-        favoriteDao = database.favoriteDao(),
+        currentLibrary = accountSync::library,
         settings = settings,
     )
 }

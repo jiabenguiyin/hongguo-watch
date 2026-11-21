@@ -6,6 +6,7 @@
     <string name="tab_history">历史</string>
     <string name="tab_favorites">收藏</string>
     <string name="tab_settings">设置</string>
+    <string name="tab_mine">我的</string>
     <string name="episode_expand">展开</string>
     <string name="episode_collapse">收起</string>
     <string name="episode_range">%1$d–%2$d</string>
@@ -168,7 +169,7 @@
     <string name="player_retry_compat">画面异常，正在切换兼容解码…</string>
     <string name="player_failover_stream">播放异常，正在切换至 %1$s…</string>
     <string name="player_stall_failed">缓冲超时，已尝试切换线路</string>
-    <string name="player_black_diag_hint">仍无画面，已尝试上传诊断日志</string>
+    <string name="player_no_picture">仍无画面，可以重试或换一集</string>
     <string name="upload_diagnostics">上传诊断日志</string>
     <string name="player_kernel_label">播放内核</string>
     <string name="player_kernel_auto">自动</string>
@@ -182,7 +183,6 @@
     <string name="diag_uploaded_title">诊断已上传</string>
     <string name="diag_uploaded_body">请把链接发给开发者：\n%1$s</string>
     <string name="diag_upload_failed">诊断上传失败：%1$s</string>
-    <string name="diag_uploaded_toast">诊断已上传 …%1$s</string>
     <string name="diag_copy_link">复制链接</string>
     <string name="update_signing_note">若安装提示签名冲突，请先卸载旧版再装。0.4.4 起调试包使用仓库固定签名，之后可直接覆盖升级。</string>
     <string name="episodes">选集</string>
@@ -244,4 +244,19 @@
     <string name="error_no_play_url">暂无可用播放地址</string>
     <string name="error_playback_empty">片源服务暂未返回播放地址，请稍后重试</string>
     <string name="progress_meta">第 %1$d 集 · %2$d%%</string>
+    <string name="display_settings_title">显示设置</string>
+    <string name="display_preview_title">界面预览</string>
+    <string name="display_preview_body">文字与内容</string>
+    <string name="display_shape">屏幕形状</string>
+    <string name="display_shape_auto">自动</string>
+    <string name="display_shape_round">圆形</string>
+    <string name="display_shape_rectangle">方形</string>
+    <string name="display_scale_value">界面缩放：%1$d%%</string>
+    <string name="display_text_value">文字缩放：%1$d%%</string>
+    <string name="display_horizontal_value">左右边距：%1$s</string>
+    <string name="display_vertical_value">上下边距：%1$s</string>
+    <string name="display_auto_margin">自动</string>
+    <string name="display_margin_percent">%1$d%%</string>
+    <string name="display_reset">恢复默认</string>
+    <string name="display_apply">保存</string>
 </resources>

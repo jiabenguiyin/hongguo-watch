@@ -1,0 +1,455 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/accountSyncRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:id="@+id/accountToolbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingBottom="@dimen/watch_pad_tight">
+
+        <TextView
+            android:id="@+id/backButton"
+            android:layout_width="@dimen/watch_control_h"
+            android:layout_height="@dimen/watch_control_h"
+            android:background="@drawable/bg_control_button"
+            android:contentDescription="@string/account_sync_back"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="@string/back"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/accountTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/watch_pad"
+            android:layout_weight="1"
+            android:text="@string/account_sync_title"
+            android:textColor="@color/accent"
+            android:textSize="@dimen/watch_title"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/toolbarClock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/watch_pad"
+            android:contentDescription="@string/cd_toolbar_clock"
+            android:fontFamily="sans-serif-medium"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta"
+            android:textStyle="bold" />
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/cloudRefreshButton"
+            android:layout_width="@dimen/watch_control_h"
+            android:layout_height="@dimen/watch_control_h"
+            android:layout_marginStart="@dimen/watch_pad_tight"
+            android:background="@drawable/bg_control_button"
+            android:contentDescription="@string/redfruit_cloud_refresh"
+            android:padding="10dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_cloud_refresh"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <ScrollView
+        android:id="@+id/accountScroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:fillViewport="true"
+        android:overScrollMode="ifContentScrolls">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/watch_pad"
+            android:paddingBottom="@dimen/watch_pad">
+
+            <TextView
+                android:id="@+id/accountStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:accessibilityLiveRegion="polite"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:textColor="@color/text_primary"
+                android:textSize="@dimen/watch_body" />
+
+            <TextView
+                android:id="@+id/syncError"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/watch_pad_tight"
+                android:accessibilityLiveRegion="polite"
+                android:textColor="@color/accent"
+                android:textSize="@dimen/watch_body"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/syncBusy"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/watch_pad_tight"
+                android:text="@string/account_sync_busy"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/watch_meta"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/loginMethodTabs"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/watch_tab_h"
+                android:layout_marginTop="@dimen/watch_pad"
+                android:background="@drawable/bg_tab_bar"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:padding="2dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/pairButton"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginEnd="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_quality_chip"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:includeFontPadding="false"
+                    android:text="@string/redfruit_qr_login"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/watch_meta"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/phoneButton"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginStart="2dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_quality_chip"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:includeFontPadding="false"
+                    android:text="@string/redfruit_phone_login"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/watch_meta"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/pairingPanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/watch_pad"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <ImageView
+                    android:id="@+id/pairQr"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    android:adjustViewBounds="true"
+                    android:background="@drawable/bg_qr_panel"
+                    android:contentDescription="@string/account_sync_qr_description"
+                    android:padding="4dp"
+                    android:scaleType="fitCenter"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/pairInstructions"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/watch_pad"
+                    android:gravity="center"
+                    android:includeFontPadding="false"
+                    android:maxLines="3"
+                    android:text="@string/redfruit_qr_instructions"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/watch_meta" />
+
+                <androidx.appcompat.widget.AppCompatButton
+                    android:id="@+id/retryQrButton"
+                    style="@style/Widget.HongguoWatch.AccountSyncButton"
+                    android:minHeight="@dimen/watch_chip_min_h"
+                    android:text="@string/redfruit_qr_restart" />
+
+                <androidx.appcompat.widget.AppCompatButton
+                    android:id="@+id/cancelPairingButton"
+                    style="@style/Widget.HongguoWatch.AccountSyncButton"
+                    android:text="@string/account_sync_cancel_pairing" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/phonePanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/watch_pad"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/phoneLoginTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/watch_pad"
+                    android:gravity="center"
+                    android:includeFontPadding="false"
+                    android:text="@string/redfruit_phone_login_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_body"
+                    android:textStyle="bold" />
+
+                <androidx.appcompat.widget.AppCompatEditText
+                    android:id="@+id/phoneNumber"
+                    style="@style/Widget.HongguoWatch.RedfruitInput"
+                    android:hint="@string/redfruit_phone_hint"
+                    android:inputType="phone"
+                    android:maxLength="18" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/watch_pad"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <androidx.appcompat.widget.AppCompatEditText
+                        android:id="@+id/smsCode"
+                        style="@style/Widget.HongguoWatch.RedfruitInput"
+                        android:layout_width="0dp"
+                        android:layout_marginTop="0dp"
+                        android:layout_weight="1"
+                        android:hint="@string/redfruit_code_hint"
+                        android:inputType="numberPassword"
+                        android:maxLength="8"
+                        android:visibility="gone" />
+
+                    <androidx.appcompat.widget.AppCompatButton
+                        android:id="@+id/sendSmsButton"
+                        style="@style/Widget.HongguoWatch.AccountSyncButton"
+                        android:layout_width="0dp"
+                        android:layout_marginStart="4dp"
+                        android:layout_marginTop="0dp"
+                        android:layout_weight="1"
+                        android:minHeight="@dimen/watch_control_h"
+                        android:text="@string/redfruit_send_sms" />
+                </LinearLayout>
+
+                <androidx.appcompat.widget.AppCompatButton
+                    android:id="@+id/verifySmsButton"
+                    style="@style/Widget.HongguoWatch.AccountSyncButton"
+                    android:minHeight="@dimen/watch_chip_min_h"
+                    android:text="@string/redfruit_verify_sms"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/mfaMessage"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:saveEnabled="false"
+                    android:textColor="@color/text_primary"
+                    android:textIsSelectable="true"
+                    android:textSize="@dimen/watch_meta"
+                    android:visibility="gone" />
+
+                <androidx.appcompat.widget.AppCompatButton
+                    android:id="@+id/checkMfaButton"
+                    style="@style/Widget.HongguoWatch.AccountSyncButton"
+                    android:minHeight="@dimen/watch_chip_min_h"
+                    android:text="@string/redfruit_check_sms"
+                    android:visibility="gone" />
+
+                <androidx.appcompat.widget.AppCompatButton
+                    android:id="@+id/cancelPhoneButton"
+                    style="@style/Widget.HongguoWatch.AccountSyncButton"
+                    android:minHeight="@dimen/watch_chip_min_h"
+                    android:text="@string/redfruit_back_to_methods" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/accountDashboard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/accountName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:fontFamily="sans-serif-medium"
+                    android:maxLines="1"
+                    android:textColor="@color/text_primary"
+                    android:textSize="@dimen/watch_title" />
+
+                <TextView
+                    android:id="@+id/cloudOverviewStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:accessibilityLiveRegion="polite"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/watch_meta" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/watch_pad"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/cloudHistoryButton"
+                        style="@style/Widget.HongguoWatch.AccountAction"
+                        android:layout_marginEnd="4dp"
+                        android:text="@string/redfruit_cloud_history" />
+
+                    <TextView
+                        android:id="@+id/cloudFavoritesButton"
+                        style="@style/Widget.HongguoWatch.AccountAction"
+                        android:text="@string/redfruit_cloud_favorites" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/cloudResumeButton"
+                    style="@style/Widget.HongguoWatch.AccountAction"
+                    android:layout_width="match_parent"
+                    android:layout_marginTop="@dimen/watch_pad"
+                    android:layout_weight="0"
+                    android:ellipsize="end"
+                    android:gravity="start|center_vertical"
+                    android:maxLines="2"
+                    android:paddingHorizontal="10dp"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/watch_pad"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/syncButton"
+                        style="@style/Widget.HongguoWatch.AccountAction"
+                        android:layout_marginEnd="4dp"
+                        android:text="@string/redfruit_cloud_refresh" />
+
+                    <TextView
+                        android:id="@+id/signOutButton"
+                        style="@style/Widget.HongguoWatch.AccountAction"
+                        android:textColor="@color/text_secondary"
+                        android:text="@string/account_sync_sign_out" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/watch_pad"
+                    android:text="@string/redfruit_cloud_scope"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="@dimen/watch_meta" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <LinearLayout
+        android:id="@+id/cloudLibraryPanel"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:paddingHorizontal="@dimen/watch_pad"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/cloudTabs"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/watch_tab_h"
+            android:layout_marginTop="@dimen/watch_pad"
+            android:background="@drawable/bg_tab_bar"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:padding="2dp">
+
+            <TextView
+                android:id="@+id/cloudHistoryTab"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_marginEnd="2dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_quality_chip"
+                android:gravity="center"
+                android:paddingHorizontal="@dimen/watch_chip_pad_h"
+                android:text="@string/redfruit_cloud_history_tab"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/watch_meta"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/cloudFavoritesTab"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_marginStart="2dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_quality_chip"
+                android:gravity="center"
+                android:paddingHorizontal="@dimen/watch_chip_pad_h"
+                android:text="@string/redfruit_cloud_favorites_tab"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/watch_meta"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/cloudLibraryStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/watch_pad"
+            android:accessibilityLiveRegion="polite"
+            android:gravity="start"
+            android:visibility="gone"
+            android:textColor="@color/text_secondary"
+            android:textSize="@dimen/watch_meta" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/cloudLibraryList"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:paddingTop="@dimen/watch_pad"
+                android:paddingBottom="@dimen/watch_pad" />
+
+            <TextView
+                android:id="@+id/cloudEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:accessibilityLiveRegion="polite"
+                android:gravity="center"
+                android:paddingHorizontal="@dimen/watch_pad"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/watch_body"
+                android:visibility="gone" />
+        </FrameLayout>
+    </LinearLayout>
+</LinearLayout>

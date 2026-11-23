@@ -206,7 +206,7 @@ class MobilePlaybackTest {
                 assertEquals("vivo_8662_64", request.url.queryParameter("channel"))
                 assertEquals("gzip", request.header("Content-Encoding"))
                 assertEquals("test-signature", request.header("X-Argus"))
-                assertTrue(request.header("User-Agent")!!.startsWith("com.phoenix.read/73932 "))
+                assertTrue(request.header("User-Agent")!!.startsWith("com.phoenix.read/74532 "))
                 assertNull(request.header("Cookie"))
                 assertEquals(
                     MessageDigest.getInstance("MD5").digest(bytes)
@@ -291,7 +291,7 @@ class MobilePlaybackTest {
                             assertEquals("74532", request.url.queryParameter("version_code"))
                             assertEquals("74532", request.url.queryParameter("manifest_version_code"))
                             assertEquals("74532", request.url.queryParameter("update_version_code"))
-                            assertTrue(request.header("User-Agent")!!.startsWith("com.phoenix.read/73532 "))
+                            assertTrue(request.header("User-Agent")!!.startsWith("com.phoenix.read/74532 "))
                             assertEquals("signed", request.header("X-Test-Signature"))
                         }
                         "/novel/player/multi_video_model/v1" -> {

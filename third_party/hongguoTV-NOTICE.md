@@ -1,15 +1,12 @@
 # 本次同步来源
 
-2026-11-23：对照官方 `com.phoenix.read` **7.4.5.32**（versionCode **74532**，用户百度 CDN 包；
-文件 MD5=`31c6285e…`，与 URL `md5hash=37a427b7…` 不一致已记录）DEX：
-`GET /reading/bookapi/video_tab/multi_video_model/v:version/`、
-`GET …/video_tab/video_model/v:version/` 与 `POST /novel/player/multi_video_model/v1/`；
-官方含 `libmetasec_ml.so`（~4.3 MiB MetaSec，不可再分发）。手表 AUTO 优先
-`video_tab/multi_video_model/v1/`，`video_model` 为备选。仍用 GPL PlayerSigner 作
-Argus/Ladon 近似，**未**打包官方 MetaSec。
-
-2026-11-23：对照官方 **7.2.5.32**（72532）时仅有 `video_tab/video_model`（无 tab
-`multi_video_model`）；已以 7.4.5.32 为准覆盖该临时结论。
+2026-11-23：**唯一官方对照**为用户百度 CDN 包 `com.phoenix.read` **7.4.5.32** /
+versionCode **74532**（文件 MD5=`31c6285e…`；URL `md5hash=37a427b7…` 不匹配已记录）。
+更早 7.2.x / 7.1.x / 7.3.x 逆向结论一律作废。DEX：`GET video_tab/multi_video_model`、
+`GET video_tab/video_model`、`POST /novel/player/multi_video_model/v1/`；含
+`libmetasec_ml.so`（~4.3 MiB，不可再分发）。手表身份与播放 UA 对齐 **74532**；
+AUTO 优先 `video_tab/multi_video_model/v1/`。GPL PlayerSigner 作 Argus/Ladon 近似，
+**未**打包 MetaSec。
 
 2026-11-23：官方播放「真签名」对齐
 [jycao2/hongguoTV kotlin-v0.33.1-build.62](https://github.com/jycao2/hongguoTV/releases/tag/kotlin-v0.33.1-build.62)

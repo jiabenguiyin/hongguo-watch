@@ -44,7 +44,7 @@ internal data class PlaybackRouteAttempt(
  * Official APIs silently drop v5 placeholder helios/medusa headers (empty HTTP 200).
  * Working path: pick `_rticket` via v5 branch search, then attach **PlayerSigner**
  * (Argus/Ladon stand-in; official app uses MetaSec/`libmetasec_ml.so`). Prefer GET
- * `video_tab/multi_video_model/v1/` (official 7.4.5.32 DEX; also has `video_tab/video_model`),
+ * `video_tab/multi_video_model/v1/` (Baidu official 7.4.5.32 DEX; also has `video_tab/video_model`),
  * then POST `/novel/player/multi_video_model/v1` (no `/player/`, no `dr_scene`, **74532**).
  */
 internal object MobilePlayback {
@@ -63,13 +63,13 @@ internal object MobilePlayback {
         realSigned(provisional.url, provisional.headers, body)
     }
 
-    /** Official 7.4.5.32 playback identity (hongguoTV 0.33.1 MobilePlayback). */
-    private const val VERSION_CODE = "74532"
-    private const val VERSION_NAME = "7.4.5.32"
+    /** Baidu official APK identity only (7.4.5.32 / 74532) — interim 7.2.x discarded. */
+    private const val VERSION_CODE = VendorConstants.OFFICIAL_VERSION_CODE
+    private const val VERSION_NAME = VendorConstants.OFFICIAL_VERSION_NAME
     private const val PLAYBACK_UA =
-        "com.phoenix.read/73932 (Linux; U; Android 12; zh_CN_#Hans; PGT-AN10; Build/V417IR;tt-ok/3.12.13.20)"
+        "com.phoenix.read/$VERSION_CODE (Linux; U; Android 12; zh_CN_#Hans; PGT-AN10; Build/V417IR;tt-ok/3.12.13.20)"
     private const val TAB_UA =
-        "com.phoenix.read/73532 (Linux; U; Android 9; SM-N9860; Build/PQ3A.190705.10241111;tt-ok/3.12.13.20)"
+        "com.phoenix.read/$VERSION_CODE (Linux; U; Android 9; SM-N9860; Build/PQ3A.190705.10241111;tt-ok/3.12.13.20)"
 
     private val PLACEHOLDER_HEADERS = setOf(
         "x-gorgon", "x-helios", "x-medusa", "x-argus", "x-ladon", "x-khronos",
@@ -475,7 +475,7 @@ internal object MobilePlayback {
                 ),
             )
         }
-        // Official 7.4.5.32 DEX: GET video_tab/multi_video_model/v:version/ (+ video_model spare).
+        // Baidu official 7.4.5.32 DEX SoT: multi_video_model first; video_model also in DEX.
         val bases = listOf(
             "https://api5-normal-sinfonlineb.fqnovel.com/reading/bookapi/video_tab/multi_video_model/v1/",
             "https://api5-normal-sinfonlineb.fqnovel.com/reading/bookapi/video_tab/video_model/v1/",

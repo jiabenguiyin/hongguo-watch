@@ -20,7 +20,7 @@ class PlaybackSourceException(
             else -> "播放请求未成功（HTTP $upstreamCode），请稍后重试"
         }
         Reason.TEMPORARY_UNAVAILABLE -> "播放服务暂时不可用（HTTP $upstreamCode），请稍后重试"
-        Reason.NO_CONTENT -> "片源服务暂未返回播放信息，请稍后重试"
+        Reason.NO_CONTENT -> "官方接口限流，暂未返回播放信息，请稍后重试"
         Reason.INVALID_RESPONSE -> "播放信息格式异常，请稍后手动重试"
         Reason.NO_PLAYABLE_SOURCE -> "片源服务暂未提供可播放地址，请换一集或稍后再试"
     },

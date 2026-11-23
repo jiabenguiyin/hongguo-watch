@@ -186,7 +186,7 @@ class MobilePlaybackTest {
         val signing = MobilePlaybackSigner { target, bytes, identity ->
             assertEquals("123456", identity["device_id"])
             assertEquals("654321", identity["iid"])
-            assertEquals("74532", identity["version_code"])
+            assertEquals(VendorConstants.OFFICIAL_VERSION_CODE, identity["version_code"])
             signed = requireNotNull(bytes).copyOf()
             url = target
             MobileSignedRequest(target, mapOf("X-Argus" to "test-signature"))
@@ -201,12 +201,12 @@ class MobilePlaybackTest {
                 assertEquals("/novel/player/multi_video_model/v1", request.url.encodedPath)
                 assertEquals("123456", request.url.queryParameter("device_id"))
                 assertEquals("654321", request.url.queryParameter("iid"))
-                assertEquals("74532", request.url.queryParameter("version_code"))
-                assertEquals("7.4.5.32", request.url.queryParameter("version_name"))
+                assertEquals(VendorConstants.OFFICIAL_VERSION_CODE, request.url.queryParameter("version_code"))
+                assertEquals(VendorConstants.OFFICIAL_VERSION_NAME, request.url.queryParameter("version_name"))
                 assertEquals("vivo_8662_64", request.url.queryParameter("channel"))
                 assertEquals("gzip", request.header("Content-Encoding"))
                 assertEquals("test-signature", request.header("X-Argus"))
-                assertTrue(request.header("User-Agent")!!.startsWith("com.phoenix.read/74532 "))
+                assertTrue(request.header("User-Agent")!!.startsWith("com.phoenix.read/" + VendorConstants.OFFICIAL_VERSION_CODE + " "))
                 assertNull(request.header("Cookie"))
                 assertEquals(
                     MessageDigest.getInstance("MD5").digest(bytes)
@@ -264,15 +264,15 @@ class MobilePlaybackTest {
             when {
                 target.contains("/novel/player/video_model/v1/") -> {
                     assertTrue(body != null && body.isNotEmpty())
-                    assertEquals("74532", profile["version_code"])
+                    assertEquals(VendorConstants.OFFICIAL_VERSION_CODE, profile["version_code"])
                     assertEquals("123456", profile["device_id"])
                     signedVideoModel = true
                 }
                 target.contains("/reading/bookapi/video_tab/video_model/v1/") ||
                     target.contains("/reading/bookapi/video_tab/multi_video_model/v1/") -> {
                     assertEquals(null, body)
-                    assertEquals("74532", profile["version_code"])
-                    assertEquals("7.4.5.32", profile["version_name"])
+                    assertEquals(VendorConstants.OFFICIAL_VERSION_CODE, profile["version_code"])
+                    assertEquals(VendorConstants.OFFICIAL_VERSION_NAME, profile["version_name"])
                     assertEquals("123456", profile["device_id"])
                     signedVideoTab = true
                 }
@@ -290,7 +290,7 @@ class MobilePlaybackTest {
                     when (request.url.encodedPath) {
                         "/novel/player/video_model/v1/" -> {
                             assertEquals("POST", request.method)
-                            assertEquals("74532", request.url.queryParameter("version_code"))
+                            assertEquals(VendorConstants.OFFICIAL_VERSION_CODE, request.url.queryParameter("version_code"))
                             assertEquals("signed", request.header("X-Test-Signature"))
                             val compressed = Buffer().apply { request.body!!.writeTo(this) }.readByteArray()
                             val payload = GZIPInputStream(compressed.inputStream()).reader().readText()
@@ -303,15 +303,15 @@ class MobilePlaybackTest {
                             assertEquals("GET", request.method)
                             assertEquals(null, request.body)
                             assertEquals("123", request.url.queryParameter("video_id"))
-                            assertEquals("74532", request.url.queryParameter("version_code"))
-                            assertEquals("74532", request.url.queryParameter("manifest_version_code"))
-                            assertEquals("74532", request.url.queryParameter("update_version_code"))
-                            assertTrue(request.header("User-Agent")!!.startsWith("com.phoenix.read/74532 "))
+                            assertEquals(VendorConstants.OFFICIAL_VERSION_CODE, request.url.queryParameter("version_code"))
+                            assertEquals(VendorConstants.OFFICIAL_VERSION_CODE, request.url.queryParameter("manifest_version_code"))
+                            assertEquals(VendorConstants.OFFICIAL_VERSION_CODE, request.url.queryParameter("update_version_code"))
+                            assertTrue(request.header("User-Agent")!!.startsWith("com.phoenix.read/" + VendorConstants.OFFICIAL_VERSION_CODE + " "))
                             assertEquals("signed", request.header("X-Test-Signature"))
                         }
                         "/novel/player/multi_video_model/v1" -> {
                             assertEquals("POST", request.method)
-                            assertEquals("74532", request.url.queryParameter("version_code"))
+                            assertEquals(VendorConstants.OFFICIAL_VERSION_CODE, request.url.queryParameter("version_code"))
                         }
                     }
                 },

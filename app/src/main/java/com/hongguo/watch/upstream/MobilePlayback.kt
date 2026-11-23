@@ -39,11 +39,12 @@ internal data class PlaybackRouteAttempt(
 )
 
 /**
- * Playback against Fanqie model endpoints — mirror official 红果 **7.4.5.32** sequence:
+ * Playback against Fanqie model endpoints — mirror official 红果 **7.4.x** sequence:
  * device_register → register cookies → signed headers → GET video_tab/multi_video_model →
- * POST multi_video_model → stream. Official MetaSec (`libmetasec_ml.so`) cannot be
- * redistributed; [MetaSecPlayback] documents blockers. Watch uses GPL **PlayerSigner**
- * (Argus/Ladon stand-in) until a lawful MetaSec path exists.
+ * POST multi_video_model → stream. Identity notes track **74832 / 7.4.8.32** (routes
+ * unchanged from Baidu 7.4.5.32 DEX). MetaSec cannot be redistributed; see
+ * [MetaSecPlayback]. Watch uses GPL **PlayerSigner** until a lawful MetaSec path exists.
+ * Empty HTTP 200 surfaces as user-facing「官方接口限流」— not “play fixed”.
  */
 internal object MobilePlayback {
     private val v5Signer = Signer(mobileV5 = true)
@@ -61,7 +62,7 @@ internal object MobilePlayback {
         realSigned(provisional.url, provisional.headers, body)
     }
 
-    /** Baidu official APK identity only (7.4.5.32 / 74532) — interim 7.2.x discarded. */
+    /** Upstream identity notes (74832 / 7.4.8.32); interim 7.2.x discarded. */
     private const val VERSION_CODE = VendorConstants.OFFICIAL_VERSION_CODE
     private const val VERSION_NAME = VendorConstants.OFFICIAL_VERSION_NAME
     private const val PLAYBACK_UA =
@@ -504,7 +505,7 @@ internal object MobilePlayback {
                 ),
             )
         }
-        // Baidu official 7.4.5.32 DEX SoT: multi_video_model first; video_model also in DEX.
+        // Official DEX SoT (7.4.5+ / 7.4.8): multi_video_model first; video_model also present.
         val bases = listOf(
             "https://api5-normal-sinfonlineb.fqnovel.com/reading/bookapi/video_tab/multi_video_model/v1/",
             "https://api5-normal-sinfonlineb.fqnovel.com/reading/bookapi/video_tab/video_model/v1/",

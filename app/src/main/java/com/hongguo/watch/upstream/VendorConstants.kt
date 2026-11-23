@@ -2,16 +2,20 @@
 package com.hongguo.watch.upstream
 
 internal object VendorConstants {
-    /** Official Baidu APK identity: com.phoenix.read 7.4.5.32 / 74532. */
-    const val OFFICIAL_VERSION_CODE = "74532"
-    const val OFFICIAL_VERSION_NAME = "7.4.5.32"
+    /**
+     * Upstream identity notes for play requests.
+     * Latest observed family: 7.4.8.32 / 74832 (modded upload still MetaSec — no signer lift).
+     * Baidu SoT reverse used 7.4.5.32 / 74532; routes unchanged.
+     */
+    const val OFFICIAL_VERSION_CODE = "74832"
+    const val OFFICIAL_VERSION_NAME = "7.4.8.32"
 
     const val VIDEO_UA =
         "com.phoenix.read/$OFFICIAL_VERSION_CODE (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
     const val APP_UA =
         "com.phoenix.read/$OFFICIAL_VERSION_CODE (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3)"
 
-    /** 播放模型请求使用的厂商 UA；`/novel/player` 与 `video_tab` 均用官方 74532。 */
+    /** 播放模型请求使用的厂商 UA；`/novel/player` 与 `video_tab` 均用官方 version code。 */
     const val PLAYER_UA =
         "com.phoenix.read/$OFFICIAL_VERSION_CODE (Linux; U; Android 9; SM-N9860; Build/PQ3A.190705.10241111;tt-ok/3.12.13.20)"
     val device =

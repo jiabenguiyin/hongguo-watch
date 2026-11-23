@@ -1,12 +1,11 @@
 # 本次同步来源
 
-2026-11-23：**唯一官方对照**为用户百度 CDN 包 `com.phoenix.read` **7.4.5.32** /
-versionCode **74532**（文件 MD5=`31c6285e…`；URL `md5hash=37a427b7…` 不匹配已记录）。
-更早 7.2.x / 7.1.x / 7.3.x 逆向结论一律作废。端到端播放序列对齐：
-`device_register` → 登记 Cookie → 签名头 → `GET video_tab/multi_video_model` →
-`POST multi_video_model` → 取流。官方 MetaSec/`libmetasec_ml.so` **不可再分发**
-（法律 + JNI/包签名门槛，见 `MetaSecPlayback`）；手表用 GPL PlayerSigner 近似。
-身份/UA 对齐 **74532**；登记 Cookie 会附在模型请求上（不含账号 session）。
+2026-11-23：播放对照以百度 CDN **7.4.5.32 / 74532** DEX 路由为准；身份备注现对齐
+**7.4.8.32 / 74832**（用户改装包仍 MetaSec，**无**可移植签名器，见
+`internal/modded-74832-upload-notes.md`）。更早 7.2.x 结论作废。序列：
+`device_register` → Cookie → 签名 → `video_tab/multi_video_model` →
+`POST multi_video_model` → 取流。MetaSec **不可再分发**；PlayerSigner 近似。
+empty-200 用户文案为「官方接口限流」——**不**宣称播放已修好。
 
 2026-11-23：官方播放「真签名」对齐
 [jycao2/hongguoTV kotlin-v0.33.1-build.62](https://github.com/jycao2/hongguoTV/releases/tag/kotlin-v0.33.1-build.62)

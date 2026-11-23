@@ -102,7 +102,7 @@ class ContentHttpException(val statusCode: Int) : IOException("内容请求失�
 class EmptyPlaybackResponseException(
     val detail: String? = null,
     internal val allCompatibilityModelsEmpty: Boolean = false,
-) : IOException(detail?.let { "播放响应为空（$it）" } ?: "播放响应为空")
+) : IOException(detail?.let { "官方接口限流（$it）" } ?: "官方接口限流")
 
 internal fun qualityNumber(value: String): Int =
     Regex("2160|1440|1080|720|576|540|480|360").find(value)?.value?.toInt()

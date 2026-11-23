@@ -10,7 +10,7 @@ import org.junit.Assume
 import org.junit.Test
 
 /**
- * Live end-to-end probe mirroring official 7.4.5.32 play sequence:
+ * Live end-to-end probe mirroring official 7.4.x play sequence:
  * device_register → register cookies → PlayerSigner (MetaSec stand-in) →
  * video_tab / multi_video_model ladder.
  *

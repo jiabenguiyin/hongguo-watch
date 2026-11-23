@@ -2,8 +2,9 @@
 package com.hongguo.watch.upstream
 
 /**
- * Official 红果 7.4.5.32 signs play traffic with ByteDance **MetaSec / MSSDK**
- * (`com.bytedance.mobsec.metasec.ml.MS*` + native `libmetasec_ml.so` ≈ 4.3 MiB).
+ * Official / modded 红果 **7.4.x** (incl. 7.4.8.32 / 74832) signs play traffic with
+ * ByteDance **MetaSec / MSSDK** (`com.bytedance.mobsec.metasec.ml.MS*` + native
+ * `libmetasec_ml.so` ≈ 4.3 MiB). Modded builds do **not** provide a portable signer.
  *
  * ## Prefer MetaSec?
  * Yes for protocol parity — empty HTTP 200 on correct routes under [PlayerSigner]

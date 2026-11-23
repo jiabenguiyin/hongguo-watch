@@ -18,6 +18,25 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.json:json:20240303")
+
+    // MetaSec / unidbg (runtime jars ~35 MiB). Native .so stays private on the host.
+    implementation("com.github.zhkl0228:unidbg-android:0.9.8")
+    implementation("com.github.zhkl0228:unidbg-api:0.9.8")
+    implementation("com.github.zhkl0228:unidbg-unicorn2:0.9.8")
+    implementation("com.github.zhkl0228:unidbg-dynarmic:0.9.8")
+    implementation("com.github.zhkl0228:unicorn:1.0.14")
+    implementation("com.github.zhkl0228:keystone:0.9.7")
+    implementation("net.java.dev.jna:jna:5.10.0")
+    implementation("org.scijava:native-lib-loader:2.3.5")
+    implementation("net.dongliu:apk-parser:2.6.10")
+    implementation("org.slf4j:slf4j-api:1.7.36")
+    implementation("org.slf4j:slf4j-simple:1.7.36")
+    implementation("com.alibaba:fastjson:1.2.83")
+    implementation("commons-codec:commons-codec:1.15")
+    implementation("org.apache.commons:commons-collections4:4.4")
+    implementation("commons-io:commons-io:2.11.0")
+    implementation("commons-logging:commons-logging:1.2")
+
     testImplementation(kotlin("test"))
 }
 
@@ -43,6 +62,9 @@ tasks.register<Tar>("proxyDeployTar") {
     destinationDirectory.set(layout.buildDirectory.dir("distributions"))
     from(layout.buildDirectory.dir("install/proxy")) {
         into("proxy")
+    }
+    from("scripts") {
+        into("proxy/scripts")
     }
 }
 

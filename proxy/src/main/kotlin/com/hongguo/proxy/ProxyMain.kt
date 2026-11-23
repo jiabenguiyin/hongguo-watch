@@ -29,7 +29,8 @@ import org.json.JSONObject
 
 /**
  * Playback signing proxy: watch gets stream URLs only; this process owns
- * device_register → sign (MetaSec TODO / PlayerSigner) → video_tab / multi_video_model.
+ * device_register → sign (MetaSec/unidbg when METASEC_HOME ready, else PlayerSigner) →
+ * video_tab / multi_video_model.
  *
  * Run: `./gradlew :proxy:run` or `PORT=8787 HONGGUO_PLAYBACK_PROXY_TOKEN=secret ./gradlew :proxy:run`
  */
@@ -69,7 +70,11 @@ fun main() {
                 JSONObject()
                     .put("error", "upstream_empty")
                     .put("detail", empty.message ?: "empty")
-                    .put("hint", "PlayerSigner may be rejected; configure MetaSec unidbg (METASEC_UNIDBG_URL)"),
+                    .put(
+                        "hint",
+                        "empty upstream; ensure METASEC_HOME has libmetasec_ml.so + license.b64 " +
+                            "(PlayerSigner often empty-200)",
+                    ),
             )
         } catch (src: PlaybackSourceException) {
             val code = when (src.reason) {
@@ -96,7 +101,10 @@ fun main() {
     val auth = if (token.isEmpty()) "open (no token)" else "Bearer token required"
     println("hongguo playback proxy on http://$bind:$port  auth=$auth  signer=${service.signerLabel()}")
     println("GET /v1/stream?episode_id=…&quality=auto")
-    println("MetaSec configured=${MetaSecBridge.isConfigured()} (env ${MetaSecBridge.ENV_URL})")
+    println(
+        "MetaSec local=${MetaSecBridge.isLocalReady()} home=${MetaSecBridge.home().absolutePath} " +
+            "http=${!System.getenv(MetaSecBridge.ENV_URL).isNullOrBlank()}",
+    )
 }
 
 private val EPISODE = Regex("[0-9]{1,30}")
@@ -146,22 +154,27 @@ internal class StreamService(
     private var cdid: String = UUID.randomUUID().toString()
     private var cookies: Map<String, String> = emptyMap()
 
-    fun signerLabel(): String =
-        if (MetaSecBridge.isConfigured()) "metasec-todo+playersigner-fallback" else "playersigner"
+    fun signerLabel(): String = MetaSecBridge.statusLabel()
 
     private val signer = MobilePlaybackSigner { url, body, _ ->
-        val query = url.substringAfter('?', "")
-        val meta = runCatching { MetaSecBridge.signHeaders(query, body) }.getOrNull()
-        if (meta != null) {
-            return@MobilePlaybackSigner MobileSignedRequest(url, meta)
+        val meta = runCatching { MetaSecBridge.signHeaders(url, body) }.getOrNull()
+        if (!meta.isNullOrEmpty()) {
+            // Keep non-MetaSec transport headers from the v5 path, replace digests.
+            val base = MobilePlayback.signer.sign(url, body, emptyMap())
+            val drop = setOf(
+                "x-gorgon", "x-helios", "x-medusa", "x-argus", "x-ladon", "x-khronos",
+                "x-ss-stub", "x-ss-req-ticket", "x-perseus",
+            )
+            val kept = base.headers.filterKeys { it.lowercase() !in drop }
+            val merged = kept + meta
+            return@MobilePlaybackSigner MobileSignedRequest(base.url, merged)
         }
-        // Same path as watch: v5 ticket pick is inside MobilePlayback.signer; here we
-        // wrap PlayerSigner only when MetaSec is unset. Prefer MobilePlayback.signer.
         MobilePlayback.signer.sign(url, body, emptyMap())
     }
 
     fun resolveStream(episodeId: String, quality: String): JSONObject {
         ensureRegistered()
+        MetaSecBridge.bindDevice(deviceId, installId)
         val identity = VendorConstants.device + mapOf(
             "device_id" to deviceId,
             "iid" to installId,

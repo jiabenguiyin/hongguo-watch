@@ -14,23 +14,27 @@ Media bytes are **not** proxied — the watch plays CDN URLs directly.
 PORT=8787 BIND=0.0.0.0 HONGGUO_PLAYBACK_PROXY_TOKEN=devsecret ./gradlew :proxy:run
 ```
 
-### Dist (Java 17 bytecode)
+### Dist (Java 17 bytecode + unidbg)
 
 ```bash
 ./gradlew :proxy:proxyDeployTar
-# → proxy/build/distributions/hongguo-playback-proxy.tar.gz  (top-level proxy/)
-# → also :proxy:installDist → proxy/build/install/proxy/{bin,lib}
+# → ~41 MiB tar with unidbg jars (no proprietary .so)
 ```
 
-On a host with **OpenJDK 17+**:
+On a host with **OpenJDK 17+** and private MetaSec assets under `METASEC_HOME`
+(default `/opt/hongguo-playback-proxy/metasec`):
 
 ```bash
 tar -xzf hongguo-playback-proxy.tar.gz
-cd proxy
-PORT=8787 BIND=0.0.0.0 HONGGUO_PLAYBACK_PROXY_TOKEN=secret ./bin/proxy
+bash proxy/scripts/metasec-extract.sh /path/to/phoenix.read.apk /opt/hongguo-playback-proxy/metasec
+# add license.b64 + refso/data/ms_16777218.bin (private)
+export METASEC_HOME=/opt/hongguo-playback-proxy/metasec
+export METASEC_BACKEND=unicorn2
+cd proxy && PORT=8787 BIND=0.0.0.0 HONGGUO_PLAYBACK_PROXY_TOKEN=secret ./bin/proxy
 ```
 
-Store copy (agent builds): `/cursor/stores/self/media/hongguo-playback-proxy.tar.gz`.
+Store copy: `/cursor/stores/self/media/hongguo-playback-proxy.tar.gz`.
+Deploy notes: `/cursor/stores/self/docs/metasec-proxy-deploy.md`.
 
 Smoke:
 

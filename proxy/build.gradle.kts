@@ -33,13 +33,17 @@ tasks.named<Jar>("jar") {
     }
 }
 
-tasks.named<Tar>("distTar") {
+// Prefer packaging installDist (top-level `proxy/bin/proxy`) over default distTar nesting.
+tasks.register<Tar>("proxyDeployTar") {
+    group = "distribution"
+    description = "Tar of installDist as proxy/ with bin/proxy (Java 17)."
+    dependsOn(tasks.named("installDist"))
     compression = Compression.GZIP
-    archiveBaseName.set("hongguo-playback-proxy")
-    archiveVersion.set("")
-    archiveExtension.set("tar.gz")
-    // Prefer a top-level `proxy/` directory (matches installDist layout).
-    into("proxy")
+    archiveFileName.set("hongguo-playback-proxy.tar.gz")
+    destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+    from(layout.buildDirectory.dir("install/proxy")) {
+        into("proxy")
+    }
 }
 
 sourceSets {

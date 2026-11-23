@@ -8,20 +8,16 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * Optional **playback signing proxy** client (disabled by default).
+ * Optional **playback signing proxy** client (disabled until a base URL is configured).
  *
  * Watch asks the proxy for a stream URL only; the proxy owns
  * `device_register` → MetaSec/sign → `video_tab` / `multi_video_model`.
- * See store doc `docs/playback-proxy-plan.md`.
- *
- * Enable by setting env `HONGGUO_PLAYBACK_PROXY_URL` (or future prefs). Not wired
- * into [com.hongguo.watch.data.AppSourceClient] until a live proxy returns
- * non-empty bodies — default play path stays PlayerSigner ladder.
+ * See store doc `docs/playback-proxy-plan.md` and repo `proxy/`.
  */
 internal class PlaybackProxyClient(
     private val baseUrl: String,
     private val client: OkHttpClient = defaultClient(),
-    private val authToken: String? = System.getenv("HONGGUO_PLAYBACK_PROXY_TOKEN"),
+    private val authToken: String? = null,
 ) {
     data class ProxyRendition(
         val quality: String,
@@ -44,6 +40,16 @@ internal class PlaybackProxyClient(
         }.build()
         client.newCall(req).execute().use { resp ->
             val body = resp.body?.string().orEmpty()
+            when (resp.code) {
+                401 -> throw IOException("playback proxy unauthorized")
+                429 -> throw PlaybackSourceException(
+                    PlaybackSourceException.Reason.HTTP_REJECTED,
+                    429,
+                )
+                502, 503 -> throw EmptyPlaybackResponseException(
+                    "stage=playback-proxy http=${resp.code} ${body.take(120)}",
+                )
+            }
             if (!resp.isSuccessful) {
                 throw IOException("playback proxy HTTP ${resp.code}: ${body.take(200)}")
             }
@@ -55,12 +61,28 @@ internal class PlaybackProxyClient(
         const val ENV_BASE_URL = "HONGGUO_PLAYBACK_PROXY_URL"
         const val ENV_TOKEN = "HONGGUO_PLAYBACK_PROXY_TOKEN"
 
-        /** Null when proxy URL is unset — callers keep the local PlayerSigner path. */
-        fun fromEnvOrNull(client: OkHttpClient = defaultClient()): PlaybackProxyClient? {
-            val base = System.getenv(ENV_BASE_URL)?.trim().orEmpty()
+        fun fromConfigOrNull(
+            baseUrl: String?,
+            token: String? = null,
+            client: OkHttpClient = defaultClient(),
+        ): PlaybackProxyClient? {
+            val base = baseUrl?.trim().orEmpty()
             if (base.isEmpty()) return null
-            return PlaybackProxyClient(baseUrl = base, client = client)
+            if (!base.startsWith("http://") && !base.startsWith("https://")) return null
+            return PlaybackProxyClient(
+                baseUrl = base.trimEnd('/'),
+                client = client,
+                authToken = token?.trim()?.ifEmpty { null },
+            )
         }
+
+        /** Null when proxy URL is unset — callers keep the local PlayerSigner path. */
+        fun fromEnvOrNull(client: OkHttpClient = defaultClient()): PlaybackProxyClient? =
+            fromConfigOrNull(
+                baseUrl = System.getenv(ENV_BASE_URL),
+                token = System.getenv(ENV_TOKEN),
+                client = client,
+            )
 
         fun parseStream(json: String): ProxyStream {
             val o = JSONObject(json)

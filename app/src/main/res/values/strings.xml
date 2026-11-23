@@ -125,6 +125,16 @@
     <string name="playback_route_video_tab">兼容线路优先</string>
     <string name="playback_route_preload">旧版线路优先</string>
     <string name="playback_route_public_360p">外部公开备用（360p，手动）</string>
+    <string name="playback_proxy_label">播放代理</string>
+    <string name="playback_proxy_hint">空=关闭（本机签名）。填入 http(s) 地址后只向代理取流 URL，视频仍直连 CDN</string>
+    <string name="playback_proxy_off">关</string>
+    <string name="playback_proxy_url_title">代理地址</string>
+    <string name="playback_proxy_url_hint">例如 http://192.168.1.8:8787</string>
+    <string name="playback_proxy_token_title">代理令牌（可选）</string>
+    <string name="playback_proxy_token_hint">Bearer 令牌；代理未设令牌可留空</string>
+    <string name="playback_proxy_clear">清除</string>
+    <string name="playback_proxy_saved">已保存代理设置</string>
+    <string name="playback_proxy_invalid">地址须以 http:// 或 https:// 开头</string>
     <string name="playback_public_backup_notice">外部公开备用片源 · 360p</string>
     <string name="playback_public_quality">360p</string>
     <string name="setting_version_status">当前 v%1$s</string>

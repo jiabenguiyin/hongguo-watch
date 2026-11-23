@@ -7,7 +7,8 @@
 `POST multi_video_model` → 取流。MetaSec **不可再分发**；PlayerSigner 近似。
 empty-200 用户文案为「官方接口限流」——**不**宣称播放已修好。公开 TV/内测包
 （jycao2 / xycvip ~2 MiB）**不含** `libmetasec_ml.so`；旁路见
-`docs/playback-proxy-plan.md`（手表只取流，代理做 register+MetaSec+model）。
+`docs/playback-proxy-plan.md` 与仓库 `proxy/`（手表只取流 URL，视频直连 CDN；
+代理默认 PlayerSigner，MetaSec/unidbg 为 TODO）。
 
 2026-11-23：官方播放「真签名」对齐
 [jycao2/hongguoTV kotlin-v0.33.1-build.62](https://github.com/jycao2/hongguoTV/releases/tag/kotlin-v0.33.1-build.62)

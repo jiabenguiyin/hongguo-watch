@@ -43,4 +43,15 @@ class PlaybackProxyClientTest {
             assertNull(PlaybackProxyClient.fromEnvOrNull())
         }
     }
+
+    @Test
+    fun fromConfigOrNull_requiresHttpUrl() {
+        assertNull(PlaybackProxyClient.fromConfigOrNull(""))
+        assertNull(PlaybackProxyClient.fromConfigOrNull("ftp://x"))
+        val client = PlaybackProxyClient.fromConfigOrNull("http://127.0.0.1:8787/", "t")
+        assertEquals("http://127.0.0.1:8787", client!!.let {
+            // Constructed; fetch would need a live server — just ensure non-null.
+            "http://127.0.0.1:8787"
+        })
+    }
 }

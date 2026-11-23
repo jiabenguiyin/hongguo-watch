@@ -5,8 +5,11 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.text.InputType
 import android.view.View
 import android.view.WindowManager
+import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.text.buildSpannedString
@@ -28,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.net.URI
 
 class SettingsActivity : WatchDisplayActivity() {
     private lateinit var binding: ActivitySettingsBinding
@@ -37,6 +41,8 @@ class SettingsActivity : WatchDisplayActivity() {
     private var currentKernel = PlayerKernel.AUTO
     private var currentDecode = DecodePath.AUTO
     private var currentRoute = PlaybackRoutePreference.AUTO
+    private var currentProxyUrl = ""
+    private var currentProxyToken = ""
     private var updateChecking = false
     private val updateDialogs by lazy { UpdateDialogs(this) { showWatchDialog(it) } }
 
@@ -78,16 +84,21 @@ class SettingsActivity : WatchDisplayActivity() {
             currentKernel = container.settings.playerKernel.first()
             currentDecode = container.settings.decodePath.first()
             currentRoute = container.settings.playbackRouteNow()
+            currentProxyUrl = container.settings.playbackProxyUrlNow()
+            currentProxyToken = container.settings.playbackProxyTokenNow()
             refreshPlaybackLabels()
             refreshPlaybackRouteLabel()
+            refreshPlaybackProxyLabel()
             binding.qualityButton.setOnClickListener { showQualityDialog() }
             binding.kernelButton.setOnClickListener { showKernelDialog() }
             binding.decodeButton.setOnClickListener { showDecodeDialog() }
             binding.playbackRouteButton.setOnClickListener { showPlaybackRouteDialog() }
+            binding.playbackProxyButton.setOnClickListener { showPlaybackProxyDialog() }
             binding.qualityButton.isEnabled = true
             binding.kernelButton.isEnabled = true
             binding.decodeButton.isEnabled = true
             binding.playbackRouteButton.isEnabled = true
+            binding.playbackProxyButton.isEnabled = true
         }
 
         binding.manageOfflineButton.setOnClickListener {
@@ -292,6 +303,63 @@ class SettingsActivity : WatchDisplayActivity() {
         }
     }
 
+    private fun showPlaybackProxyDialog() {
+        val pad = (12 * resources.displayMetrics.density).toInt()
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+        }
+        val urlInput = EditText(this).apply {
+            hint = getString(R.string.playback_proxy_url_hint)
+            setText(currentProxyUrl)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            setTextColor(getColor(R.color.text_primary))
+            setHintTextColor(getColor(R.color.text_secondary))
+        }
+        val tokenInput = EditText(this).apply {
+            hint = getString(R.string.playback_proxy_token_hint)
+            setText(currentProxyToken)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setTextColor(getColor(R.color.text_primary))
+            setHintTextColor(getColor(R.color.text_secondary))
+        }
+        column.addView(urlInput)
+        column.addView(tokenInput)
+        val dialog = watchDialogBuilder()
+            .setTitle(R.string.playback_proxy_label)
+            .setView(column)
+            .setNegativeButton(R.string.update_cancel, null)
+            .setNeutralButton(R.string.playback_proxy_clear) { _, _ ->
+                lifecycleScope.launch {
+                    currentProxyUrl = ""
+                    currentProxyToken = ""
+                    container.settings.setPlaybackProxyUrl("")
+                    container.settings.setPlaybackProxyToken("")
+                    refreshPlaybackProxyLabel()
+                    Toast.makeText(this@SettingsActivity, R.string.playback_proxy_saved, Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val rawUrl = urlInput.text?.toString().orEmpty()
+                val token = tokenInput.text?.toString().orEmpty()
+                val normalized = SettingsStore.normalizeProxyUrl(rawUrl)
+                if (rawUrl.isNotBlank() && normalized.isEmpty()) {
+                    Toast.makeText(this, R.string.playback_proxy_invalid, Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                lifecycleScope.launch {
+                    currentProxyUrl = normalized
+                    currentProxyToken = token.trim()
+                    container.settings.setPlaybackProxyUrl(normalized)
+                    container.settings.setPlaybackProxyToken(currentProxyToken)
+                    refreshPlaybackProxyLabel()
+                    Toast.makeText(this@SettingsActivity, R.string.playback_proxy_saved, Toast.LENGTH_SHORT).show()
+                }
+            }
+            .create()
+        showWatchDialog(dialog)
+    }
+
     private fun showChoiceDialog(
         title: Int,
         options: List<CharSequence>,
@@ -316,6 +384,15 @@ class SettingsActivity : WatchDisplayActivity() {
 
     private fun refreshPlaybackRouteLabel() {
         binding.playbackRouteStatus.setText(playbackRouteLabel(currentRoute))
+    }
+
+    private fun refreshPlaybackProxyLabel() {
+        binding.playbackProxyStatus.text = if (currentProxyUrl.isEmpty()) {
+            getString(R.string.playback_proxy_off)
+        } else {
+            runCatching { URI(currentProxyUrl).host }.getOrNull()?.takeIf { it.isNotBlank() }
+                ?: currentProxyUrl.take(18)
+        }
     }
 
     private fun playbackRouteLabel(route: PlaybackRoutePreference): Int = when (route) {

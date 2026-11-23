@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 rootProject.name = "hongguo-watch"
 include(":app")
 include(":ijkplayer-java")
+include(":proxy")

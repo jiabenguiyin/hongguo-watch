@@ -27,6 +27,7 @@ internal object PlayRetryPlan {
             "api5-normal-sinfonlinec.fqnovel.com" -> "c"
             "api5-normal-hl.fqnovel.com" -> "hl"
             "api5-normal-lf.fqnovel.com" -> "lf"
+            "reading.snssdk.com" -> "reading"
             else -> host.substringBefore('.').takeLast(8)
         }
 

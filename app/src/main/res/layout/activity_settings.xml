@@ -156,6 +156,31 @@
                     style="@style/Widget.HongguoWatch.SettingsHint"
                     android:text="@string/playback_route_hint" />
 
+                <LinearLayout
+                    android:id="@+id/playbackProxyButton"
+                    style="@style/Widget.HongguoWatch.SettingsAction"
+                    android:enabled="false">
+
+                    <ImageView
+                        style="@style/Widget.HongguoWatch.SettingsIcon"
+                        android:src="@drawable/ic_settings_wifi" />
+
+                    <TextView
+                        style="@style/Widget.HongguoWatch.SettingsRowTitle"
+                        android:text="@string/playback_proxy_label" />
+
+                    <TextView
+                        android:id="@+id/playbackProxyStatus"
+                        style="@style/Widget.HongguoWatch.SettingsValue" />
+
+                    <TextView
+                        style="@style/Widget.HongguoWatch.SettingsArrow" />
+                </LinearLayout>
+
+                <TextView
+                    style="@style/Widget.HongguoWatch.SettingsHint"
+                    android:text="@string/playback_proxy_hint" />
+
                 <LinearLayout style="@style/Widget.HongguoWatch.SettingsRow">
 
                     <ImageView

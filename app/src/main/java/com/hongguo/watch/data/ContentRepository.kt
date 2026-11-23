@@ -98,6 +98,8 @@ class ContentRepository internal constructor(
     ): StreamSelection = withContext(Dispatchers.IO) {
         val quality = maxHeight ?: settings.maxQualityNow()
         val route = settings.playbackRouteNow()
+        val proxyUrl = settings.playbackProxyUrlNow()
+        val proxyToken = settings.playbackProxyTokenNow()
         suspendCancellableCoroutine { continuation ->
             val request = RequestScope()
             continuation.invokeOnCancellation { request.cancel() }
@@ -111,6 +113,8 @@ class ContentRepository internal constructor(
                         avcOnly = avcOnly,
                         excludeKeys = excludeKeys,
                         routePreference = route,
+                        playbackProxyBaseUrl = proxyUrl,
+                        playbackProxyToken = proxyToken,
                     )
                 }
             })

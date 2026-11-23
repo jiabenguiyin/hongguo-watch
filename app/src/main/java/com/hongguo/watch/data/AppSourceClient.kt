@@ -16,6 +16,7 @@ import com.hongguo.watch.upstream.DeviceRegister
 import com.hongguo.watch.upstream.EmptyPlaybackResponseException
 import com.hongguo.watch.upstream.LadderParseResult
 import com.hongguo.watch.upstream.MobilePlayback
+import com.hongguo.watch.upstream.PlaybackProxyClient
 import com.hongguo.watch.upstream.PlaybackSourceException
 import com.hongguo.watch.upstream.Rendition
 import com.hongguo.watch.upstream.RequestScope
@@ -480,6 +481,8 @@ class AppSourceClient(
         avcOnly: Boolean = false,
         excludeKeys: Set<String> = emptySet(),
         routePreference: PlaybackRoutePreference = PlaybackRoutePreference.AUTO,
+        playbackProxyBaseUrl: String? = null,
+        playbackProxyToken: String? = null,
     ): StreamSelection {
         require(SERIES_ID.matches(seriesId.trim())) { "无效剧集 ID" }
         val vid = episodeId.trim()
@@ -488,6 +491,16 @@ class AppSourceClient(
         if (routePreference == PlaybackRoutePreference.PUBLIC_360P) {
             return resolvePublicFallback(seriesId, vid)
                 ?: throw EmptyPlaybackResponseException("stage=public-360p unavailable")
+        }
+
+        // Optional signing proxy: stream URL only; video plays direct from CDN.
+        PlaybackProxyClient.fromConfigOrNull(
+            baseUrl = playbackProxyBaseUrl,
+            token = playbackProxyToken,
+            client = client,
+        )?.let { proxy ->
+            PlayerDiagLog.i("playback via proxy")
+            return fetchViaPlaybackProxy(proxy, vid, maxHeight, preferAvc, avcOnly, excludeKeys)
         }
 
         val ladder = RequestScope.withDeadline(
@@ -507,6 +520,44 @@ class AppSourceClient(
         return selectFromLadder(
             renditions = ladder.renditions,
             maxHeight = capped,
+            preferAvc = preferAvc,
+            avcOnly = avcOnly,
+            excludeKeys = excludeKeys,
+        )
+    }
+
+    private fun fetchViaPlaybackProxy(
+        proxy: PlaybackProxyClient,
+        episodeId: String,
+        maxHeight: Int,
+        preferAvc: Boolean,
+        avcOnly: Boolean,
+        excludeKeys: Set<String>,
+    ): StreamSelection {
+        val qualityHint = when {
+            maxHeight >= 1080 -> "1080p"
+            maxHeight >= 720 -> "720p"
+            maxHeight >= 480 -> "480p"
+            else -> "auto"
+        }
+        val proxied = proxy.fetchStream(episodeId, qualityHint)
+        val renditions = proxied.renditions.map { r ->
+            val height = r.quality.lowercase().removeSuffix("p").toIntOrNull() ?: 0
+            Rendition(
+                quality = height,
+                codec = r.codec.orEmpty(),
+                width = null,
+                height = height.takeIf { it > 0 },
+                url = r.url,
+                key = null,
+            )
+        }
+        if (renditions.isEmpty()) {
+            throw EmptyPlaybackResponseException("stage=playback-proxy empty renditions")
+        }
+        return selectFromLadder(
+            renditions = renditions,
+            maxHeight = maxHeight.coerceIn(240, 1080),
             preferAvc = preferAvc,
             avcOnly = avcOnly,
             excludeKeys = excludeKeys,
@@ -697,8 +748,8 @@ class AppSourceClient(
             if (prefs.getString(KEY_CDID, "").isNullOrBlank()) {
                 prefs.edit().putString(KEY_CDID, UUID.randomUUID().toString()).apply()
             }
-            // Upgraded installs may lack register cookies; refresh once so model POSTs
-            // can send Win-style store-region / install_id / ttreq cookies.
+            // Official play flow needs register cookies on video_tab / multi_video_model.
+            // Refresh once when upgraded installs lack store-region / install_id / ttreq.
             if (registerCookies().isEmpty()) {
                 runCatching { registerDeviceLocked() }
             }

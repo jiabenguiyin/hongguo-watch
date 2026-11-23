@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext is permitted so Settings → 播放代理 can use http:// hosts
+  (LAN / private VPS such as jp.031030.xyz:8787). NetworkSecurityConfig is
+  static, so arbitrary user-configured proxy hosts require base-config
+  cleartext — not a fixed domain list.
+
+  Stream media URLs from the proxy remain HTTPS CDN; official APIs stay HTTPS.
+  Trust anchors stay system-only (no user CAs).
+-->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false">
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>

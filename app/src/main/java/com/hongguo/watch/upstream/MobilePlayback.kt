@@ -39,43 +39,49 @@ internal data class PlaybackRouteAttempt(
 )
 
 /**
- * Playback against Fanqie model endpoints (aligned with jycao2/hongguoTV kotlin-v0.33.1).
- *
- * Official APIs silently drop v5 placeholder helios/medusa headers (empty HTTP 200).
- * Working path: pick `_rticket` via v5 branch search, then attach **PlayerSigner**
- * (real x-argus / x-ladon). Prefer GET video_tab, then POST `/novel/player/multi_video_model/v1`
- * (no `/player/`, no `dr_scene`, version **74532**).
+ * Playback against Fanqie model endpoints — N3urda 红果 TV **0.16.14** contour:
+ * device_register → Medusa V5 (Khronos/Helios/Medusa, F21=312) →
+ * POST `reading.snssdk.com/.../preload/v1` → GET video_tab fallback → stream.
+ * Identity notes: **74532 / 7.4.5.32**. No MetaSec / unidbg on the default path;
+ * optional [PlaybackProxyClient] remains off by default. Empty HTTP 200 surfaces as
+ * user-facing「官方接口限流」— not “play fixed”.
  */
 internal object MobilePlayback {
     private val v5Signer = Signer(mobileV5 = true)
 
     /**
-     * Default signer: v5 ticket selection + PlayerSigner real headers
-     * (hongguoTV `realSignedHeaders` / 0.33.1).
+     * Default signer: pure Kotlin Medusa V5 (TV 0.16.14). Keeps Khronos/Helios/Medusa;
+     * does **not** replace them with Argus/Ladon [PlayerSigner] (that path empty-200s).
      */
     val signer = MobilePlaybackSigner { url, body, _ ->
         val parsed = url.toHttpUrl()
         val values = parsed.queryParameterNames.associateWith { parsed.queryParameter(it)!! }
         val now = values.getValue("_rticket").toLong()
-        val provisional =
+        val signed =
             v5Signer.signPlayback(parsed.newBuilder().query(null).build().toString(), values, body, now)
-        realSigned(provisional.url, provisional.headers, body)
+        MobileSignedRequest(signed.url, signed.headers)
     }
 
-    /** Official 7.4.5.32 playback identity (hongguoTV 0.33.1 MobilePlayback). */
-    private const val VERSION_CODE = "74532"
-    private const val VERSION_NAME = "7.4.5.32"
+    /** Upstream identity notes (74532 / 7.4.5.32); matches TV currentApp protocol. */
+    private const val VERSION_CODE = VendorConstants.OFFICIAL_VERSION_CODE
+    private const val VERSION_NAME = VendorConstants.OFFICIAL_VERSION_NAME
     private const val PLAYBACK_UA =
-        "com.phoenix.read/73932 (Linux; U; Android 12; zh_CN_#Hans; PGT-AN10; Build/V417IR;tt-ok/3.12.13.20)"
+        "com.phoenix.read/$VERSION_CODE (Linux; U; Android 12; zh_CN_#Hans; PGT-AN10; Build/V417IR;tt-ok/3.12.13.20)"
     private const val TAB_UA =
-        "com.phoenix.read/73532 (Linux; U; Android 9; SM-N9860; Build/PQ3A.190705.10241111;tt-ok/3.12.13.20)"
+        "com.phoenix.read/$VERSION_CODE (Linux; U; Android 9; SM-N9860; Build/PQ3A.190705.10241111;tt-ok/3.12.13.20)"
+
+    /** TV 0.16.14 primary model host for preload/v1. */
+    internal const val PRELOAD_HOST = "reading.snssdk.com"
 
     private val PLACEHOLDER_HEADERS = setOf(
         "x-gorgon", "x-helios", "x-medusa", "x-argus", "x-ladon", "x-khronos",
         "x-ss-stub", "x-ss-req-ticket", "x-medias", "x-tt-dt",
     )
 
-    /** Replace v5 placeholder signing headers with PlayerSigner (true argus/ladon). */
+    /**
+     * Demoted: replace V5 headers with PlayerSigner Argus/Ladon.
+     * Kept for diagnostics / optional proxy fallbacks; **not** used by [signer].
+     */
     internal fun realSigned(
         url: String,
         headers: Map<String, String>,
@@ -101,15 +107,16 @@ internal object MobilePlayback {
         val timeoutMs: Long,
         val hostIndex: Int? = null,
     ) {
-        // Official POST v1 (no /player/, no dr_scene) — hosts ordered a→b→…
+        // TV 0.16.14 primary: POST preload/v1 on reading.snssdk.com.
+        PRELOAD(PlaybackRoutePreference.PRELOAD, "preload", 2500),
+        VIDEO_TAB(PlaybackRoutePreference.VIDEO_TAB, "video-tab", 3000),
+        // Spare POST v1 hosts (no /player/, no dr_scene) — a→b→hl→lf.
         PRIMARY(PlaybackRoutePreference.PRIMARY, "primary-a", 2500, 0),
         PRIMARY_B(PlaybackRoutePreference.PRIMARY_A, "primary-b", 1250, 1),
         PRIMARY_HL(PlaybackRoutePreference.PRIMARY_HL, "primary-hl", 1250, 2),
         PRIMARY_LF(PlaybackRoutePreference.PRIMARY_LF, "primary-lf", 1250, 3),
-        VIDEO_TAB(PlaybackRoutePreference.VIDEO_TAB, "video-tab", 3000),
         // Legacy empties kept only as last-resort / explicit preference.
         VIDEO_MODEL(PlaybackRoutePreference.VIDEO_MODEL, "video-model", 2000),
-        PRELOAD(PlaybackRoutePreference.PRELOAD, "preload", 1750),
     }
 
     internal fun modelHosts() = PlayRetryPlan.hosts
@@ -127,20 +134,21 @@ internal object MobilePlayback {
         signer: MobilePlaybackSigner,
         now: Long,
         preference: PlaybackRoutePreference = PlaybackRoutePreference.AUTO,
-        @Suppress("UNUSED_PARAMETER")
         registerCookies: Map<String, String> = emptyMap(),
         onAttempt: (PlaybackRouteAttempt) -> Unit = {},
         onRoute: (String) -> Unit = {},
     ): StreamLadder {
-        // registerCookies ignored: hongguoTV 0.33.1 model transport uses CookieJar.NO_COOKIES.
         require(id.matches(Regex("[0-9]{1,30}")))
         RequestScope.ensureWithinDeadline()
+        val cookies = sanitizeRegisterCookies(registerCookies)
         val hosts = modelHosts()
         val pending = ArrayDeque(Route.entries)
-        // hongguoTV 0.33.1: GET video_tab (real sign) first; POST v1 is spare.
+        // AUTO: TV 0.16.14 order — preload first, then video_tab, then spare v1 hosts.
         if (preference == PlaybackRoutePreference.AUTO) {
+            pending.remove(Route.PRELOAD)
             pending.remove(Route.VIDEO_TAB)
             pending.addFirst(Route.VIDEO_TAB)
+            pending.addFirst(Route.PRELOAD)
         }
         val preferred = Route.entries.firstOrNull { it.preference == preference }
         if (preferred != null && preference != PlaybackRoutePreference.AUTO) {
@@ -180,8 +188,8 @@ internal object MobilePlayback {
             RequestScope.ensureWithinDeadline()
             val route = pending.removeFirst()
             val start = System.nanoTime()
-            // Legacy empties only after official tab + v1 hosts have been tried (or explicit pref).
-            if (route == Route.PRELOAD || route == Route.VIDEO_MODEL) {
+            // video_model only after preload/tab/v1 (or explicit pref). PRELOAD is AUTO primary.
+            if (route == Route.VIDEO_MODEL) {
                 val explicit = preferred == route
                 if (!explicit && !secondaryCanFallBack) {
                     report(route, "skipped", start)
@@ -212,15 +220,15 @@ internal object MobilePlayback {
                 val ladder = when (route) {
                     Route.VIDEO_TAB ->
                         ladderOnVideoTab(
-                            id, device, http, signer, ticket, routeDeadline, claimFollowup,
+                            id, device, http, signer, ticket, routeDeadline, claimFollowup, cookies,
                         )
                     Route.VIDEO_MODEL ->
                         ladderOnVideoModel(
-                            id, device, http, signer, ticket, routeDeadline, claimFollowup,
+                            id, device, http, signer, ticket, routeDeadline, claimFollowup, cookies,
                         )
                     Route.PRELOAD ->
                         ladderOnHost(
-                            host = hosts[0],
+                            host = PRELOAD_HOST,
                             id = id,
                             device = device,
                             http = http,
@@ -229,6 +237,7 @@ internal object MobilePlayback {
                             routeDeadline = routeDeadline,
                             preload = true,
                             claimFollowup = claimFollowup,
+                            registerCookies = cookies,
                         )
                     else ->
                         ladderOnHost(
@@ -241,6 +250,7 @@ internal object MobilePlayback {
                             routeDeadline = routeDeadline,
                             preload = false,
                             claimFollowup = claimFollowup,
+                            registerCookies = cookies,
                         )
                 }
                 report(route, "ok", start, 200)
@@ -249,7 +259,9 @@ internal object MobilePlayback {
             } catch (e: EmptyPlaybackResponseException) {
                 emptyRoutes[route] = e
                 report(route, "empty", start, 200)
-                if (route == Route.VIDEO_TAB || route.hostIndex != null) secondaryCanFallBack = true
+                if (route == Route.PRELOAD || route == Route.VIDEO_TAB || route.hostIndex != null) {
+                    secondaryCanFallBack = true
+                }
             } catch (e: IOException) {
                 val sourceFailure = e as? PlaybackSourceException
                 report(route, outcome(e), start, sourceFailure?.upstreamCode, sourceFailure?.modelIssue)
@@ -263,7 +275,9 @@ internal object MobilePlayback {
                 }
                 if (!PlayRetryPlan.temporary(e) && !routeUnavailable) throw e
                 lastTransient = e
-                if (route == Route.VIDEO_TAB || route.hostIndex != null) secondaryCanFallBack = true
+                if (route == Route.PRELOAD || route == Route.VIDEO_TAB || route.hostIndex != null) {
+                    secondaryCanFallBack = true
+                }
             }
         }
         val emptyFailure = if (emptyRoutes.isEmpty()) {
@@ -298,22 +312,56 @@ internal object MobilePlayback {
         else -> "io"
     }
 
+    /** TV 0.16.14 currentApp query contour (74532 / update_64). */
     private fun playbackQuery(device: Map<String, String>, now: Long): LinkedHashMap<String, String> =
         linkedMapOf(
             "aid" to "8662",
             "app_name" to "novelread",
             "version_code" to VERSION_CODE,
             "version_name" to VERSION_NAME,
-            "channel" to "vivo_8662_64",
-            "device_platform" to "android",
-            "device_type" to "PGT-AN10",
-            "os_version" to "12",
             "update_version_code" to VERSION_CODE,
+            "manifest_version_code" to VERSION_CODE,
+            "os" to "android",
+            "ssmix" to "a",
+            "channel" to "update_64",
+            "device_platform" to "android",
+            "device_type" to "25053RT47C",
+            "device_brand" to "Redmi",
+            "os_version" to "16",
+            "os_api" to "36",
+            "ac" to "wifi",
+            "language" to "zh",
+            "host_abi" to "arm64-v8a",
             "iid" to device.getValue("iid"),
             "cdid" to device.getValue("cdid"),
             "device_id" to device.getValue("device_id"),
             "_rticket" to now.toString(),
         )
+
+    /** Anonymous device_register cookies only (install_id / store-region / ttreq …). */
+    internal fun sanitizeRegisterCookies(raw: Map<String, String>): Map<String, String> {
+        val allow = setOf(
+            "install_id", "ttreq", "store-region", "store-region-src", "odin_tt", "uid_tt",
+        )
+        return raw.filter { (name, value) ->
+            name in allow && value.isNotBlank() && value.length <= 512 &&
+                value.all { it in ' '..'~' && it != ';' && it != ',' }
+        }
+    }
+
+    private fun Request.Builder.attachRegisterSession(
+        registerCookies: Map<String, String>,
+    ): Request.Builder {
+        if (registerCookies.isEmpty()) return this
+        header("Cookie", registerCookies.entries.joinToString("; ") { "${it.key}=${it.value}" })
+        registerCookies["store-region"]?.let { header("x-tt-store-region", it) }
+        registerCookies["store-region-src"]?.let { header("x-tt-store-region-src", it) }
+            ?: registerCookies["store-region"]?.let { header("x-tt-store-region-src", "did") }
+        return this
+    }
+
+    private fun playTransport(http: OkHttpClient): OkHttpClient =
+        http.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
 
     /** Official POST `/novel/player/multi_video_model/v1` (or legacy preload scene). */
     private fun ladderOnHost(
@@ -326,19 +374,21 @@ internal object MobilePlayback {
         routeDeadline: Long,
         preload: Boolean,
         claimFollowup: () -> Boolean,
+        registerCookies: Map<String, String>,
     ): StreamLadder {
         val query = playbackQuery(device, now)
         val path = if (preload) {
             "/novel/player/multi_video_model/preload/v1"
         } else {
-            // hongguoTV 0.33.1: official path has no /player/ segment and no dr_scene.
+            // Spare v1 path (no /player/ segment, no dr_scene).
             "/novel/player/multi_video_model/v1"
         }
         val url = "https://$host$path"
             .toHttpUrl().newBuilder().apply { query.forEach { (k, v) -> addQueryParameter(k, v) } }.build()
+        // TV 0.16.14: preload uses device_level=2 + dr_scene=preload.
         val payload = if (preload) {
             JSONObject(
-                """{"biz_param":{"detail_page_version":0,"device_level":1,"disable_digg_stat":false,"disable_video_relate_book":false,"need_all_video_definition":true,"need_mp4_align":false,"use_os_player":false,"use_server_dns":false,"video_platform":1024},"mixed_video_id_map":{"1004":["$id"]},"dr_scene":"preload"}""",
+                """{"biz_param":{"detail_page_version":0,"device_level":2,"disable_digg_stat":false,"disable_video_relate_book":false,"need_all_video_definition":true,"need_mp4_align":false,"use_os_player":false,"use_server_dns":false,"video_platform":1024},"mixed_video_id_map":{"1004":["$id"]},"dr_scene":"preload"}""",
             )
         } else {
             JSONObject(
@@ -356,13 +406,14 @@ internal object MobilePlayback {
                 "x-ss-stub",
                 MessageDigest.getInstance("MD5").digest(bytes).joinToString("") { "%02X".format(it) },
             )
+            .attachRegisterSession(registerCookies)
         val signed = signer.sign(url.toString(), bytes, query)
         request.url(signed.url)
         signed.headers.forEach { (k, v) -> request.header(k, v) }
         RequestScope.ensureActive()
         request.post(bytes.toRequestBody("application/json; charset=utf-8".toMediaType()))
-        // Match working TV: model posts do not attach account/register cookies.
-        val transport = http.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
+        // CookieJar.NO_COOKIES: register session is on Cookie header only (no account session).
+        val transport = playTransport(http)
         return RequestScope.execute(transport.newCall(request.build()), routeDeadline) { response ->
             val stage = if (preload) "preload" else "mobile-model"
             val data = modelData(response, stage, host)
@@ -387,6 +438,7 @@ internal object MobilePlayback {
         now: Long,
         routeDeadline: Long,
         claimFollowup: () -> Boolean,
+        registerCookies: Map<String, String>,
     ): StreamLadder {
         var lastEmpty: EmptyPlaybackResponseException? = null
         var lastTransient: IOException? = null
@@ -412,12 +464,13 @@ internal object MobilePlayback {
                     .header("User-Agent", PLAYBACK_UA)
                     .header("Accept", "application/json")
                     .header("Content-Encoding", "gzip")
+                    .attachRegisterSession(registerCookies)
                 val signed = signer.sign(url.toString(), bytes, query)
                 request.url(signed.url)
                 signed.headers.forEach { (k, v) -> request.header(k, v) }
                 RequestScope.ensureActive()
                 request.post(bytes.toRequestBody("application/json; charset=utf-8".toMediaType()))
-                val transport = http.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
+                val transport = playTransport(http)
                 return RequestScope.execute(transport.newCall(request.build()), hostDeadline) { response ->
                     val data = modelData(response, "video-model", host)
                     directModel(data)?.let {
@@ -449,33 +502,23 @@ internal object MobilePlayback {
         now: Long,
         routeDeadline: Long,
         claimFollowup: () -> Boolean,
+        registerCookies: Map<String, String>,
     ): StreamLadder {
-        val query = linkedMapOf<String, String>().apply {
-            putAll(VendorConstants.device)
-            putAll(device)
-            putAll(
-                mapOf(
-                    "version_code" to VERSION_CODE,
-                    "version_name" to VERSION_NAME,
-                    "manifest_version_code" to VERSION_CODE,
-                    "update_version_code" to VERSION_CODE,
-                    "pv_player" to VERSION_CODE,
-                    "channel" to "vivo_8662_64",
-                    "video_id" to id,
-                    "video_id_type" to "0",
-                    "device_level" to "1",
-                    "need_all_video_definition" to "1",
-                    "need_mp4_align" to "0",
-                    "use_os_player" to "0",
-                    "video_platform" to "1024",
-                    "source" to "0",
-                    "from_video_id" to "",
-                    "_rticket" to now.toString(),
-                ),
-            )
+        // Same 74532 contour as POST; sign MD5(empty bytes), not a null/zero digest.
+        val query = playbackQuery(device, now).apply {
+            put("video_id", id)
+            put("video_id_type", "0")
+            put("device_level", "1")
+            put("need_all_video_definition", "1")
+            put("need_mp4_align", "0")
+            put("use_os_player", "0")
+            put("video_platform", "1024")
+            put("source", "0")
+            put("from_video_id", "")
         }
         val bases = listOf(
             "https://api5-normal-sinfonlineb.fqnovel.com/reading/bookapi/video_tab/multi_video_model/v1/",
+            "https://api5-normal-sinfonlineb.fqnovel.com/reading/bookapi/video_tab/video_model/v1/",
             "https://reading.snssdk.com/reading/bookapi/video_tab/multi_video_model/v1/",
         )
         var lastEmpty: EmptyPlaybackResponseException? = null
@@ -487,13 +530,19 @@ internal object MobilePlayback {
                     query.forEach { (key, value) -> addQueryParameter(key, value) }
                 }.build()
             try {
-                val signed = signer.sign(url.toString(), null, query)
+                val signed = signer.sign(url.toString(), ByteArray(0), query)
                 val request = Request.Builder().url(signed.url)
                     .header("User-Agent", TAB_UA)
-                    .header("Accept", "application/json; charset=utf-8,application/x-protobuf")
+                    .header("Accept", "application/json; charset=utf-8")
+                    .header("Accept-Language", "zh-CN,zh;q=0.9")
+                    .attachRegisterSession(registerCookies)
                 signed.headers.forEach { (key, value) -> request.header(key, value) }
+                // Empty bytes are signing input only: GET has no body or POST headers.
+                request.removeHeader("x-ss-stub")
+                request.removeHeader("Content-Type")
+                request.removeHeader("Content-Encoding")
                 request.get()
-                val transport = http.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
+                val transport = playTransport(http)
                 return RequestScope.execute(transport.newCall(request.build()), routeDeadline) { response ->
                     val data = modelData(response, "video-tab", url.host)
                     val entries = data.optJSONObject("video_model_data") ?: data
@@ -504,7 +553,7 @@ internal object MobilePlayback {
                     ladderFromModel(model, http, routeDeadline, episodeId, claimFollowup)
                 }
             } catch (e: EmptyPlaybackResponseException) {
-                // Blank body is global throttle signal — do not probe the alt host.
+                // Blank body is treated as global throttle — do not burn the deadline on alt tab URLs.
                 throw e
             } catch (e: IOException) {
                 if (!PlayRetryPlan.temporary(e) &&
@@ -515,7 +564,10 @@ internal object MobilePlayback {
                 lastTransient = e
             }
         }
-        lastTransient?.let { throw it }
+        lastTransient?.let { failure ->
+            lastEmpty?.let(failure::addSuppressed)
+            throw failure
+        }
         throw lastEmpty ?: EmptyPlaybackResponseException("stage=video-tab http=200 bytes=0")
     }
 

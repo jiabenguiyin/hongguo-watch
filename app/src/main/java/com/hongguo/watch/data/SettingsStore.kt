@@ -25,6 +25,9 @@ class SettingsStore(private val context: Context) {
     private val playerKernelKey = stringPreferencesKey("player_kernel")
     private val decodePathKey = stringPreferencesKey("decode_path")
     private val playbackRouteKey = stringPreferencesKey("playback_route")
+    /** Playback signing proxy base URL; blank = off (local Medusa V5 ladder). */
+    private val playbackProxyUrlKey = stringPreferencesKey("playback_proxy_url")
+    private val playbackProxyTokenKey = stringPreferencesKey("playback_proxy_token")
     /** 息屏/退后台续听；默认关（省电）。 */
     private val screenOffContinueKey = booleanPreferencesKey("screen_off_continue")
     private val episodeWheelEnabledKey = booleanPreferencesKey("episode_wheel_enabled")
@@ -59,6 +62,13 @@ class SettingsStore(private val context: Context) {
     }
     val playbackRoute: Flow<PlaybackRoutePreference> = context.dataStore.data.map {
         PlaybackRoutePreference.fromStorage(it[playbackRouteKey])
+    }
+    /** Empty → proxy disabled. */
+    val playbackProxyUrl: Flow<String> = context.dataStore.data.map {
+        normalizeProxyUrl(it[playbackProxyUrlKey].orEmpty())
+    }
+    val playbackProxyToken: Flow<String> = context.dataStore.data.map {
+        it[playbackProxyTokenKey].orEmpty().trim()
     }
 
     suspend fun setWifiOnly(enabled: Boolean) {
@@ -102,6 +112,14 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[playbackRouteKey] = preference.name }
     }
 
+    suspend fun setPlaybackProxyUrl(url: String) {
+        context.dataStore.edit { it[playbackProxyUrlKey] = normalizeProxyUrl(url) }
+    }
+
+    suspend fun setPlaybackProxyToken(token: String) {
+        context.dataStore.edit { it[playbackProxyTokenKey] = token.trim() }
+    }
+
     suspend fun wifiOnlyNow(): Boolean = wifiOnly.first()
     suspend fun screenOffContinueNow(): Boolean = screenOffContinue.first()
     suspend fun maxQualityNow(): Int = maxQuality.first()
@@ -110,6 +128,8 @@ class SettingsStore(private val context: Context) {
     suspend fun playerKernelNow(): PlayerKernel = playerKernel.first()
     suspend fun decodePathNow(): DecodePath = decodePath.first()
     suspend fun playbackRouteNow(): PlaybackRoutePreference = playbackRoute.first()
+    suspend fun playbackProxyUrlNow(): String = playbackProxyUrl.first()
+    suspend fun playbackProxyTokenNow(): String = playbackProxyToken.first()
 
     /** 供 WatchUi 缓存：AUTO→null，ON→true，OFF→false。 */
     suspend fun roundAdaptOverrideNow(): Boolean? = when (roundAdaptModeNow()) {
@@ -148,6 +168,15 @@ class SettingsStore(private val context: Context) {
             } else {
                 "${normalized}x"
             }
+        }
+
+        /** Allow http(s) origins only; strip trailing slash. Blank disables proxy. */
+        fun normalizeProxyUrl(raw: String): String {
+            val trimmed = raw.trim()
+            if (trimmed.isEmpty()) return ""
+            val noSlash = trimmed.trimEnd('/')
+            val ok = noSlash.startsWith("http://") || noSlash.startsWith("https://")
+            return if (ok) noSlash else ""
         }
     }
 }

@@ -115,7 +115,7 @@
     <string name="setting_quality_status">%1$dp</string>
     <string name="setting_quality_adaptive">自适应（省流）</string>
     <string name="playback_route_label">播放线路</string>
-    <string name="playback_route_hint">自动模式优先官方 video_tab 与 multi_video_model/v1（真 Argus/Ladon 签名）。外部公开 360p 需手动选择，且多为短预览</string>
+    <string name="playback_route_hint">自动模式优先官方 video_tab/multi_video_model 与 multi_video_model/v1。外部公开 360p 需手动选择，且多为短预览</string>
     <string name="playback_route_auto">自动（推荐）</string>
     <string name="playback_route_primary">主线路 1 优先</string>
     <string name="playback_route_primary_a">主线路 2 优先</string>
@@ -125,6 +125,16 @@
     <string name="playback_route_video_tab">兼容线路优先</string>
     <string name="playback_route_preload">旧版线路优先</string>
     <string name="playback_route_public_360p">外部公开备用（360p，手动）</string>
+    <string name="playback_proxy_label">播放代理</string>
+    <string name="playback_proxy_hint">空=关闭（本机签名）。填入 http(s) 地址后只向代理取流 URL，视频仍直连 CDN</string>
+    <string name="playback_proxy_off">关</string>
+    <string name="playback_proxy_url_title">代理地址</string>
+    <string name="playback_proxy_url_hint">例如 http://192.168.1.8:8787</string>
+    <string name="playback_proxy_token_title">代理令牌（可选）</string>
+    <string name="playback_proxy_token_hint">Bearer 令牌；代理未设令牌可留空</string>
+    <string name="playback_proxy_clear">清除</string>
+    <string name="playback_proxy_saved">已保存代理设置</string>
+    <string name="playback_proxy_invalid">地址须以 http:// 或 https:// 开头</string>
     <string name="playback_public_backup_notice">外部公开备用片源 · 360p</string>
     <string name="playback_public_quality">360p</string>
     <string name="setting_version_status">当前 v%1$s</string>
@@ -255,7 +265,7 @@
     <string name="error_network">网络异常，请重试</string>
     <string name="error_wifi_only">已开启仅 Wi‑Fi，当前非 Wi‑Fi</string>
     <string name="error_no_play_url">暂无可用播放地址</string>
-    <string name="error_playback_empty">片源服务暂未返回播放地址，请稍后重试</string>
+    <string name="error_playback_empty">官方接口限流，暂未返回播放地址，请稍后重试</string>
     <string name="progress_meta">第 %1$d 集 · %2$d%%</string>
     <string name="display_settings_title">显示设置</string>
     <string name="display_preview_title">界面预览</string>

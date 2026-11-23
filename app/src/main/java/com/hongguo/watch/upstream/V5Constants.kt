@@ -5,6 +5,9 @@ package com.hongguo.watch.upstream
 internal object V5Constants {
     val magic = hex("2d4b4fca49750d433fb5ae2c226dcc56")
     const val license = "646637794"
+    // Wire field 21 from successful 7.4.5.32 App/SDK requests (N3urda TV 0.16.14 /
+    // issue #102). Same-request A/B: 377 → empty 200; 312 restores models.
+    const val field21 = 312
     val signKey = hex("b23c2a470a20d105dc3f8c4438f8272ed46d6c89ffdcdedd5108698d26e9489d")
     val sbox = hex(
         "53290fe9e51f316f90f74a7e034d367784ab49237cd0135cdc632c322fd3be0e2624a417ecd9151a7ff64f60730a87f9445ec6ada2f865d22b696c4188f24c0d" +

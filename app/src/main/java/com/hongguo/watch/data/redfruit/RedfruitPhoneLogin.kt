@@ -210,7 +210,7 @@ internal class RedfruitPhoneLogin(
         }
         val builder = Request.Builder().url(signed.url).post(payload)
         signed.headers.forEach { (name, value) -> builder.header(name, value) }
-        builder.header("User-Agent", VendorConstants.VIDEO_UA.replace("/71332", "/73532"))
+        builder.header("User-Agent", VendorConstants.VIDEO_UA)
             .header("Accept", "application/json")
             .header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
             .header("Passport-Sdk-Version", "5051452")
@@ -415,10 +415,10 @@ internal class RedfruitPhoneLogin(
             return VendorConstants.device + mapOf(
                 "device_id" to deviceId,
                 "iid" to installId,
-                "version_code" to "73532",
-                "manifest_version_code" to "73532",
-                "update_version_code" to "73532",
-                "version_name" to "7.3.5.32",
+                "version_code" to VendorConstants.OFFICIAL_VERSION_CODE,
+                "manifest_version_code" to VendorConstants.OFFICIAL_VERSION_CODE,
+                "update_version_code" to VendorConstants.OFFICIAL_VERSION_CODE,
+                "version_name" to VendorConstants.OFFICIAL_VERSION_NAME,
             ) + source.filter { (key, value) -> key in setOf("cdid", "openudid") && value.matches(DEVICE_EXTRA) }
         }
 

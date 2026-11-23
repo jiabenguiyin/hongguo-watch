@@ -1,5 +1,13 @@
 # 本次同步来源
 
+2026-11-23：官方播放「真签名」对齐
+[jycao2/hongguoTV kotlin-v0.33.1-build.62](https://github.com/jycao2/hongguoTV/releases/tag/kotlin-v0.33.1-build.62)
+（提交 `91de1b673d6120edb37dfc65f3b116de7d44e8d5`，GPL-3.0）。该发行 APK **不含** MSSDK /
+`libhongguo_signer.so`。手表端移植其 `Argus.kt` 中的 `PlayerSigner`（fqapp argus/ladon），
+并把取流改为优先 `GET video_tab` + `POST /novel/player/multi_video_model/v1`（无 `/player/`、
+无 `dr_scene`、`version_code=74532`），用 PlayerSigner 替换会被静默丢弃的 v5 helios/medusa 占位头。
+未纳入其 UI、冷却策略以外的业务逻辑，也未复制发行 APK 二进制。
+
 2026-11-20：手表端的同档 CDN 备用与模型二次取源，参考
 [N3urda/hongguoTV](https://github.com/N3urda/hongguoTV/blob/478f00683f086f1e5d135b3bcbb443e3cbc8b252/kotlin-tv/core/src/main/kotlin/com/hongguotv/core/ContentRepository.kt#L1292)、
 [jackotom/hongguo-drama](https://github.com/jackotom/hongguo-drama/blob/6449bb1e0329dbe567ffa2db93e73d654bf36aba/src/native/app-source.js)

@@ -9,6 +9,7 @@ enum class PlaybackRoutePreference {
     PRIMARY_LF,
     VIDEO_TAB,
     PRELOAD,
+    PUBLIC_360P,
     ;
 
     companion object {

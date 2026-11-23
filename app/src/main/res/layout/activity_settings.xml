@@ -152,6 +152,10 @@
                         style="@style/Widget.HongguoWatch.SettingsArrow" />
                 </LinearLayout>
 
+                <TextView
+                    style="@style/Widget.HongguoWatch.SettingsHint"
+                    android:text="@string/playback_route_hint" />
+
                 <LinearLayout style="@style/Widget.HongguoWatch.SettingsRow">
 
                     <ImageView

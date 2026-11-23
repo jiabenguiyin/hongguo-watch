@@ -79,6 +79,8 @@ data class StreamInfo(
     /** 上游 codec_type 归一化标签（如 h264 / bytevc1）。 */
     val codec: String = "",
     val isCdnBackup: Boolean = false,
+    /** Additional provenance shown to the user for a non-default fallback. */
+    val sourceLabel: String = "",
 )
 
 data class SearchPage(

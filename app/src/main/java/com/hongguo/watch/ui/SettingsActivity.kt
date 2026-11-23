@@ -326,6 +326,7 @@ class SettingsActivity : WatchDisplayActivity() {
         PlaybackRoutePreference.PRIMARY_LF -> R.string.playback_route_primary_lf
         PlaybackRoutePreference.VIDEO_TAB -> R.string.playback_route_video_tab
         PlaybackRoutePreference.PRELOAD -> R.string.playback_route_preload
+        PlaybackRoutePreference.PUBLIC_360P -> R.string.playback_route_public_360p
     }
 
     private fun refreshVideoCacheUi() {

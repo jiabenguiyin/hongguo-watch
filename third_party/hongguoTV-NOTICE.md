@@ -8,6 +8,13 @@
 才在原线路时限内跟随一次模型明确给出的官方 HTTPS 备用地址，并核对返回的视频身份。
 不构造 `fplay` 地址或参数，备用地址不跟随重定向。
 
+2026-11-23：新增 360p 公开备用流，参考独立发行仓库
+[waligoraamodio288-rgb/hongguo-desktop-releases](https://github.com/waligoraamodio288-rgb/hongguo-desktop-releases)
+中 TV v0.5.12 APK 的可观察行为；该仓库不含客户端源码。本项目独立实现请求：
+读取 `hongguoduanju.com` 的公开剧集页 JSON-LD，精确匹配剧集 ID、分集 ID 和集数，再对固定站点的
+`/video/public/{itemId}/360p.mp4` 做 32 字节 Range/MP4 头校验。只在官方模型无可播源或可恢复取流
+失败后尝试；没有从该 APK 复制代码、资源、签名或身份数据。此公开站点是独立第三方，片源可能缺失或变化。
+
 2026-11-11：TV 功能与测试同步自 tsukiyo-zero/hongguoTV，提交 `49532eb2110dcbf66814ca250d43f222e7193895`（GPL-3.0）。保留原作者声明；本分支适配原包名、更新渠道及品牌。
 
 # 原生版第三方声明

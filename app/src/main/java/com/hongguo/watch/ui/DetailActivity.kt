@@ -6,7 +6,11 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
+import android.view.WindowManager
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
@@ -44,6 +48,9 @@ class DetailActivity : WatchDisplayActivity() {
     private var seriesId: String = ""
     private var seriesTitle: String = ""
     private var cover: String = ""
+    private var synopsisText: String = ""
+    private var synopsisExpanded = false
+    private var synopsisExpandable = false
     private var source: SeriesSource = SeriesSource.APP
     private var episodeCount: Int = 0
     private var episodes: List<Episode> = emptyList()
@@ -80,10 +87,13 @@ class DetailActivity : WatchDisplayActivity() {
 
         binding.seriesTitle.text = seriesTitle
         binding.pageTitle.text = getString(R.string.detail_title)
-        binding.seriesIntro.text = intent.getStringExtra(EXTRA_INTRO).orEmpty()
+        renderSynopsis(intent.getStringExtra(EXTRA_INTRO).orEmpty())
         bindCover(cover)
         bindTags(incomingTags)
         bindHeatAndRating(incomingTags)
+        binding.cover.contentDescription = getString(R.string.cover_preview_action)
+        binding.cover.setOnClickListener { showCoverPreview() }
+        binding.synopsisExpandToggle.setOnClickListener { toggleSynopsisExpansion() }
 
         binding.backButton.setOnClickListener {
             if (downloadSelectMode) {
@@ -188,15 +198,8 @@ class DetailActivity : WatchDisplayActivity() {
                 episodeCount = detail.series.episodeCount
                 binding.seriesTitle.text = detail.series.title
                 bindCover(cover)
-                val intro = detail.series.description.ifBlank {
-                    binding.seriesIntro.text?.toString().orEmpty()
-                }
-                if (intro.isNotBlank()) {
-                    binding.seriesIntro.text = getString(R.string.synopsis_label, intro)
-                    binding.seriesIntro.visibility = View.VISIBLE
-                } else {
-                    binding.seriesIntro.visibility = View.GONE
-                }
+                val intro = detail.series.description.ifBlank { synopsisText }
+                renderSynopsis(intro)
                 val tags = (incomingTags + detail.series.tags).distinct().filter { it.isNotBlank() }
                 bindTags(tags)
                 bindHeatAndRating(tags)
@@ -544,6 +547,109 @@ class DetailActivity : WatchDisplayActivity() {
         }
     }
 
+    private fun renderSynopsis(value: String) {
+        synopsisText = value.trim()
+        synopsisExpanded = false
+        synopsisExpandable = false
+        binding.seriesIntro.maxLines = SYNOPSIS_COLLAPSED_LINES
+        binding.seriesIntro.ellipsize = android.text.TextUtils.TruncateAt.END
+        binding.seriesIntro.text = if (synopsisText.isBlank()) {
+            ""
+        } else {
+            getString(R.string.synopsis_label, synopsisText)
+        }
+        binding.seriesIntro.visibility = if (synopsisText.isBlank()) View.GONE else View.VISIBLE
+        binding.synopsisExpandToggle.visibility = View.GONE
+        binding.synopsisExpandToggle.setText(R.string.synopsis_expand)
+        if (synopsisText.isNotBlank()) {
+            binding.seriesIntro.post { updateSynopsisExpansionControl() }
+        }
+    }
+
+    private fun toggleSynopsisExpansion() {
+        if (!synopsisExpandable) return
+        synopsisExpanded = !synopsisExpanded
+        binding.seriesIntro.maxLines =
+            if (synopsisExpanded) Integer.MAX_VALUE else SYNOPSIS_COLLAPSED_LINES
+        binding.seriesIntro.ellipsize =
+            if (synopsisExpanded) null else android.text.TextUtils.TruncateAt.END
+        binding.synopsisExpandToggle.setText(
+            if (synopsisExpanded) R.string.synopsis_collapse else R.string.synopsis_expand,
+        )
+        binding.synopsisExpandToggle.contentDescription = getString(
+            if (synopsisExpanded) R.string.synopsis_collapse else R.string.synopsis_expand,
+        )
+        binding.synopsisExpandToggle.visibility = View.VISIBLE
+        if (!synopsisExpanded) binding.seriesIntro.post { updateSynopsisExpansionControl() }
+    }
+
+    private fun updateSynopsisExpansionControl() {
+        if (synopsisExpanded) {
+            binding.synopsisExpandToggle.visibility = View.VISIBLE
+            return
+        }
+        val layout = binding.seriesIntro.layout
+        val lastLine = (layout?.lineCount ?: 0) - 1
+        synopsisExpandable = lastLine >= SYNOPSIS_COLLAPSED_LINES - 1 &&
+            layout?.getEllipsisCount(lastLine)?.let { it > 0 } == true
+        binding.synopsisExpandToggle.visibility =
+            if (synopsisExpandable) View.VISIBLE else View.GONE
+    }
+
+    private fun showCoverPreview() {
+        val coverUrl = CoverUrls.normalize(cover).ifBlank { cover }
+        if (coverUrl.isBlank()) return
+
+        val metrics = resources.displayMetrics
+        val padding = WatchUi.dp(this, 12f)
+        val dialogWidth = minOf(
+            WatchUi.dialogContentWidthPx(this),
+            WatchUi.dp(this, COVER_PREVIEW_MAX_WIDTH_DP),
+        )
+        val imageWidth = (dialogWidth - padding * 2).coerceAtLeast(WatchUi.dp(this, 120f))
+        val imageHeight = minOf(
+            (imageWidth * COVER_PREVIEW_ASPECT_RATIO).toInt(),
+            (metrics.heightPixels * COVER_PREVIEW_MAX_HEIGHT_FRACTION).toInt(),
+        ).coerceAtLeast(WatchUi.dp(this, 160f))
+        val image = ImageView(this).apply {
+            contentDescription = getString(R.string.cover_preview_title, seriesTitle)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            background = ContextCompat.getDrawable(this@DetailActivity, R.drawable.bg_cover)
+            clipToOutline = true
+            load(coverUrl) {
+                size(imageWidth, imageHeight)
+                crossfade(false)
+                transformations(RoundedCornersTransformation(resources.displayMetrics.density * 8f))
+                placeholder(R.drawable.bg_cover)
+                error(R.drawable.bg_cover)
+            }
+        }
+        val content = FrameLayout(this).apply {
+            setPadding(padding, padding, padding, padding)
+            setBackgroundResource(R.drawable.bg_alert_dialog)
+            addView(
+                image,
+                FrameLayout.LayoutParams(imageWidth, imageHeight, Gravity.CENTER),
+            )
+        }
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(
+            this,
+            R.style.Theme_HongguoWatch_AlertDialog,
+        ).setView(content).create()
+        image.setOnClickListener { dialog.dismiss() }
+        dialog.setOnShowListener {
+            dialog.window?.let { window ->
+                window.setLayout(dialogWidth, WindowManager.LayoutParams.WRAP_CONTENT)
+                window.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)
+            }
+        }
+        dialog.show()
+        dialog.window?.let { window ->
+            window.setLayout(dialogWidth, WindowManager.LayoutParams.WRAP_CONTENT)
+            window.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)
+        }
+    }
+
     private fun bindTags(tags: List<String>) {
         binding.tagRow.removeAllViews()
         fun isMeta(value: String): Boolean =
@@ -692,6 +798,11 @@ class DetailActivity : WatchDisplayActivity() {
     }
 
     companion object {
+        private const val SYNOPSIS_COLLAPSED_LINES = 3
+        private const val COVER_PREVIEW_MAX_WIDTH_DP = 280f
+        private const val COVER_PREVIEW_ASPECT_RATIO = 4f / 3f
+        private const val COVER_PREVIEW_MAX_HEIGHT_FRACTION = 0.7f
+
         const val EXTRA_SERIES_ID = "series_id"
         const val EXTRA_SERIES_TITLE = "series_title"
         const val EXTRA_COVER = "cover"

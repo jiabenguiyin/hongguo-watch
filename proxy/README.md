@@ -27,7 +27,8 @@ On a host with **OpenJDK 17+** and private MetaSec assets under `METASEC_HOME`
 ```bash
 tar -xzf hongguo-playback-proxy.tar.gz
 bash proxy/scripts/metasec-extract.sh /path/to/phoenix.read.apk /opt/hongguo-playback-proxy/metasec
-# add license.b64 + refso/data/ms_16777218.bin (private)
+# auto: libmetasec_ml.so, license.b64 (DEX 10CS/…), optional ms_16777218.bin (APK cert DER)
+# or: export METASEC_LICENSE='10CS/…'  — cert may be omitted
 export METASEC_HOME=/opt/hongguo-playback-proxy/metasec
 export METASEC_BACKEND=unicorn2
 cd proxy && PORT=8787 BIND=0.0.0.0 HONGGUO_PLAYBACK_PROXY_TOKEN=secret ./bin/proxy
@@ -35,6 +36,7 @@ cd proxy && PORT=8787 BIND=0.0.0.0 HONGGUO_PLAYBACK_PROXY_TOKEN=secret ./bin/pro
 
 Store copy: `/cursor/stores/self/media/hongguo-playback-proxy.tar.gz`.
 Deploy notes: `/cursor/stores/self/docs/metasec-proxy-deploy.md`.
+Private samples (host-only, not git): `/cursor/stores/self/internal/metasec-host-assets/`.
 
 Smoke:
 
@@ -51,7 +53,7 @@ Watch: Settings → **播放代理** → `http://<host>:8787` + token. Empty URL
 | Mode | Env | Notes |
 | --- | --- | --- |
 | PlayerSigner (default) | — | GPL Argus/Ladon reused from watch upstream. **May empty-200**. |
-| MetaSec / unidbg | `METASEC_UNIDBG_URL` | Scaffold only — see `MetaSecBridge.kt` TODO. Private host holds `.so`. |
+| MetaSec / unidbg | `METASEC_HOME` (+ optional `METASEC_UNIDBG_URL`) | Local unidbg engine; private host holds `.so` + `license.b64`. |
 
 ## Deploy (SSH)
 

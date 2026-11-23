@@ -115,7 +115,7 @@
     <string name="setting_quality_status">%1$dp</string>
     <string name="setting_quality_adaptive">自适应（省流）</string>
     <string name="playback_route_label">播放线路</string>
-    <string name="playback_route_hint">自动模式优先官方 video_tab 与 multi_video_model/v1（真 Argus/Ladon 签名）。外部公开 360p 需手动选择，且多为短预览</string>
+    <string name="playback_route_hint">自动模式优先官方 video_tab/multi_video_model 与 multi_video_model/v1。外部公开 360p 需手动选择，且多为短预览</string>
     <string name="playback_route_auto">自动（推荐）</string>
     <string name="playback_route_primary">主线路 1 优先</string>
     <string name="playback_route_primary_a">主线路 2 优先</string>

@@ -43,8 +43,9 @@ internal data class PlaybackRouteAttempt(
  *
  * Official APIs silently drop v5 placeholder helios/medusa headers (empty HTTP 200).
  * Working path: pick `_rticket` via v5 branch search, then attach **PlayerSigner**
- * (real x-argus / x-ladon). Prefer GET video_tab, then POST `/novel/player/multi_video_model/v1`
- * (no `/player/`, no `dr_scene`, version **74532**).
+ * (Argus/Ladon stand-in; official app uses MetaSec/`libmetasec_ml.so`). Prefer GET
+ * `video_tab/multi_video_model/v1/` (official 7.4.5.32 DEX; also has `video_tab/video_model`),
+ * then POST `/novel/player/multi_video_model/v1` (no `/player/`, no `dr_scene`, **74532**).
  */
 internal object MobilePlayback {
     private val v5Signer = Signer(mobileV5 = true)
@@ -474,8 +475,10 @@ internal object MobilePlayback {
                 ),
             )
         }
+        // Official 7.4.5.32 DEX: GET video_tab/multi_video_model/v:version/ (+ video_model spare).
         val bases = listOf(
             "https://api5-normal-sinfonlineb.fqnovel.com/reading/bookapi/video_tab/multi_video_model/v1/",
+            "https://api5-normal-sinfonlineb.fqnovel.com/reading/bookapi/video_tab/video_model/v1/",
             "https://reading.snssdk.com/reading/bookapi/video_tab/multi_video_model/v1/",
         )
         var lastEmpty: EmptyPlaybackResponseException? = null
@@ -504,7 +507,7 @@ internal object MobilePlayback {
                     ladderFromModel(model, http, routeDeadline, episodeId, claimFollowup)
                 }
             } catch (e: EmptyPlaybackResponseException) {
-                // Blank body is global throttle signal — do not probe the alt host.
+                // Blank body is treated as global throttle — do not burn the deadline on alt tab URLs.
                 throw e
             } catch (e: IOException) {
                 if (!PlayRetryPlan.temporary(e) &&
@@ -515,7 +518,10 @@ internal object MobilePlayback {
                 lastTransient = e
             }
         }
-        lastTransient?.let { throw it }
+        lastTransient?.let { failure ->
+            lastEmpty?.let(failure::addSuppressed)
+            throw failure
+        }
         throw lastEmpty ?: EmptyPlaybackResponseException("stage=video-tab http=200 bytes=0")
     }
 

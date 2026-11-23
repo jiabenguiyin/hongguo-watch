@@ -1,5 +1,16 @@
 # 本次同步来源
 
+2026-11-23：对照官方 `com.phoenix.read` **7.4.5.32**（versionCode **74532**，用户百度 CDN 包；
+文件 MD5=`31c6285e…`，与 URL `md5hash=37a427b7…` 不一致已记录）DEX：
+`GET /reading/bookapi/video_tab/multi_video_model/v:version/`、
+`GET …/video_tab/video_model/v:version/` 与 `POST /novel/player/multi_video_model/v1/`；
+官方含 `libmetasec_ml.so`（~4.3 MiB MetaSec，不可再分发）。手表 AUTO 优先
+`video_tab/multi_video_model/v1/`，`video_model` 为备选。仍用 GPL PlayerSigner 作
+Argus/Ladon 近似，**未**打包官方 MetaSec。
+
+2026-11-23：对照官方 **7.2.5.32**（72532）时仅有 `video_tab/video_model`（无 tab
+`multi_video_model`）；已以 7.4.5.32 为准覆盖该临时结论。
+
 2026-11-23：官方播放「真签名」对齐
 [jycao2/hongguoTV kotlin-v0.33.1-build.62](https://github.com/jycao2/hongguoTV/releases/tag/kotlin-v0.33.1-build.62)
 （提交 `91de1b673d6120edb37dfc65f3b116de7d44e8d5`，GPL-3.0）。该发行 APK **不含** MSSDK /

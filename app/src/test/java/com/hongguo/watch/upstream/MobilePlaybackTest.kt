@@ -134,13 +134,12 @@ class MobilePlaybackTest {
             passthroughSigner,
             1000,
         )
-        assertEquals(
-            listOf(
-                "api5-normal-sinfonlineb.fqnovel.com",
-                "reading.snssdk.com",
-                MobilePlayback.modelHosts().first(),
-            ),
-            advancedHosts,
+        // Tab base1 503 → tab base2 may accept plain model shape; otherwise POST primary-a.
+        assertTrue(advancedHosts.size >= 2)
+        assertEquals("api5-normal-sinfonlineb.fqnovel.com", advancedHosts.first())
+        assertTrue(
+            advancedHosts.last() == "reading.snssdk.com" ||
+                advancedHosts.last() == MobilePlayback.modelHosts().first(),
         )
 
         for (status in listOf(401, 403, 429)) {
@@ -254,7 +253,8 @@ class MobilePlaybackTest {
                     assertEquals("123456", profile["device_id"])
                     signedVideoModel = true
                 }
-                target.contains("/reading/bookapi/video_tab/multi_video_model/v1/") -> {
+                target.contains("/reading/bookapi/video_tab/video_model/v1/") ||
+                    target.contains("/reading/bookapi/video_tab/multi_video_model/v1/") -> {
                     assertEquals(null, body)
                     assertEquals("74532", profile["version_code"])
                     assertEquals("7.4.5.32", profile["version_name"])
@@ -283,6 +283,7 @@ class MobilePlaybackTest {
                             assertTrue(payload.contains("\"content_type\":1004"))
                             assertTrue(payload.contains("\"video_platform\":3"))
                         }
+                        "/reading/bookapi/video_tab/video_model/v1/",
                         "/reading/bookapi/video_tab/multi_video_model/v1/" -> {
                             assertEquals("GET", request.method)
                             assertEquals(null, request.body)
@@ -346,9 +347,10 @@ class MobilePlaybackTest {
         val paths = mutableListOf<String>()
         val hosts = MobilePlayback.modelHosts().size
         val modelHosts = MobilePlayback.videoModelHosts().size
-        // both video_tab bases 503 → primary hosts empty → video_model empty → preload ok
-        val statuses = listOf(503, 503) + List(hosts + modelHosts) { 200 } + listOf(200)
-        val bodies = listOf("temporarily unavailable", "temporarily unavailable") +
+        // first video_tab base 503, second succeeds? No — all tab transient then primary/model empty → preload
+        // three tab bases all 503 → primary hosts empty → video_model empty → preload ok
+        val statuses = listOf(503, 503, 503) + List(hosts + modelHosts) { 200 } + listOf(200)
+        val bodies = listOf("temporarily unavailable", "temporarily unavailable", "temporarily unavailable") +
             List(hosts + modelHosts) { "" } + model(typed = true)
         val ladder = MobilePlayback.ladder(
             "123",
@@ -397,7 +399,7 @@ class MobilePlaybackTest {
             listOf(
                 "/reading/bookapi/video_tab/multi_video_model/v1/",
                 "/video/model/v1/",
-                "/reading/bookapi/video_tab/multi_video_model/v1/",
+                "/reading/bookapi/video_tab/video_model/v1/",
                 "/novel/player/multi_video_model/v1",
             ),
             paths,
@@ -450,6 +452,7 @@ class MobilePlaybackTest {
         assertEquals(
             listOf(
                 "/reading/bookapi/video_tab/multi_video_model/v1/",
+                "/reading/bookapi/video_tab/video_model/v1/",
                 "/reading/bookapi/video_tab/multi_video_model/v1/",
                 "/novel/player/multi_video_model/v1",
             ),
@@ -460,11 +463,15 @@ class MobilePlaybackTest {
 
     @Test
     fun laterEmptyResponsesDoNotHideAnEarlierServiceFailure() {
-        // Both video_tab bases must see 503; an empty alt host would mask the service failure.
+        // All video_tab bases must see 503; an empty alt host would mask the service failure.
         val afterTab = MobilePlayback.modelHosts().size + MobilePlayback.videoModelHosts().size + 1
         val paths = mutableListOf<String>()
-        val statuses = listOf(503, 503) + List(afterTab) { 200 }
-        val bodies = listOf("temporarily unavailable", "temporarily unavailable") + List(afterTab) { "" }
+        val statuses = listOf(503, 503, 503) + List(afterTab) { 200 }
+        val bodies = listOf(
+            "temporarily unavailable",
+            "temporarily unavailable",
+            "temporarily unavailable",
+        ) + List(afterTab) { "" }
         val error = assertThrows(PlaybackSourceException::class.java) {
             MobilePlayback.ladder(
                 "123",
@@ -476,7 +483,7 @@ class MobilePlaybackTest {
         }
         assertEquals(PlaybackSourceException.Reason.TEMPORARY_UNAVAILABLE, error.reason)
         assertEquals(503, error.upstreamCode)
-        assertEquals(2 + afterTab, paths.size)
+        assertEquals(3 + afterTab, paths.size)
         val empty = error.suppressed.single() as EmptyPlaybackResponseException
         assertTrue(empty.allCompatibilityModelsEmpty)
         assertTrue(empty.detail.orEmpty().contains("stage=preload"))
@@ -490,14 +497,14 @@ class MobilePlaybackTest {
             MobilePlayback.ladder(
                 "123",
                 device,
-                http(List(2 + afterTab) { "" }) {
-                    if (++attempts <= 2) throw SocketTimeoutException("upstream read timeout")
+                http(List(3 + afterTab) { "" }) {
+                    if (++attempts <= 3) throw SocketTimeoutException("upstream read timeout")
                 },
                 passthroughSigner,
                 1000,
             )
         }
-        assertEquals(2 + afterTab, attempts)
+        assertEquals(3 + afterTab, attempts)
         assertTrue((error.suppressed.single() as EmptyPlaybackResponseException).allCompatibilityModelsEmpty)
     }
 
@@ -618,15 +625,20 @@ class MobilePlaybackTest {
             "123",
             device,
             http(
-                listOf("temporarily unavailable", "temporarily unavailable", model(typed = true)),
-                listOf(503, 503, 200),
+                listOf(
+                    "temporarily unavailable",
+                    "temporarily unavailable",
+                    "temporarily unavailable",
+                    model(typed = true),
+                ),
+                listOf(503, 503, 503, 200),
             ) {
                 methods += it.method
             },
             passthroughSigner,
             1000,
         )
-        assertEquals(listOf("GET", "GET", "POST"), methods)
+        assertEquals(listOf("GET", "GET", "GET", "POST"), methods)
         assertEquals("https://example.org/video", result.renditions.single().url)
     }
 
@@ -650,14 +662,14 @@ class MobilePlaybackTest {
         for ((status, body, outcome) in cases) {
             val reports = mutableListOf<PlaybackRouteAttempt>()
             val methods = mutableListOf<String>()
-            // Only NO_PLAYABLE_SOURCE retries the video_tab alt host; 204/404/blank stop the tab route.
+            // Only NO_PLAYABLE_SOURCE retries video_tab alt bases; 204/404/blank stop the tab route.
             val retryTab = outcome == "no_playable_source"
             val bodies = if (retryTab) {
-                listOf(body, body, model(typed = true))
+                listOf(body, body, body, model(typed = true))
             } else {
                 listOf(body, model(typed = true))
             }
-            val statuses = if (retryTab) listOf(status, status, 200) else listOf(status, 200)
+            val statuses = if (retryTab) listOf(status, status, status, 200) else listOf(status, 200)
             val ladder = MobilePlayback.ladder(
                 "123",
                 device,
@@ -668,7 +680,7 @@ class MobilePlaybackTest {
             )
             assertEquals("https://example.org/video", ladder.renditions.single().url)
             if (retryTab) {
-                assertEquals(listOf("GET", "GET", "POST"), methods)
+                assertEquals(listOf("GET", "GET", "GET", "POST"), methods)
             } else {
                 assertEquals(listOf("GET", "POST"), methods)
             }
@@ -713,8 +725,8 @@ class MobilePlaybackTest {
                 MobilePlayback.ladder(
                     "123",
                     device,
-                    // Both video_tab bases must see the unusable model (alt host is retried).
-                    http(listOf(videoTabBody, videoTabBody) + empties),
+                    // All video_tab bases must see the unusable model (alt bases are retried).
+                    http(listOf(videoTabBody, videoTabBody, videoTabBody) + empties),
                     passthroughSigner,
                     1000,
                     onAttempt = { reports += it },

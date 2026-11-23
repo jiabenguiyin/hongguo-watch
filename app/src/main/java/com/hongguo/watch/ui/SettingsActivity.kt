@@ -324,6 +324,7 @@ class SettingsActivity : WatchDisplayActivity() {
         PlaybackRoutePreference.PRIMARY_A -> R.string.playback_route_primary_a
         PlaybackRoutePreference.PRIMARY_HL -> R.string.playback_route_primary_hl
         PlaybackRoutePreference.PRIMARY_LF -> R.string.playback_route_primary_lf
+        PlaybackRoutePreference.VIDEO_MODEL -> R.string.playback_route_video_model
         PlaybackRoutePreference.VIDEO_TAB -> R.string.playback_route_video_tab
         PlaybackRoutePreference.PRELOAD -> R.string.playback_route_preload
         PlaybackRoutePreference.PUBLIC_360P -> R.string.playback_route_public_360p

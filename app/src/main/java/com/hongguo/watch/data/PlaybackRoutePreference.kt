@@ -7,6 +7,7 @@ enum class PlaybackRoutePreference {
     PRIMARY_A,
     PRIMARY_HL,
     PRIMARY_LF,
+    VIDEO_MODEL,
     VIDEO_TAB,
     PRELOAD,
     PUBLIC_360P,

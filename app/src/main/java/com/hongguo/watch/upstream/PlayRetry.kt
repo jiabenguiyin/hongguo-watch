@@ -24,6 +24,7 @@ internal object PlayRetryPlan {
         when (host) {
             "api5-normal-sinfonlineb.fqnovel.com" -> "b"
             "api5-normal-sinfonlinea.fqnovel.com" -> "a"
+            "api5-normal-sinfonlinec.fqnovel.com" -> "c"
             "api5-normal-hl.fqnovel.com" -> "hl"
             "api5-normal-lf.fqnovel.com" -> "lf"
             else -> host.substringBefore('.').takeLast(8)

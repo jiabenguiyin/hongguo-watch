@@ -16,7 +16,6 @@ import com.hongguo.watch.upstream.DeviceRegister
 import com.hongguo.watch.upstream.EmptyPlaybackResponseException
 import com.hongguo.watch.upstream.LadderParseResult
 import com.hongguo.watch.upstream.MobilePlayback
-import com.hongguo.watch.upstream.PlayRetryPlan
 import com.hongguo.watch.upstream.PlaybackSourceException
 import com.hongguo.watch.upstream.Rendition
 import com.hongguo.watch.upstream.RequestScope
@@ -485,47 +484,16 @@ class AppSourceClient(
         require(SERIES_ID.matches(seriesId.trim())) { "无效剧集 ID" }
         val vid = episodeId.trim()
         require(SERIES_ID.matches(vid)) { "无效分集 ID" }
-        var publicFallbackAttempted = false
-        fun tryPublicFallback(): StreamSelection? {
-            publicFallbackAttempted = true
-            val stream = try {
-                publicPlaybackFallback.resolve(seriesId, vid)
-            } catch (error: Exception) {
-                RequestScope.ensureActive()
-                PlayerDiagLog.w("public 360p fallback unavailable: ${error.javaClass.simpleName}")
-                null
-            } ?: return null
-            PlayerDiagLog.w("official playback unavailable → public 360p fallback")
-            val rendition = Rendition(
-                quality = 360,
-                codec = "h264",
-                width = null,
-                height = null,
-                url = stream.url,
-                key = null,
-            )
-            return StreamSelection(
-                stream = stream,
-                renditions = listOf(rendition),
-                selectedKey = StreamFailover.key(rendition),
-            )
-        }
+        // SEO /video/public/ 360p is manual-only (short previews). AUTO never falls into it.
         if (routePreference == PlaybackRoutePreference.PUBLIC_360P) {
-            tryPublicFallback()?.let { return it }
+            return resolvePublicFallback(seriesId, vid)
+                ?: throw EmptyPlaybackResponseException("stage=public-360p unavailable")
         }
 
-        val ladder = try {
-            RequestScope.withDeadline(
-                System.nanoTime() + TimeUnit.SECONDS.toNanos(12),
-            ) {
-                fetchMobileLadder(vid, routePreference)
-            }
-        } catch (error: Exception) {
-            RequestScope.ensureActive()
-            if (!publicFallbackAttempted && shouldTryPublicFallback(error)) {
-                tryPublicFallback()?.let { return it }
-            }
-            throw error
+        val ladder = RequestScope.withDeadline(
+            System.nanoTime() + TimeUnit.SECONDS.toNanos(12),
+        ) {
+            fetchMobileLadder(vid, routePreference)
         }
         val capped = maxHeight.coerceIn(240, 1080)
         val parse = ladder.parseResult().let {
@@ -536,36 +504,37 @@ class AppSourceClient(
             }
         }
         PlayerDiagLog.logLadder(parse, capped, preferAvc = preferAvc, avcOnly = avcOnly)
-        return try {
-            selectFromLadder(
-                renditions = ladder.renditions,
-                maxHeight = capped,
-                preferAvc = preferAvc,
-                avcOnly = avcOnly,
-                excludeKeys = excludeKeys,
-            )
-        } catch (error: NoPlayableRenditionException) {
-            RequestScope.ensureActive()
-            if (!publicFallbackAttempted) tryPublicFallback()?.let { return it }
-            throw error
-        }
+        return selectFromLadder(
+            renditions = ladder.renditions,
+            maxHeight = capped,
+            preferAvc = preferAvc,
+            avcOnly = avcOnly,
+            excludeKeys = excludeKeys,
+        )
     }
 
-    private fun shouldTryPublicFallback(error: Exception): Boolean = when (error) {
-        is java.util.concurrent.CancellationException,
-        is InterruptedException,
-        -> false
-        is NoPlayableRenditionException,
-        is EmptyPlaybackResponseException,
-        -> true
-        is PlaybackSourceException -> when (error.reason) {
-            PlaybackSourceException.Reason.REJECTED -> false
-            PlaybackSourceException.Reason.HTTP_REJECTED ->
-                error.upstreamCode !in setOf(401, 403, 429)
-            else -> true
-        }
-        is IOException -> PlayRetryPlan.temporary(error)
-        else -> false
+    private fun resolvePublicFallback(seriesId: String, vid: String): StreamSelection? {
+        val stream = try {
+            publicPlaybackFallback.resolve(seriesId, vid)
+        } catch (error: Exception) {
+            RequestScope.ensureActive()
+            PlayerDiagLog.w("public 360p unavailable: ${error.javaClass.simpleName}")
+            null
+        } ?: return null
+        PlayerDiagLog.i("public 360p route selected (manual)")
+        val rendition = Rendition(
+            quality = 360,
+            codec = "h264",
+            width = null,
+            height = null,
+            url = stream.url,
+            key = null,
+        )
+        return StreamSelection(
+            stream = stream,
+            renditions = listOf(rendition),
+            selectedKey = StreamFailover.key(rendition),
+        )
     }
 
     fun fetchStream(
@@ -655,7 +624,13 @@ class AppSourceClient(
         ensureDevice()
         fun requestLadder(round: Int) =
             MobilePlayback.ladder(
-                vid, identityQuery(), client, MobilePlayback.signer, clock(), preference,
+                vid,
+                identityQuery(),
+                client,
+                MobilePlayback.signer,
+                clock(),
+                preference,
+                registerCookies = registerCookies(),
                 onAttempt = { attempt ->
                     PlayerDiagLog.i(
                         "playback attempt round=$round preference=${preference.name} route=${attempt.route} " +
@@ -722,6 +697,11 @@ class AppSourceClient(
             if (prefs.getString(KEY_CDID, "").isNullOrBlank()) {
                 prefs.edit().putString(KEY_CDID, UUID.randomUUID().toString()).apply()
             }
+            // Upgraded installs may lack register cookies; refresh once so model POSTs
+            // can send Win-style store-region / install_id / ttreq cookies.
+            if (registerCookies().isEmpty()) {
+                runCatching { registerDeviceLocked() }
+            }
             return
         }
         registerDeviceLocked()
@@ -750,10 +730,16 @@ class AppSourceClient(
                 ?: throw IllegalStateException("设备登记响应无效")
         }
         RequestScope.ensureActive()
+        val cookieJson = JSONObject().apply {
+            registered.cookies.forEach { (name, value) ->
+                if (name.isNotBlank() && value.isNotBlank()) put(name, value)
+            }
+        }.toString()
         prefs.edit()
             .putString(KEY_DEVICE_ID, registered.deviceId)
             .putString(KEY_IID, registered.installId)
             .putString(KEY_CDID, UUID.randomUUID().toString())
+            .putString(KEY_REGISTER_COOKIES, cookieJson)
             .apply()
     }
 
@@ -764,6 +750,20 @@ class AppSourceClient(
             "iid" to prefs.getString(KEY_IID, "").orEmpty(),
             "cdid" to prefs.getString(KEY_CDID, "").orEmpty(),
         )
+    }
+
+    /** Anonymous device-register cookies only (never account session cookies). */
+    private fun registerCookies(): Map<String, String> {
+        val raw = prefs.getString(KEY_REGISTER_COOKIES, null) ?: return emptyMap()
+        return try {
+            val json = JSONObject(raw)
+            json.keys().asSequence()
+                .map { it to json.optString(it) }
+                .filter { (name, value) -> name.isNotBlank() && value.isNotBlank() }
+                .toMap()
+        } catch (_: Exception) {
+            emptyMap()
+        }
     }
 
     /** 推荐 / 分类用 73532 版本组合（对照 hongguoTV RecommendationFeed 游客态）。 */
@@ -972,6 +972,7 @@ class AppSourceClient(
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_IID = "iid"
         private const val KEY_CDID = "cdid"
+        private const val KEY_REGISTER_COOKIES = "register_cookies"
         private const val VIDEO_REFERER = "https://novel.snssdk.com/"
         private val SERIES_ID = Regex("^[1-9][0-9]{5,29}$")
         private val DEVICE_ID = Regex("^[1-9][0-9]{0,29}$")

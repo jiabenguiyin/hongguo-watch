@@ -104,6 +104,17 @@ fun main() {
         "MetaSec local=${MetaSecBridge.isLocalReady()} home=${MetaSecBridge.home().absolutePath} " +
             "http=${!System.getenv(MetaSecBridge.ENV_URL).isNullOrBlank()}",
     )
+    // Warm MetaSec off the request path (JNI_OnLoad ~seconds on 1 GiB hosts).
+    if (MetaSecBridge.isLocalReady()) {
+        Thread({
+            try {
+                MetaSecBridge.warmUp()
+                println("MetaSec warm-up done signer=${service.signerLabel()}")
+            } catch (t: Throwable) {
+                System.err.println("MetaSec warm-up failed: $t")
+            }
+        }, "metasec-warmup").start()
+    }
 }
 
 private val EPISODE = Regex("[0-9]{1,30}")
@@ -111,7 +122,7 @@ private val EPISODE = Regex("[0-9]{1,30}")
 private fun defaultHttp(): OkHttpClient =
     OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
         .build()
 
@@ -158,15 +169,8 @@ internal class StreamService(
     private val signer = MobilePlaybackSigner { url, body, _ ->
         val meta = runCatching { MetaSecBridge.signHeaders(url, body) }.getOrNull()
         if (!meta.isNullOrEmpty()) {
-            // Keep non-MetaSec transport headers from the v5 path, replace digests.
-            val base = MobilePlayback.signer.sign(url, body, emptyMap())
-            val drop = setOf(
-                "x-gorgon", "x-helios", "x-medusa", "x-argus", "x-ladon", "x-khronos",
-                "x-ss-stub", "x-ss-req-ticket", "x-perseus",
-            )
-            val kept = base.headers.filterKeys { it.lowercase() !in drop }
-            val merged = kept + meta
-            return@MobilePlaybackSigner MobileSignedRequest(base.url, merged)
+            // MetaSec headers alone — do not merge PlayerSigner digests (soft empty-200).
+            return@MobilePlaybackSigner MobileSignedRequest(url, meta)
         }
         MobilePlayback.signer.sign(url, body, emptyMap())
     }
@@ -179,8 +183,12 @@ internal class StreamService(
             "iid" to installId,
             "cdid" to cdid,
         )
+        // MetaSec/unidbg signs are multi-second each; 14s was too tight on 1 GiB VPS.
+        val deadlineSec = System.getenv("PROXY_STREAM_DEADLINE_SEC")?.toLongOrNull()
+            ?.coerceIn(14L, 120L)
+            ?: if (MetaSecBridge.isLocalReady()) 60L else 14L
         val ladder = RequestScope.withDeadline(
-            System.nanoTime() + TimeUnit.SECONDS.toNanos(14),
+            System.nanoTime() + TimeUnit.SECONDS.toNanos(deadlineSec),
         ) {
             MobilePlayback.ladder(
                 id = episodeId,
@@ -251,6 +259,10 @@ internal class StreamService(
             installId = registered.installId
             cdid = UUID.randomUUID().toString()
             cookies = registered.cookies
+            System.err.println(
+                "[proxy] device_register ok did=${deviceId.take(8)}… " +
+                    "iid=${installId.take(8)}… cookies=${cookies.keys}",
+            )
         }
     }
 }

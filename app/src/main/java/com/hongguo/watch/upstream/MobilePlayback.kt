@@ -119,6 +119,15 @@ internal object MobilePlayback {
         VIDEO_MODEL(PlaybackRoutePreference.VIDEO_MODEL, "video-model", 2000),
     }
 
+    /**
+     * Proxy hosts with MetaSec/unidbg need multi-second sign before HTTP.
+     * Set `PROXY_ROUTE_TIMEOUT_MS` (e.g. 20000) to floor each route budget; watch leaves unset.
+     */
+    private fun scaledTimeoutMs(base: Long): Long {
+        val floor = System.getenv("PROXY_ROUTE_TIMEOUT_MS")?.toLongOrNull() ?: return base
+        return maxOf(base, floor.coerceIn(1_000L, 120_000L))
+    }
+
     internal fun modelHosts() = PlayRetryPlan.hosts
 
     internal fun videoModelHosts() =
@@ -202,12 +211,15 @@ internal object MobilePlayback {
             val reserve = when {
                 route == Route.VIDEO_TAB -> 0L
                 Route.PRIMARY in pending || Route.VIDEO_TAB in pending -> {
-                    val backupBudget = TimeUnit.MILLISECONDS.toNanos(Route.PRIMARY.timeoutMs + 100)
+                    val backupBudget =
+                        TimeUnit.MILLISECONDS.toNanos(scaledTimeoutMs(Route.PRIMARY.timeoutMs) + 100)
                     if (firstChoice) minOf(backupBudget, remaining / 2) else backupBudget
                 }
                 else -> 0L
             }
-            val attemptMs = if (firstChoice && route.hostIndex != null) Route.PRIMARY.timeoutMs else route.timeoutMs
+            val attemptMs = scaledTimeoutMs(
+                if (firstChoice && route.hostIndex != null) Route.PRIMARY.timeoutMs else route.timeoutMs,
+            )
             val budget = minOf(TimeUnit.MILLISECONDS.toNanos(attemptMs), remaining - reserve)
             if (budget <= 0L) {
                 report(route, "budget", start)
@@ -446,7 +458,9 @@ internal object MobilePlayback {
             RequestScope.ensureWithinDeadline()
             val remaining = RequestScope.remainingNanos()
             val perHost = (routeDeadline - System.nanoTime()).coerceAtMost(
-                TimeUnit.MILLISECONDS.toNanos(if (index == 0) 1200 else 800),
+                TimeUnit.MILLISECONDS.toNanos(
+                    scaledTimeoutMs(if (index == 0) 1200L else 800L),
+                ),
             )
             if (perHost <= 0L || remaining <= 0L) break
             val hostDeadline = System.nanoTime() + minOf(perHost, remaining)
@@ -543,7 +557,14 @@ internal object MobilePlayback {
                 request.removeHeader("Content-Encoding")
                 request.get()
                 val transport = playTransport(http)
-                return RequestScope.execute(transport.newCall(request.build()), routeDeadline) { response ->
+                // Sign (MetaSec) may consume most of routeDeadline; keep a floor for HTTP I/O.
+                val httpFloor =
+                    System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(scaledTimeoutMs(2_500))
+                val httpDeadline = maxOf(routeDeadline, httpFloor).let { end ->
+                    val remaining = RequestScope.remainingNanos()
+                    if (remaining == Long.MAX_VALUE) end else minOf(end, System.nanoTime() + remaining)
+                }
+                return RequestScope.execute(transport.newCall(request.build()), httpDeadline) { response ->
                     val data = modelData(response, "video-tab", url.host)
                     val entries = data.optJSONObject("video_model_data") ?: data
                     val entry = entries.optJSONObject(id)

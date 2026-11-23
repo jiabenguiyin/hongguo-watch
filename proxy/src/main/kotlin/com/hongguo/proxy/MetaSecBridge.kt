@@ -4,6 +4,7 @@ package com.hongguo.proxy
 import com.hongguo.proxy.metasec.MetaSecUnidbgEngine
 import java.io.File
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -41,6 +42,9 @@ object MetaSecBridge {
     const val DEFAULT_HOME = "/opt/hongguo-playback-proxy/metasec"
 
     private val engine = AtomicReference<MetaSecUnidbgEngine?>(null)
+    private val msInitialized = AtomicBoolean(false)
+    private val initDid = AtomicReference<String?>(null)
+    private val initIid = AtomicReference<String?>(null)
     private val initError = AtomicReference<String?>(null)
 
     fun home(): File =
@@ -48,15 +52,18 @@ object MetaSecBridge {
 
     fun soFile(): File = File(home(), "lib/arm64-v8a/libmetasec_ml.so")
 
-    fun isLocalReady(): Boolean =
-        soFile().isFile && soFile().length() > 100_000L &&
+    fun isLocalReady(): Boolean {
+        if (System.getenv("METASEC_DISABLE") == "1") return false
+        return soFile().isFile && soFile().length() > 100_000L &&
             (File(home(), "license.b64").isFile || !System.getenv("METASEC_LICENSE").isNullOrBlank())
+    }
 
     fun isConfigured(): Boolean =
         isLocalReady() || !System.getenv(ENV_URL).isNullOrBlank()
 
     fun statusLabel(): String = when {
-        engine.get() != null -> "metasec-unidbg"
+        msInitialized.get() -> "metasec-unidbg"
+        engine.get() != null -> "metasec-so-loaded"
         isLocalReady() -> "metasec-local-ready"
         !System.getenv(ENV_URL).isNullOrBlank() -> "metasec-http"
         else -> "playersigner"
@@ -91,20 +98,65 @@ object MetaSecBridge {
         return signHttp(base, url, body)
     }
 
-    private fun ensureEngine(deviceId: String, installId: String): MetaSecUnidbgEngine {
+    /**
+     * Load libmetasec only (JNI_OnLoad). Do **not** initFull here — that must use
+     * device_id/iid from device_register or signatures soft-fail as empty-200.
+     */
+    fun warmUp() {
+        if (!isLocalReady()) return
+        try {
+            loadEngine()
+            System.err.println("[MetaSec] warm-up SO loaded (initFull deferred until register)")
+        } catch (t: Throwable) {
+            initError.set(t.message ?: t.javaClass.simpleName)
+            System.err.println("[MetaSec] warmUp failed: $t")
+        }
+    }
+
+    private fun loadEngine(): MetaSecUnidbgEngine {
         engine.get()?.let { return it }
         synchronized(this) {
             engine.get()?.let { return it }
             val created = MetaSecUnidbgEngine(java.lang.Boolean.getBoolean("metasec.verbose"))
-            created.initFull(deviceId, installId, System.getenv("METASEC_CHANNEL") ?: "google")
+            engine.set(created)
+            System.err.println("[MetaSec] unidbg SO ready (home=${home().absolutePath})")
+            return created
+        }
+    }
+
+    private fun ensureInitialized(deviceId: String, installId: String): MetaSecUnidbgEngine {
+        val eng = loadEngine()
+        val same =
+            msInitialized.get() &&
+                initDid.get() == deviceId &&
+                initIid.get() == installId
+        if (same) return eng
+        synchronized(this) {
+            if (msInitialized.get() && initDid.get() == deviceId && initIid.get() == installId) {
+                return eng
+            }
+            // Re-init when device identity changes (e.g. after device_register).
+            val reinited = msInitialized.get()
+            if (reinited) {
+                MetaSecUnidbgEngine.wipeMsdata()
+            }
+            eng.initFull(deviceId, installId, System.getenv("METASEC_CHANNEL") ?: "google")
             try {
-                created.k3(67108866, 0, 0L, null, null)
+                val h = eng.k3(67108866, 0, 0L, null, null)
+                if (h != null && h.value is Long) {
+                    eng.handleVal = h.value as Long
+                }
             } catch (_: Throwable) {
             }
-            engine.set(created)
+            initDid.set(deviceId)
+            initIid.set(installId)
+            msInitialized.set(true)
             initError.set(null)
-            System.err.println("[MetaSec] unidbg engine ready (home=${home().absolutePath})")
-            return created
+            System.err.println(
+                "[MetaSec] initFull reinited=$reinited did=${deviceId.take(6)}… " +
+                    "iid=${installId.take(6)}… handle=${eng.handleVal}",
+            )
+            return eng
         }
     }
 
@@ -112,27 +164,39 @@ object MetaSecBridge {
         return try {
             val did = System.getProperty("metasec.runtime.did")
                 ?: System.getenv("METASEC_DID")?.takeIf { it.isNotBlank() }
-                ?: "3788282713867595"
             val iid = System.getProperty("metasec.runtime.iid")
                 ?: System.getenv("METASEC_IID")?.takeIf { it.isNotBlank() }
-                ?: "3788282713871691"
-            val signer = ensureEngine(did, iid)
+            if (did.isNullOrBlank() || iid.isNullOrBlank()) {
+                initError.set("device_id/iid not bound — call bindDevice after register")
+                System.err.println("[MetaSec] ${initError.get()}")
+                return null
+            }
+            val signer = ensureInitialized(did, iid)
             val bytes = body ?: ByteArray(0)
-            val rounds = System.getenv("METASEC_ROUNDS")?.toIntOrNull()?.coerceIn(1, 12) ?: 8
-            val wipe = System.getenv("METASEC_WIPE") ?: "after"
+            val rounds = System.getenv("METASEC_ROUNDS")?.toIntOrNull()?.coerceIn(1, 12) ?: 12
+            val wipe = System.getenv("METASEC_WIPE")?.trim().orEmpty().ifEmpty { "none" }
             if (wipe == "before") MetaSecUnidbgEngine.wipeMsdata()
             val out = signer.doSign(url, false, bytes, rounds)
             if (wipe == "after") MetaSecUnidbgEngine.wipeMsdata()
-            if (out == null || !out.keys.any { it.equals("X-Khronos", ignoreCase = true) }) {
-                initError.set("doSign returned null/incomplete")
+            val argus = out?.entries?.firstOrNull { it.key.equals("X-Argus", ignoreCase = true) }?.value
+            val khronos = out?.keys?.any { it.equals("X-Khronos", ignoreCase = true) } == true
+            // Collector stub Argus is ~8 chars (e.g. "qFgEaw=="); real Argus is much longer.
+            // Reject stubs so ProxyMain can fall back to Medusa V5 PlayerSigner.
+            if (out == null || !khronos || argus.isNullOrBlank() || argus.length < 32) {
+                initError.set(
+                    "doSign stub/incomplete keys=${out?.keys} argusLen=${argus?.length ?: 0}",
+                )
+                System.err.println("[MetaSec] ${initError.get()}")
                 null
             } else {
+                System.err.println("[MetaSec] sign ok argusLen=${argus.length} keys=${out.keys}")
                 LinkedHashMap(out)
             }
         } catch (t: Throwable) {
             initError.set(t.message ?: t.javaClass.simpleName)
             System.err.println("[MetaSec] signLocal error: $t")
             engine.set(null)
+            msInitialized.set(false)
             null
         }
     }

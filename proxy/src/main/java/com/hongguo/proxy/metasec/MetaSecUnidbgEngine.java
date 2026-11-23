@@ -457,20 +457,34 @@ public class MetaSecUnidbgEngine extends AbstractJni implements IOResolver<Andro
             tracing = trace;
             try {
                 DvmObject<?> res = k3(33554438, 0, h, url, new ByteArray(vm, bodyBytes));
-                if (res != null) {
+                if (res == null) {
+                    System.err.println("[MetaSec] round " + round + " k3 sign returned null handle=" + h);
+                } else {
                     Object v = res.getValue();
                     Object[] arr = (v instanceof Object[]) ? (Object[]) v : null;
-                    if (arr != null) {
+                    if (arr == null) {
+                        System.err.println("[MetaSec] round " + round + " sign value class="
+                            + (v == null ? "null" : v.getClass().getName()));
+                    } else {
                         java.util.Map<String,String> out = new java.util.LinkedHashMap<>();
                         for (int i = 0; i + 1 < arr.length; i += 2) {
                             Object k = arr[i], val = arr[i+1];
                             out.put(String.valueOf(k instanceof DvmObject ? ((DvmObject<?>)k).getValue() : k),
                                     String.valueOf(val instanceof DvmObject ? ((DvmObject<?>)val).getValue() : val));
                         }
-                        if (out.containsKey("X-Khronos")) return out;
+                        if (out.containsKey("X-Khronos")) {
+                            String argus = out.get("X-Argus");
+                            System.err.println(
+                                "[MetaSec] round " + round + " got headers keys=" + out.keySet()
+                                    + " argusLen=" + (argus == null ? -1 : argus.length()));
+                            return out;
+                        }
+                        System.err.println("[MetaSec] round " + round + " no Khronos keys=" + out.keySet());
                     }
                 }
-            } catch (Throwable ig) { }
+            } catch (Throwable ig) {
+                System.err.println("[MetaSec] round " + round + " sign err: " + ig);
+            }
             Thread.sleep(100);
         }
         return null;
@@ -512,7 +526,8 @@ public class MetaSecUnidbgEngine extends AbstractJni implements IOResolver<Andro
         System.out.println("[MetaSec] BL targets: " + BLT.size() + " -> /tmp/bl_targets.txt");
     }
 
-    private long handleVal = 0;
+    /** Collector handle from k3(67108866); set after init (see MetaSecBridge / CLI). */
+    public long handleVal = 0;
 
     /** Recursively delete the mssdk state directory: state files bind to (url, body); wiping before each request
      *  ≈ fresh collector state — this is the key to enabling consecutive signatures of different URLs

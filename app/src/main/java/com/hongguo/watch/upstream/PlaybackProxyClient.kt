@@ -38,22 +38,31 @@ internal class PlaybackProxyClient(
             val token = authToken?.trim().orEmpty()
             if (token.isNotEmpty()) header("Authorization", "Bearer $token")
         }.build()
-        client.newCall(req).execute().use { resp ->
-            val body = resp.body?.string().orEmpty()
-            when (resp.code) {
-                401 -> throw IOException("playback proxy unauthorized")
-                429 -> throw PlaybackSourceException(
-                    PlaybackSourceException.Reason.HTTP_REJECTED,
-                    429,
-                )
-                502, 503 -> throw EmptyPlaybackResponseException(
-                    "stage=playback-proxy http=${resp.code} ${body.take(120)}",
-                )
+        try {
+            client.newCall(req).execute().use { resp ->
+                val body = resp.body?.string().orEmpty()
+                when (resp.code) {
+                    401 -> throw IOException("playback proxy unauthorized")
+                    429 -> throw PlaybackSourceException(
+                        PlaybackSourceException.Reason.HTTP_REJECTED,
+                        429,
+                    )
+                    502, 503 -> throw EmptyPlaybackResponseException(
+                        "stage=playback-proxy http=${resp.code} ${body.take(120)}",
+                    )
+                }
+                if (!resp.isSuccessful) {
+                    throw IOException("playback proxy HTTP ${resp.code}: ${body.take(200)}")
+                }
+                return parseStream(body)
             }
-            if (!resp.isSuccessful) {
-                throw IOException("playback proxy HTTP ${resp.code}: ${body.take(200)}")
-            }
-            return parseStream(body)
+        } catch (e: EmptyPlaybackResponseException) {
+            throw e
+        } catch (e: PlaybackSourceException) {
+            throw e
+        } catch (e: IOException) {
+            val detail = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+            throw IOException("playback proxy $detail", e)
         }
     }
 
@@ -116,7 +125,9 @@ internal class PlaybackProxyClient(
         private fun defaultClient(): OkHttpClient =
             OkHttpClient.Builder()
                 .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
+                // Proxy may warm MetaSec then sign several URLs (~60s on small VPS).
+                .readTimeout(90, TimeUnit.SECONDS)
+                .callTimeout(100, TimeUnit.SECONDS)
                 .build()
 
         private fun String.encodeUrl(): String =

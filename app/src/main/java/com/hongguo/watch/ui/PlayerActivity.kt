@@ -1542,7 +1542,8 @@ class PlayerActivity : WatchDisplayActivity() {
                 val status = mediaHttpStatus(e)
                 PlayerDiagLog.e(
                     "fetchStream/play failed type=${e.javaClass.simpleName} " +
-                        "reason=${sourceFailure?.reason} status=${sourceFailure?.upstreamCode ?: status}",
+                        "reason=${sourceFailure?.reason} status=${sourceFailure?.upstreamCode ?: status} " +
+                        "msg=${e.message?.take(180)}",
                 )
                 if (e is NoPlayableRenditionException &&
                     e.renditions.isNotEmpty()

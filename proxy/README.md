@@ -17,9 +17,9 @@ PORT=8787 BIND=0.0.0.0 HONGGUO_PLAYBACK_PROXY_TOKEN=devsecret ./gradlew :proxy:r
 ### Dist (Java 17 bytecode)
 
 ```bash
-./gradlew :proxy:installDist :proxy:distTar
-# → proxy/build/distributions/hongguo-playback-proxy.tar.gz
-# → proxy/build/install/proxy/{bin,lib}
+./gradlew :proxy:proxyDeployTar
+# → proxy/build/distributions/hongguo-playback-proxy.tar.gz  (top-level proxy/)
+# → also :proxy:installDist → proxy/build/install/proxy/{bin,lib}
 ```
 
 On a host with **OpenJDK 17+**:

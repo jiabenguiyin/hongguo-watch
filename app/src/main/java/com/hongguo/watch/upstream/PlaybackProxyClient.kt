@@ -76,7 +76,7 @@ internal class PlaybackProxyClient(
             )
         }
 
-        /** Null when proxy URL is unset — callers keep the local PlayerSigner path. */
+        /** Null when proxy URL is unset — callers keep the local Medusa V5 path. */
         fun fromEnvOrNull(client: OkHttpClient = defaultClient()): PlaybackProxyClient? =
             fromConfigOrNull(
                 baseUrl = System.getenv(ENV_BASE_URL),

@@ -4,11 +4,11 @@ package com.hongguo.watch.upstream
 internal object VendorConstants {
     /**
      * Upstream identity notes for play requests.
-     * Latest observed family: 7.4.8.32 / 74832 (modded upload still MetaSec — no signer lift).
-     * Baidu SoT reverse used 7.4.5.32 / 74532; routes unchanged.
+     * Aligned with N3urda 红果 TV 0.16.14 Medusa V5 contour: 7.4.5.32 / 74532.
+     * (Modded 7.4.8.32 / 74832 still MetaSec — no portable signer lift.)
      */
-    const val OFFICIAL_VERSION_CODE = "74832"
-    const val OFFICIAL_VERSION_NAME = "7.4.8.32"
+    const val OFFICIAL_VERSION_CODE = "74532"
+    const val OFFICIAL_VERSION_NAME = "7.4.5.32"
 
     const val VIDEO_UA =
         "com.phoenix.read/$OFFICIAL_VERSION_CODE (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"

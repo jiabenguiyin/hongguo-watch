@@ -25,7 +25,7 @@ class SettingsStore(private val context: Context) {
     private val playerKernelKey = stringPreferencesKey("player_kernel")
     private val decodePathKey = stringPreferencesKey("decode_path")
     private val playbackRouteKey = stringPreferencesKey("playback_route")
-    /** Playback signing proxy base URL; blank = off (local PlayerSigner ladder). */
+    /** Playback signing proxy base URL; blank = off (local Medusa V5 ladder). */
     private val playbackProxyUrlKey = stringPreferencesKey("playback_proxy_url")
     private val playbackProxyTokenKey = stringPreferencesKey("playback_proxy_token")
     /** 息屏/退后台续听；默认关（省电）。 */

@@ -10,9 +10,9 @@ import org.junit.Assume
 import org.junit.Test
 
 /**
- * Live end-to-end probe mirroring official 7.4.x play sequence:
- * device_register → register cookies → PlayerSigner (MetaSec stand-in) →
- * video_tab / multi_video_model ladder.
+ * Live end-to-end probe mirroring N3urda TV 0.16.14 play sequence:
+ * device_register → register cookies → Medusa V5 (F21=312) →
+ * preload/v1 + video_tab ladder.
  *
  * `HONGGUO_LIVE_PROBE=1 ./gradlew :app:testDebugUnitTest --tests '*.LiveOfficialPlaybackProbe'`
  */
@@ -32,7 +32,8 @@ class LiveOfficialPlaybackProbe {
             .callTimeout(25, TimeUnit.SECONDS)
             .build()
 
-        println("PROBE flow=register→cookies→PlayerSigner→video_tab→multi_video_model")
+        println("PROBE flow=register→cookies→MedusaV5→preload/v1→video_tab")
+        println("PROBE field21=${V5Constants.field21} version=${VendorConstants.OFFICIAL_VERSION_CODE}")
         println("PROBE metasec_available=${MetaSecPlayback.isAvailable()} (expected false)")
         println("PROBE episode=$episodeId")
 

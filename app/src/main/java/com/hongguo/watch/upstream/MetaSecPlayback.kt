@@ -2,44 +2,24 @@
 package com.hongguo.watch.upstream
 
 /**
- * Official / modded 红果 **7.4.x** (incl. 7.4.8.32 / 74832) signs play traffic with
- * ByteDance **MetaSec / MSSDK** (`com.bytedance.mobsec.metasec.ml.MS*` + native
- * `libmetasec_ml.so` ≈ 4.3 MiB). Modded builds do **not** provide a portable signer.
+ * Official / modded 红果 **7.4.x** signs play traffic with ByteDance **MetaSec / MSSDK**
+ * (`libmetasec_ml.so`). That binary is proprietary and is **not** shipped here.
  *
- * ## Prefer MetaSec?
- * Yes for protocol parity — empty HTTP 200 on correct routes under [PlayerSigner]
- * is consistent with upstream rejecting non-MetaSec digests.
+ * ## Default play path (N3urda TV 0.16.14)
+ * Pure Kotlin Medusa V5 — [MobilePlayback.signer] keeps Khronos/Helios/Medusa with
+ * [V5Constants.field21] = 312, 74532 query contour, and `preload/v1` on
+ * `reading.snssdk.com`. No MetaSec, unidbg, or remote JP proxy required.
  *
- * ## Public TV / 内测 APKs are **not** a MetaSec recipe
- * Samples such as jycao2 HongguoTV 0.33.1 (~2.3 MiB) and xycvip bate (~2.0 MiB)
- * ship **no** `libmetasec_ml.so`. Their “真签名” is the same GPL [PlayerSigner]
- * class this watch already uses. Aligning “like 内测” therefore cannot import a
- * MetaSec native bridge from those packages.
+ * ## Optional MetaSec / proxy
+ * [PlaybackProxyClient] remains available in settings (off by default) for a
+ * self-hosted MetaSec/unidbg bridge. Demoted [MobilePlayback.realSigned] /
+ * [PlayerSigner] Argus/Ladon is not the primary path (empty HTTP 200).
  *
- * ## Why this build does **not** wire MetaSec
- * 1. **Legal / redistribution:** `libmetasec_ml.so` is proprietary; copying it from the
- *    Baidu / modded APK into this GPL tree or shipping it inside watch APKs is not viable.
- * 2. **JNI surface:** DEX exposes `MS` / `MSManager` / `MSConfig` with `getToken` /
- *    `getSign` style hooks, but they need MetaSec init (app id, settings fetch,
- *    package signature checks). There is no public SDK license for third-party use.
- * 3. **Load-from-installed-official-app:** `System.load` / `dlopen` of another app’s
- *    extracted `.so` fails under Android linker namespaces / SELinux; copying the
- *    `.so` into our private dir is still unauthorized redistribution of the binary.
- * 4. **Cloud/JVM unit tests:** MetaSec is Android-native only; cannot run in
- *    `:app:testDebugUnitTest` on the CI JVM.
- *
- * ## Current stand-in
- * [MobilePlayback.signer] → v5 ticket pick + [PlayerSigner] (GPL Argus/Ladon).
- * Full play orchestration (register → cookies → sign → video_tab → model → stream)
- * lives in [com.hongguo.watch.data.AppSourceClient] + [MobilePlayback]; MetaSec
- * remains the documented ceiling. Optional bypass: [PlaybackProxyClient] (off by
- * default) — see store `docs/playback-proxy-plan.md`.
- *
- * ## Unblock conditions (product / legal)
- * - Written permission to redistribute or dynamically link MetaSec for this app, **or**
- * - A private signing / stream proxy ([PlaybackProxyClient]) that holds MetaSec
- *   server-side and returns only media URLs, **or**
- * - Upstream accepting PlayerSigner digests again (observable non-empty live bodies).
+ * ## Why MetaSec is not wired into the APK
+ * 1. **Legal / redistribution:** `libmetasec_ml.so` cannot ship in this GPL tree.
+ * 2. **JNI surface** needs MetaSec init the watch cannot lawfully perform.
+ * 3. **Load-from-installed-official-app** fails under linker namespaces / SELinux.
+ * 4. **CI JVM** cannot run Android-native MetaSec in unit tests.
  */
 internal object MetaSecPlayback {
     const val NATIVE_LIB = "metasec_ml"

@@ -8,12 +8,14 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.GZIPInputStream
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -99,13 +101,33 @@ class MobilePlaybackTest {
     }
 
     @Test
-    fun emptyVideoTabFallsBackToOfficialV1BeforeLegacyRoutes() {
+    fun autoPrefersPreloadOnReadingHost() {
+        val requests = mutableListOf<Pair<String, String>>()
+        val rows = MobilePlayback.ladder(
+            "123",
+            device,
+            http(listOf(model(typed = true))) { request ->
+                requests += request.url.host to (request.url.encodedPath to request.method).toString()
+                assertEquals(MobilePlayback.PRELOAD_HOST, request.url.host)
+                assertEquals("/novel/player/multi_video_model/preload/v1", request.url.encodedPath)
+                assertEquals("POST", request.method)
+            },
+            passthroughSigner,
+            1000,
+        ).renditions
+        assertEquals(1, rows.size)
+        assertEquals("https://example.org/video", rows.single().url)
+        assertEquals(1, requests.size)
+    }
+
+    @Test
+    fun emptyPreloadFallsBackToVideoTabThenOfficialV1() {
         val requests = mutableListOf<Pair<String, String>>()
         val hosts = MobilePlayback.modelHosts()
         val rows = MobilePlayback.ladder(
             "123",
             device,
-            http(listOf("", model(typed = true))) { request ->
+            http(listOf("", "", model(typed = true))) { request ->
                 requests += request.url.host to request.method
             },
             passthroughSigner,
@@ -115,6 +137,7 @@ class MobilePlaybackTest {
         assertEquals("https://example.org/video", rows.single().url)
         assertEquals(
             listOf(
+                MobilePlayback.PRELOAD_HOST to "POST",
                 "api5-normal-sinfonlineb.fqnovel.com" to "GET",
                 hosts[0] to "POST",
             ),
@@ -128,19 +151,16 @@ class MobilePlaybackTest {
         MobilePlayback.ladder(
             "123",
             device,
-            http(listOf("", model(typed = true)), listOf(503, 200)) { request ->
+            http(listOf("", "", model(typed = true)), listOf(503, 503, 200)) { request ->
                 advancedHosts += request.url.host
             },
             passthroughSigner,
             1000,
         )
-        // Tab base1 503 → tab base2 may accept plain model shape; otherwise POST primary-a.
+        // preload 503 → video_tab 503 → primary-a accepts typed model.
         assertTrue(advancedHosts.size >= 2)
-        assertEquals("api5-normal-sinfonlineb.fqnovel.com", advancedHosts.first())
-        assertTrue(
-            advancedHosts.last() == "reading.snssdk.com" ||
-                advancedHosts.last() == MobilePlayback.modelHosts().first(),
-        )
+        assertEquals(MobilePlayback.PRELOAD_HOST, advancedHosts.first())
+        assertEquals(MobilePlayback.modelHosts().first(), advancedHosts.last())
 
         for (status in listOf(401, 403, 429)) {
             val hosts = mutableListOf<String>()
@@ -154,7 +174,7 @@ class MobilePlaybackTest {
                 )
             }
             assertEquals(status, error.upstreamCode)
-            assertEquals(listOf("api5-normal-sinfonlineb.fqnovel.com"), hosts)
+            assertEquals(listOf(MobilePlayback.PRELOAD_HOST), hosts)
         }
     }
 
@@ -162,12 +182,12 @@ class MobilePlaybackTest {
     fun allHostsEmptySurfacesAggregatedDiagnostic() {
         val hosts = MobilePlayback.modelHosts()
         val modelHosts = MobilePlayback.videoModelHosts()
-        // video_tab + primary hosts + video_model hosts + preload
+        // preload + video_tab + primary hosts + video_model hosts
         val error = assertThrows(EmptyPlaybackResponseException::class.java) {
             MobilePlayback.ladder(
                 "123",
                 device,
-                http(List(1 + hosts.size + modelHosts.size + 1) { "" }),
+                http(List(1 + 1 + hosts.size + modelHosts.size) { "" }),
                 passthroughSigner,
                 1000,
             )
@@ -203,7 +223,7 @@ class MobilePlaybackTest {
                 assertEquals("654321", request.url.queryParameter("iid"))
                 assertEquals(VendorConstants.OFFICIAL_VERSION_CODE, request.url.queryParameter("version_code"))
                 assertEquals(VendorConstants.OFFICIAL_VERSION_NAME, request.url.queryParameter("version_name"))
-                assertEquals("vivo_8662_64", request.url.queryParameter("channel"))
+                assertEquals("update_64", request.url.queryParameter("channel"))
                 assertEquals("gzip", request.header("Content-Encoding"))
                 assertEquals("test-signature", request.header("X-Argus"))
                 assertTrue(request.header("User-Agent")!!.startsWith("com.phoenix.read/" + VendorConstants.OFFICIAL_VERSION_CODE + " "))
@@ -225,18 +245,40 @@ class MobilePlaybackTest {
     }
 
     @Test
+    fun preloadRouteUsesReadingHostDeviceLevel2AndDrScene() {
+        MobilePlayback.ladder(
+            "123",
+            device,
+            http(listOf(model(typed = true))) { request ->
+                assertEquals(MobilePlayback.PRELOAD_HOST, request.url.host)
+                assertEquals("/novel/player/multi_video_model/preload/v1", request.url.encodedPath)
+                assertEquals("74532", request.url.queryParameter("version_code"))
+                assertEquals("update_64", request.url.queryParameter("channel"))
+                val compressed = Buffer().apply { request.body!!.writeTo(this) }.readByteArray()
+                val inflated = GZIPInputStream(compressed.inputStream()).reader().readText()
+                assertTrue(inflated.contains("\"device_level\":2"))
+                assertTrue(inflated.contains("\"dr_scene\":\"preload\""))
+            },
+            passthroughSigner,
+            1000,
+            PlaybackRoutePreference.PRELOAD,
+        )
+    }
+
+    @Test
     fun registerCookiesAreAttachedOnOfficialPlayTransport() {
         val cookies = mapOf("install_id" to "654321", "store-region" to "cn", "ttreq" to "1")
         MobilePlayback.ladder(
             "123",
             device,
-            http(listOf(model(videoTab = true))) { request ->
+            http(listOf(model(typed = true))) { request ->
                 assertEquals("install_id=654321; store-region=cn; ttreq=1", request.header("Cookie"))
                 assertEquals("cn", request.header("x-tt-store-region"))
                 assertEquals("did", request.header("x-tt-store-region-src"))
             },
             passthroughSigner,
             1000,
+            PlaybackRoutePreference.PRELOAD,
             registerCookies = cookies,
         )
     }
@@ -270,7 +312,8 @@ class MobilePlaybackTest {
                 }
                 target.contains("/reading/bookapi/video_tab/video_model/v1/") ||
                     target.contains("/reading/bookapi/video_tab/multi_video_model/v1/") -> {
-                    assertEquals(null, body)
+                    assertNotNull(body)
+                    assertTrue(body!!.isEmpty())
                     assertEquals(VendorConstants.OFFICIAL_VERSION_CODE, profile["version_code"])
                     assertEquals(VendorConstants.OFFICIAL_VERSION_NAME, profile["version_name"])
                     assertEquals("123456", profile["device_id"])
@@ -281,11 +324,12 @@ class MobilePlaybackTest {
         }
         val hostEmpties = List(MobilePlayback.modelHosts().size) { "" }
         val modelEmpties = List(MobilePlayback.videoModelHosts().size) { "" }
+        // preload empty + video_tab empty + primary hosts empty + video_model empties (last succeeds)
         val rows =
             MobilePlayback.ladder(
                 "123",
                 device,
-                http(listOf("") + hostEmpties + modelEmpties.dropLast(1) + model()) { request ->
+                http(listOf("", "") + hostEmpties + modelEmpties.dropLast(1) + model()) { request ->
                     paths += request.url.encodedPath
                     when (request.url.encodedPath) {
                         "/novel/player/video_model/v1/" -> {
@@ -313,6 +357,10 @@ class MobilePlaybackTest {
                             assertEquals("POST", request.method)
                             assertEquals(VendorConstants.OFFICIAL_VERSION_CODE, request.url.queryParameter("version_code"))
                         }
+                        "/novel/player/multi_video_model/preload/v1" -> {
+                            assertEquals("POST", request.method)
+                            assertEquals(MobilePlayback.PRELOAD_HOST, request.url.host)
+                        }
                     }
                 },
                 signer,
@@ -320,7 +368,8 @@ class MobilePlaybackTest {
             ) { _ -> fallbackSuccessCount++ }.renditions
         assertEquals(1, rows.size)
         assertEquals("https://example.org/video", rows.single().url)
-        assertEquals("/reading/bookapi/video_tab/multi_video_model/v1/", paths.first())
+        assertEquals("/novel/player/multi_video_model/preload/v1", paths.first())
+        assertTrue(paths.any { it == "/reading/bookapi/video_tab/multi_video_model/v1/" })
         assertTrue(paths.any { it == "/novel/player/multi_video_model/v1" })
         assertTrue(paths.any { it == "/novel/player/video_model/v1/" })
         assertEquals("/novel/player/video_model/v1/", paths.last())
@@ -330,10 +379,11 @@ class MobilePlaybackTest {
     }
 
     @Test
-    fun preloadCompatibilityRouteRunsOnlyAfterSecondaryRoutesAreExplicitlyEmpty() {
+    fun autoTriesPreloadFirstThenVideoTabAndSpareV1() {
         val paths = mutableListOf<String>()
-        val emptyCount = 1 + MobilePlayback.modelHosts().size + MobilePlayback.videoModelHosts().size
-        val bodies = List(emptyCount) { "" } + model(typed = true, stringModel = true)
+        val emptyAfterPreload = 1 + MobilePlayback.modelHosts().size + MobilePlayback.videoModelHosts().size
+        // preload empty → video_tab empty → primary hosts empty → video_model empties → last video_model ok
+        val bodies = List(emptyAfterPreload) { "" } + model(typed = true, stringModel = true)
         val rows = MobilePlayback.ladder(
             "123",
             device,
@@ -341,9 +391,11 @@ class MobilePlaybackTest {
                 paths += request.url.encodedPath
                 if (request.url.encodedPath == "/novel/player/multi_video_model/preload/v1") {
                     assertEquals("POST", request.method)
+                    assertEquals(MobilePlayback.PRELOAD_HOST, request.url.host)
                     val compressed = Buffer().apply { request.body!!.writeTo(this) }.readByteArray()
                     val payload = GZIPInputStream(compressed.inputStream()).reader().readText()
                     assertTrue(payload.contains("\"dr_scene\":\"preload\""))
+                    assertTrue(payload.contains("\"device_level\":2"))
                     assertTrue(payload.contains("\"1004\":[\"123\"]"))
                 }
             },
@@ -351,49 +403,47 @@ class MobilePlaybackTest {
             1000,
         ) { _ -> }
         assertEquals("https://example.org/video", rows.renditions.single().url)
-        assertEquals(emptyCount + 1, paths.size)
-        assertEquals("/reading/bookapi/video_tab/multi_video_model/v1/", paths.first())
+        assertEquals(emptyAfterPreload + 1, paths.size)
+        assertEquals("/novel/player/multi_video_model/preload/v1", paths.first())
+        assertTrue(paths.contains("/reading/bookapi/video_tab/multi_video_model/v1/"))
         assertTrue(paths.contains("/novel/player/multi_video_model/v1"))
-        assertEquals("/novel/player/multi_video_model/preload/v1", paths.last())
+        assertEquals("/novel/player/video_model/v1/", paths.last())
     }
 
     @Test
-    fun temporaryFailureOnVideoTabStillAllowsOnePreloadAttempt() {
+    fun temporaryFailureOnPreloadStillAllowsVideoTabAndPrimary() {
         val paths = mutableListOf<String>()
-        val hosts = MobilePlayback.modelHosts().size
-        val modelHosts = MobilePlayback.videoModelHosts().size
-        // first video_tab base 503, second succeeds? No — all tab transient then primary/model empty → preload
-        // three tab bases all 503 → primary hosts empty → video_model empty → preload ok
-        val statuses = listOf(503, 503, 503) + List(hosts + modelHosts) { 200 } + listOf(200)
-        val bodies = listOf("temporarily unavailable", "temporarily unavailable", "temporarily unavailable") +
-            List(hosts + modelHosts) { "" } + model(typed = true)
+        // preload 503 → video_tab empty → primary ok
         val ladder = MobilePlayback.ladder(
             "123",
             device,
-            http(bodies, statuses) { request -> paths += request.url.encodedPath },
+            http(
+                listOf("temporarily unavailable", "", model(typed = true)),
+                listOf(503, 200, 200),
+            ) { request -> paths += request.url.encodedPath },
             passthroughSigner,
             1000,
         )
         assertEquals("https://example.org/video", ladder.renditions.single().url)
+        assertEquals("/novel/player/multi_video_model/preload/v1", paths.first())
         assertTrue(paths.contains("/reading/bookapi/video_tab/multi_video_model/v1/"))
-        assertEquals("/novel/player/multi_video_model/preload/v1", paths.last())
+        assertEquals("/novel/player/multi_video_model/v1", paths.last())
     }
 
     @Test
-    fun fallbackRateLimitDoesNotTryPreload() {
+    fun rateLimitOnPreloadDoesNotContinueLadder() {
         val paths = mutableListOf<String>()
         val error = assertThrows(PlaybackSourceException::class.java) {
             MobilePlayback.ladder(
                 "123",
                 device,
-                http(listOf("", ""), listOf(200, 429)) { request -> paths += request.url.encodedPath },
+                http(listOf(""), listOf(429)) { request -> paths += request.url.encodedPath },
                 passthroughSigner,
                 1000,
             )
         }
         assertEquals(429, error.upstreamCode)
-        assertEquals(2, paths.size)
-        assertEquals("/novel/player/multi_video_model/v1", paths.last())
+        assertEquals(listOf("/novel/player/multi_video_model/preload/v1"), paths)
     }
 
     @Test
@@ -403,11 +453,11 @@ class MobilePlaybackTest {
             """{"code":0,"data":{"video_model_data":{"123":{"video_model":{"video_id":"media-123","fallback_api":"$followupUrl"}}}}}"""
         val emptyFollowup = """{"video_info":{"data":{"video_id":"media-123","video_list":[]}}}"""
         val paths = mutableListOf<String>()
-        // After empty followup, video_tab retries its alt host — keep that empty too, then official v1.
+        // Explicit VIDEO_TAB: after empty followup, retries alt host, then spare v1.
         val ladder = MobilePlayback.ladder(
             "123", device,
             http(listOf(stub, emptyFollowup, "", model(typed = true))) { paths += it.url.encodedPath },
-            passthroughSigner, 1000,
+            passthroughSigner, 1000, PlaybackRoutePreference.VIDEO_TAB,
         )
         assertEquals("https://example.org/video", ladder.renditions.single().url)
         assertEquals(
@@ -415,7 +465,7 @@ class MobilePlaybackTest {
                 "/reading/bookapi/video_tab/multi_video_model/v1/",
                 "/video/model/v1/",
                 "/reading/bookapi/video_tab/video_model/v1/",
-                "/novel/player/multi_video_model/v1",
+                "/novel/player/multi_video_model/preload/v1",
             ),
             paths,
         )
@@ -469,7 +519,7 @@ class MobilePlaybackTest {
                 "/reading/bookapi/video_tab/multi_video_model/v1/",
                 "/reading/bookapi/video_tab/video_model/v1/",
                 "/reading/bookapi/video_tab/multi_video_model/v1/",
-                "/novel/player/multi_video_model/v1",
+                "/novel/player/multi_video_model/preload/v1",
             ),
             paths,
         )
@@ -478,15 +528,11 @@ class MobilePlaybackTest {
 
     @Test
     fun laterEmptyResponsesDoNotHideAnEarlierServiceFailure() {
-        // All video_tab bases must see 503; an empty alt host would mask the service failure.
-        val afterTab = MobilePlayback.modelHosts().size + MobilePlayback.videoModelHosts().size + 1
+        // preload 503, then video_tab + spare hosts empty — earlier 503 must surface.
+        val afterPreload = 1 + MobilePlayback.modelHosts().size + MobilePlayback.videoModelHosts().size
         val paths = mutableListOf<String>()
-        val statuses = listOf(503, 503, 503) + List(afterTab) { 200 }
-        val bodies = listOf(
-            "temporarily unavailable",
-            "temporarily unavailable",
-            "temporarily unavailable",
-        ) + List(afterTab) { "" }
+        val statuses = listOf(503) + List(afterPreload) { 200 }
+        val bodies = listOf("temporarily unavailable") + List(afterPreload) { "" }
         val error = assertThrows(PlaybackSourceException::class.java) {
             MobilePlayback.ladder(
                 "123",
@@ -498,33 +544,34 @@ class MobilePlaybackTest {
         }
         assertEquals(PlaybackSourceException.Reason.TEMPORARY_UNAVAILABLE, error.reason)
         assertEquals(503, error.upstreamCode)
-        assertEquals(3 + afterTab, paths.size)
+        assertEquals(1 + afterPreload, paths.size)
+        assertEquals("/novel/player/multi_video_model/preload/v1", paths.first())
         val empty = error.suppressed.single() as EmptyPlaybackResponseException
         assertTrue(empty.allCompatibilityModelsEmpty)
-        assertTrue(empty.detail.orEmpty().contains("stage=preload"))
+        assertTrue(empty.detail.orEmpty().contains("stage=video-tab") || empty.detail.orEmpty().contains("stage=preload"))
     }
 
     @Test
     fun laterEmptyResponsesDoNotHideAnEarlierSocketTimeout() {
-        val afterTab = MobilePlayback.modelHosts().size + MobilePlayback.videoModelHosts().size + 1
+        val afterPreload = 1 + MobilePlayback.modelHosts().size + MobilePlayback.videoModelHosts().size
         var attempts = 0
         val error = assertThrows(SocketTimeoutException::class.java) {
             MobilePlayback.ladder(
                 "123",
                 device,
-                http(List(3 + afterTab) { "" }) {
-                    if (++attempts <= 3) throw SocketTimeoutException("upstream read timeout")
+                http(List(1 + afterPreload) { "" }) {
+                    if (++attempts <= 1) throw SocketTimeoutException("upstream read timeout")
                 },
                 passthroughSigner,
                 1000,
             )
         }
-        assertEquals(3 + afterTab, attempts)
+        assertEquals(1 + afterPreload, attempts)
         assertTrue((error.suppressed.single() as EmptyPlaybackResponseException).allCompatibilityModelsEmpty)
     }
 
     @Test(timeout = 8000)
-    fun aHungVideoTabCallIsCancelledAndOfficialV1GetsTheNextAttempt() {
+    fun aHungPreloadCallIsCancelledAndVideoTabGetsTheNextAttempt() {
         val requests = mutableListOf<String>()
         val paths = mutableListOf<String>()
         val client = OkHttpClient.Builder().addInterceptor { chain ->
@@ -538,18 +585,18 @@ class MobilePlaybackTest {
                 assertTrue("route deadline did not cancel the stalled call", chain.call().isCanceled())
                 throw IOException("Canceled")
             }
-            httpResponse(chain.request(), model(typed = true))
+            httpResponse(chain.request(), model(videoTab = true))
         }.build()
         val result = RequestScope.withDeadline(System.nanoTime() + TimeUnit.SECONDS.toNanos(12)) {
             MobilePlayback.ladder("123", device, client, passthroughSigner, 1000)
         }
-        assertEquals(listOf("GET", "POST"), requests)
-        assertEquals("/novel/player/multi_video_model/v1", paths.last())
+        assertEquals(listOf("POST", "GET"), requests)
+        assertEquals("/reading/bookapi/video_tab/multi_video_model/v1/", paths.last())
         assertEquals("https://example.org/video", result.renditions.single().url)
     }
 
     @Test
-    fun lowRemainingBudgetSkipsPostToLeaveTimeForVideoTab() {
+    fun lowRemainingBudgetStillReachesVideoTabPreference() {
         val methods = mutableListOf<String>()
         RequestScope.withDeadline(System.nanoTime() + TimeUnit.SECONDS.toNanos(2)) {
             MobilePlayback.ladder(
@@ -558,6 +605,7 @@ class MobilePlaybackTest {
                 http(listOf(model(videoTab = true))) { methods += it.method },
                 passthroughSigner,
                 1000,
+                PlaybackRoutePreference.VIDEO_TAB,
             )
         }
         assertEquals(listOf("GET"), methods)
@@ -615,13 +663,20 @@ class MobilePlaybackTest {
 
         val preload = mutableListOf<String>()
         MobilePlayback.ladder(
-            "123", device, http(listOf("", model(typed = true)), listOf(404, 200)) {
+            "123",
+            device,
+            // preload 404 → video_tab empty → primary-a accepts typed model
+            http(listOf("", "", model(typed = true)), listOf(404, 200, 200)) {
                 preload += it.url.encodedPath
             },
             passthroughSigner, 1000, PlaybackRoutePreference.PRELOAD,
         )
         assertEquals(
-            listOf("/novel/player/multi_video_model/preload/v1", "/novel/player/multi_video_model/v1"),
+            listOf(
+                "/novel/player/multi_video_model/preload/v1",
+                "/reading/bookapi/video_tab/multi_video_model/v1/",
+                "/novel/player/multi_video_model/v1",
+            ),
             preload,
         )
 
@@ -636,6 +691,7 @@ class MobilePlaybackTest {
     @Test
     fun temporaryFailureOnVideoTabStillTriesOfficialPosts() {
         val methods = mutableListOf<String>()
+        val paths = mutableListOf<String>()
         val result = MobilePlayback.ladder(
             "123",
             device,
@@ -649,11 +705,14 @@ class MobilePlaybackTest {
                 listOf(503, 503, 503, 200),
             ) {
                 methods += it.method
+                paths += it.url.encodedPath
             },
             passthroughSigner,
             1000,
+            PlaybackRoutePreference.VIDEO_TAB,
         )
         assertEquals(listOf("GET", "GET", "GET", "POST"), methods)
+        assertEquals("/novel/player/multi_video_model/preload/v1", paths.last())
         assertEquals("https://example.org/video", result.renditions.single().url)
     }
 
@@ -691,6 +750,7 @@ class MobilePlaybackTest {
                 http(bodies, statuses) { methods += it.method },
                 passthroughSigner,
                 1000,
+                PlaybackRoutePreference.VIDEO_TAB,
                 onAttempt = { reports += it },
             )
             assertEquals("https://example.org/video", ladder.renditions.single().url)
@@ -699,7 +759,8 @@ class MobilePlaybackTest {
             } else {
                 assertEquals(listOf("GET", "POST"), methods)
             }
-            assertEquals(listOf("video-tab", "primary-a"), reports.map { it.route })
+            // After video_tab, next spare is preload (TV contour).
+            assertEquals(listOf("video-tab", "preload"), reports.map { it.route })
             assertEquals(listOf(outcome, "ok"), reports.map { it.outcome })
             assertEquals(if (outcome == "no_playable_source") null else status, reports.first().code)
         }
@@ -731,9 +792,9 @@ class MobilePlaybackTest {
                 PlaybackSourceException.ModelIssue.UNUSABLE_RENDITIONS,
         )
         val expectedRoutes = listOf(
-            "video-tab", "primary-a", "primary-b", "primary-hl", "primary-lf", "video-model", "preload",
+            "video-tab", "preload", "primary-a", "primary-b", "primary-hl", "primary-lf", "video-model",
         )
-        val empties = List(MobilePlayback.modelHosts().size + MobilePlayback.videoModelHosts().size + 1) { "" }
+        val empties = List(1 + MobilePlayback.modelHosts().size + MobilePlayback.videoModelHosts().size) { "" }
         for ((videoTabBody, issue) in cases) {
             val reports = mutableListOf<PlaybackRouteAttempt>()
             val error = assertThrows(PlaybackSourceException::class.java) {
@@ -744,6 +805,7 @@ class MobilePlaybackTest {
                     http(listOf(videoTabBody, videoTabBody, videoTabBody) + empties),
                     passthroughSigner,
                     1000,
+                    PlaybackRoutePreference.VIDEO_TAB,
                     onAttempt = { reports += it },
                 )
             }
@@ -824,7 +886,7 @@ class MobilePlaybackTest {
     }
 
     @Test
-    fun realSignedReplacesPlaceholderHeadersWithPlayerSigner() {
+    fun realSignedDemotedPathStillReplacesWithPlayerSigner() {
         val signed = MobilePlayback.realSigned(
             "https://example.org/path?aid=8662&_rticket=1000000",
             mapOf(
@@ -842,5 +904,32 @@ class MobilePlaybackTest {
         assertTrue(signed.headers["x-ladon"].orEmpty().isNotEmpty())
         assertTrue(signed.headers.containsKey("x-khronos"))
         assertTrue(signed.headers.containsKey("x-ss-req-ticket"))
+    }
+
+    @Test
+    fun defaultSignerKeepsMedusaV5HeadersNotPlayerSigner() {
+        assertEquals(312, V5Constants.field21)
+        val query = linkedMapOf(
+            "aid" to "8662",
+            "version_code" to "74532",
+            "version_name" to "7.4.5.32",
+            "channel" to "update_64",
+            "device_id" to "1",
+            "iid" to "2",
+            "cdid" to "3",
+            "os_version" to "16",
+            "device_type" to "25053RT47C",
+            "_rticket" to "1000000",
+        )
+        val url = "https://reading.snssdk.com/novel/player/multi_video_model/preload/v1".toHttpUrl()
+            .newBuilder().apply { query.forEach { (k, v) -> addQueryParameter(k, v) } }.build()
+            .toString()
+        val signed = MobilePlayback.signer.sign(url, ByteArray(0), device)
+        assertTrue(signed.headers["x-helios"].orEmpty().isNotEmpty())
+        assertTrue(signed.headers["x-medusa"].orEmpty().isNotEmpty())
+        assertTrue(signed.headers.containsKey("x-khronos"))
+        assertNull(signed.headers["x-argus"])
+        assertNull(signed.headers["x-ladon"])
+        assertNull(signed.headers["x-gorgon"])
     }
 }

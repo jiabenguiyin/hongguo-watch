@@ -8,7 +8,6 @@ import com.hongguo.watch.upstream.MobilePlayback
 import com.hongguo.watch.upstream.MobilePlaybackSigner
 import com.hongguo.watch.upstream.MobileSignedRequest
 import com.hongguo.watch.upstream.PlaybackSourceException
-import com.hongguo.watch.upstream.PlayerSigner
 import com.hongguo.watch.upstream.RequestScope
 import com.hongguo.watch.upstream.VendorConstants
 import com.sun.net.httpserver.HttpExchange
@@ -29,8 +28,8 @@ import org.json.JSONObject
 
 /**
  * Playback signing proxy: watch gets stream URLs only; this process owns
- * device_register → sign (MetaSec/unidbg when METASEC_HOME ready, else PlayerSigner) →
- * video_tab / multi_video_model.
+ * device_register → sign (MetaSec/unidbg when METASEC_HOME ready, else Medusa V5) →
+ * preload/v1 / video_tab ladder.
  *
  * Run: `./gradlew :proxy:run` or `PORT=8787 HONGGUO_PLAYBACK_PROXY_TOKEN=secret ./gradlew :proxy:run`
  */
@@ -72,8 +71,8 @@ fun main() {
                     .put("detail", empty.message ?: "empty")
                     .put(
                         "hint",
-                        "empty upstream; ensure METASEC_HOME has libmetasec_ml.so + license.b64 " +
-                            "(PlayerSigner often empty-200)",
+                        "empty upstream; default path uses Medusa V5 (F21=312). " +
+                            "Optional METASEC_HOME is for SDK A/B only",
                     ),
             )
         } catch (src: PlaybackSourceException) {

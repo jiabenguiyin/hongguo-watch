@@ -71,7 +71,7 @@ tasks.register<Tar>("proxyDeployTar") {
 sourceSets {
     main {
         kotlin {
-            // Reuse watch PlayerSigner / DeviceRegister / MobilePlayback (JVM-safe).
+            // Reuse watch Medusa V5 / DeviceRegister / MobilePlayback (JVM-safe).
             srcDir("../app/src/main/java/com/hongguo/watch/upstream")
         }
     }

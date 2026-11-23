@@ -52,7 +52,7 @@ Watch: Settings → **播放代理** → `http://<host>:8787` + token. Empty URL
 
 | Mode | Env | Notes |
 | --- | --- | --- |
-| PlayerSigner (default) | — | GPL Argus/Ladon reused from watch upstream. **May empty-200**. |
+| Medusa V5 (default) | — | TV 0.16.14 Kotlin path (F21=312). MetaSec optional. |
 | MetaSec / unidbg | `METASEC_HOME` (+ optional `METASEC_UNIDBG_URL`) | Local unidbg engine; private host holds `.so` + `license.b64`. |
 
 ## Deploy (SSH)

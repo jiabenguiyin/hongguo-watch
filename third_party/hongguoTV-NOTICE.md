@@ -1,22 +1,17 @@
 # 本次同步来源
 
-2026-11-23：播放对照以百度 CDN **7.4.5.32 / 74532** DEX 路由为准；身份备注现对齐
-**7.4.8.32 / 74832**（用户改装包仍 MetaSec，**无**可移植签名器，见
-`internal/modded-74832-upload-notes.md`）。更早 7.2.x 结论作废。序列：
-`device_register` → Cookie → 签名 → `video_tab/multi_video_model` →
-`POST multi_video_model` → 取流。MetaSec **不可再分发**；PlayerSigner 近似。
-empty-200 用户文案为「官方接口限流」——**不**宣称播放已修好。公开 TV/内测包
-（jycao2 / xycvip ~2 MiB）**不含** `libmetasec_ml.so`；旁路见
-`docs/playback-proxy-plan.md` 与仓库 `proxy/`（手表只取流 URL，视频直连 CDN；
-代理默认 PlayerSigner，MetaSec/unidbg 为 TODO）。
+2026-11-23：默认播放签名对齐
+[N3urda/hongguoTV kotlin-v0.16.14](https://github.com/N3urda/hongguoTV/releases/tag/kotlin-v0.16.14)
+（GPL-3.0）：纯 Kotlin Medusa V5（`V5Constants.field21 = 312`），保留
+Khronos/Helios/Medusa，**不再**用 PlayerSigner Argus/Ladon 替换播放头。
+请求轮廓：`version_code=74532` / `7.4.5.32`，主路
+`POST reading.snssdk.com/novel/player/multi_video_model/preload/v1`
+（`dr_scene=preload`，`device_level=2`），回退 `GET video_tab`（空字节 MD5 摘要，
+去掉 stub/Content-Type）。MetaSec / unidbg / JP 代理为可选，默认关闭。
+empty-200 用户文案仍为「官方接口限流」——验证前**不**宣称播放已修好。
 
-2026-11-23：官方播放「真签名」对齐
-[jycao2/hongguoTV kotlin-v0.33.1-build.62](https://github.com/jycao2/hongguoTV/releases/tag/kotlin-v0.33.1-build.62)
-（提交 `91de1b673d6120edb37dfc65f3b116de7d44e8d5`，GPL-3.0）。该发行 APK **不含** MSSDK /
-`libhongguo_signer.so`。手表端移植其 `Argus.kt` 中的 `PlayerSigner`（fqapp argus/ladon），
-并把取流改为优先 `GET video_tab` + `POST /novel/player/multi_video_model/v1`（无 `/player/`、
-无 `dr_scene`、`version_code=74532`），用 PlayerSigner 替换会被静默丢弃的 v5 helios/medusa 占位头。
-未纳入其 UI、冷却策略以外的业务逻辑，也未复制发行 APK 二进制。
+2026-11-23（历史）：曾对齐 jycao2 0.33.1 的 PlayerSigner 替换路径；该路径对现行
+上游返回 empty HTTP 200，已由上方 N3urda V5 路径取代为主路。
 
 2026-11-20：手表端的同档 CDN 备用与模型二次取源，参考
 [N3urda/hongguoTV](https://github.com/N3urda/hongguoTV/blob/478f00683f086f1e5d135b3bcbb443e3cbc8b252/kotlin-tv/core/src/main/kotlin/com/hongguotv/core/ContentRepository.kt#L1292)、

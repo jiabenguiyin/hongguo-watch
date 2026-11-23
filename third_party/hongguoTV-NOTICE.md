@@ -5,7 +5,9 @@
 `internal/modded-74832-upload-notes.md`）。更早 7.2.x 结论作废。序列：
 `device_register` → Cookie → 签名 → `video_tab/multi_video_model` →
 `POST multi_video_model` → 取流。MetaSec **不可再分发**；PlayerSigner 近似。
-empty-200 用户文案为「官方接口限流」——**不**宣称播放已修好。
+empty-200 用户文案为「官方接口限流」——**不**宣称播放已修好。公开 TV/内测包
+（jycao2 / xycvip ~2 MiB）**不含** `libmetasec_ml.so`；旁路见
+`docs/playback-proxy-plan.md`（手表只取流，代理做 register+MetaSec+model）。
 
 2026-11-23：官方播放「真签名」对齐
 [jycao2/hongguoTV kotlin-v0.33.1-build.62](https://github.com/jycao2/hongguoTV/releases/tag/kotlin-v0.33.1-build.62)

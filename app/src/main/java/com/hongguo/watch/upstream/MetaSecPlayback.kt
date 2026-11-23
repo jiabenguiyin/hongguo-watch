@@ -10,9 +10,15 @@ package com.hongguo.watch.upstream
  * Yes for protocol parity — empty HTTP 200 on correct routes under [PlayerSigner]
  * is consistent with upstream rejecting non-MetaSec digests.
  *
+ * ## Public TV / 内测 APKs are **not** a MetaSec recipe
+ * Samples such as jycao2 HongguoTV 0.33.1 (~2.3 MiB) and xycvip bate (~2.0 MiB)
+ * ship **no** `libmetasec_ml.so`. Their “真签名” is the same GPL [PlayerSigner]
+ * class this watch already uses. Aligning “like 内测” therefore cannot import a
+ * MetaSec native bridge from those packages.
+ *
  * ## Why this build does **not** wire MetaSec
  * 1. **Legal / redistribution:** `libmetasec_ml.so` is proprietary; copying it from the
- *    Baidu APK into this GPL tree or shipping it inside watch APKs is not viable.
+ *    Baidu / modded APK into this GPL tree or shipping it inside watch APKs is not viable.
  * 2. **JNI surface:** DEX exposes `MS` / `MSManager` / `MSConfig` with `getToken` /
  *    `getSign` style hooks, but they need MetaSec init (app id, settings fetch,
  *    package signature checks). There is no public SDK license for third-party use.
@@ -25,11 +31,14 @@ package com.hongguo.watch.upstream
  * ## Current stand-in
  * [MobilePlayback.signer] → v5 ticket pick + [PlayerSigner] (GPL Argus/Ladon).
  * Full play orchestration (register → cookies → sign → video_tab → model → stream)
- * lives in [AppSourceClient] + [MobilePlayback]; MetaSec remains the documented ceiling.
+ * lives in [com.hongguo.watch.data.AppSourceClient] + [MobilePlayback]; MetaSec
+ * remains the documented ceiling. Optional bypass: [PlaybackProxyClient] (off by
+ * default) — see store `docs/playback-proxy-plan.md`.
  *
  * ## Unblock conditions (product / legal)
  * - Written permission to redistribute or dynamically link MetaSec for this app, **or**
- * - An official/partner signing oracle that returns MetaSec-equivalent headers, **or**
+ * - A private signing / stream proxy ([PlaybackProxyClient]) that holds MetaSec
+ *   server-side and returns only media URLs, **or**
  * - Upstream accepting PlayerSigner digests again (observable non-empty live bodies).
  */
 internal object MetaSecPlayback {

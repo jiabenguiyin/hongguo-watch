@@ -168,6 +168,21 @@
                 <TextView
                     style="@style/Widget.HongguoWatch.SettingsHint"
                     android:text="@string/settings_screen_off_hint" />
+
+                <LinearLayout
+                    android:id="@+id/episodeWheelRow"
+                    style="@style/Widget.HongguoWatch.SettingsRow"
+                    android:visibility="gone">
+
+                    <ImageView
+                        style="@style/Widget.HongguoWatch.SettingsIcon"
+                        android:src="@drawable/ic_next" />
+
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/episodeWheelSwitch"
+                        style="@style/Widget.HongguoWatch.SettingsSwitch"
+                        android:text="@string/settings_episode_wheel" />
+                </LinearLayout>
             </LinearLayout>
 
             <TextView

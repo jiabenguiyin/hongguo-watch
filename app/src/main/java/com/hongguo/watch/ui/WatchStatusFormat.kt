@@ -33,4 +33,6 @@ object WatchStatusFormat {
     }
 
     fun formatBatteryPercent(percent: Int): String = "${percent.coerceIn(0, 100)}%"
+
+    fun batteryDrawableLevel(percent: Int): Int = percent.coerceIn(0, 100) * 100
 }

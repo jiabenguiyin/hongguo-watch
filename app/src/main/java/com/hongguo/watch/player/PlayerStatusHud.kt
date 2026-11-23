@@ -7,7 +7,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.PorterDuff
+import android.graphics.drawable.ClipDrawable
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.LayerDrawable
 import android.os.BatteryManager
+import android.view.Gravity
 import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
@@ -31,6 +35,11 @@ class PlayerStatusHud(
     private val batteryText: TextView,
 ) : DefaultLifecycleObserver {
     private val clock = WatchToolbarClock(activity, timeView)
+    private val batteryFill = ClipDrawable(
+        ColorDrawable(ContextCompat.getColor(activity, R.color.text_primary)),
+        Gravity.START,
+        ClipDrawable.HORIZONTAL,
+    )
     private var batteryRegistered = false
     private var lastPercent = -1
     private var lastCharging = false
@@ -43,6 +52,23 @@ class PlayerStatusHud(
     }
 
     init {
+        batteryIcon.setImageDrawable(
+            LayerDrawable(
+                arrayOf(
+                    ContextCompat.getDrawable(activity, R.drawable.ic_battery)!!,
+                    batteryFill,
+                ),
+            ).apply {
+                val density = activity.resources.displayMetrics.density
+                setLayerInset(
+                    1,
+                    (density * 2.2f).toInt(),
+                    (density * 2.8f).toInt(),
+                    (density * 4.4f).toInt(),
+                    (density * 2.8f).toInt(),
+                )
+            },
+        )
         (activity as LifecycleOwner).lifecycle.addObserver(this)
         refreshBatterySticky()
     }
@@ -123,6 +149,7 @@ class PlayerStatusHud(
         if (percent == lastPercent && charging == lastCharging) return
         lastPercent = percent
         lastCharging = charging
+        batteryFill.level = WatchStatusFormat.batteryDrawableLevel(percent)
         batteryText.text = WatchStatusFormat.formatBatteryPercent(percent)
         val colorRes = when {
             charging -> R.color.rating_good

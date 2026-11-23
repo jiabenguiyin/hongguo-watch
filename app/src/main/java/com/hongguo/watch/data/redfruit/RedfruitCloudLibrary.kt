@@ -19,8 +19,10 @@ import okhttp3.Callback
 import okhttp3.CookieJar
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONException
@@ -39,9 +41,11 @@ internal class RedfruitCloudException(
 ) : IOException(message)
 
 /**
- * First-party, read-only account requests. The website's cookie jar and the playback
- * client stay separate. Account metadata follows the read API used by hongguo-drama
- * and the list shapes documented by hongguoTV and aston314/hongguo-tv.
+ * First-party account requests. The website's cookie jar and the playback client stay
+ * separate. Account metadata follows the read API used by hongguo-drama and the list
+ * shapes documented by hongguoTV and aston314/hongguo-tv. Writes are deliberately
+ * single-shot; callers must verify a mutation with a later read before reporting it
+ * as confirmed.
  */
 internal class RedfruitCloudLibrary(
     client: OkHttpClient,
@@ -102,7 +106,9 @@ internal class RedfruitCloudLibrary(
             }
             for (row in history) {
                 val previous = rowsBySeries[row.seriesId]
-                if (previous == null || previous.updatedAt < row.updatedAt) rowsBySeries[row.seriesId] = row
+                if (previous == null || RedfruitSyncPolicy.compareProgress(row, previous) > 0) {
+                    rowsBySeries[row.seriesId] = row
+                }
             }
             if (!data.booleanValue("has_more")) {
                 return rowsBySeries.values.sortedByDescending { it.updatedAt }
@@ -154,6 +160,110 @@ internal class RedfruitCloudLibrary(
         }
     }
 
+    /**
+     * Recent progress endpoint used by hongguoTV for account read-back. Keep this
+     * bounded for routine player updates; the full history reader remains paginated.
+     */
+    suspend fun recentProgress(credentials: RedfruitCredentials): List<WatchHistoryEntity> {
+        val data = request(
+            credentials,
+            "/reading/bookapi/read_progress/list/v1/",
+            mapOf("book_types" to "2", "limit" to "50"),
+        ).requireCloudData()
+        return parseHistory(
+            data.requiredArray("video_data", "云端观看进度", RECENT_PROGRESS_LIMIT, nullMeansEmpty = true),
+        )
+    }
+
+    /**
+     * Upload the local playback cursor to the account's official reading history.
+     *
+     * [WatchHistoryEntity.episodeNumber] is one-based throughout this app and is sent
+     * as the official `vid_index` value. The cloud API accepts a zero episode count
+     * when the player has not fetched the series total yet.
+     */
+    suspend fun uploadProgress(
+        credentials: RedfruitCredentials,
+        history: WatchHistoryEntity,
+        episodeCount: Int = 0,
+    ) {
+        require(history.seriesId.isSeriesId()) { "红果进度剧集编号无效" }
+        require(history.episodeId.isSeriesId()) { "红果进度分集编号无效" }
+        require(history.episodeNumber in 1 until Int.MAX_VALUE) { "红果进度分集位置无效" }
+        val duration = history.durationMs.coerceAtLeast(0L)
+        val position = history.positionMs.coerceAtLeast(0L)
+        val entry = JSONObject()
+            .put("book_id", history.seriesId)
+            .put("item_id", history.episodeId)
+            .put("vid_index", history.episodeNumber)
+            .put("current_play_time", position)
+            .put("current_total_time", duration)
+            .put("episode_count", episodeCount.coerceAtLeast(0))
+            .put("read_timestamp_ms", history.updatedAt.coerceAtLeast(0L))
+            .put("book_type", 2)
+            .put(
+                "progress_rate",
+                if (duration > 0L) {
+                    (position.toDouble() / duration).coerceIn(0.0, 1.0).toString()
+                } else {
+                    "0"
+                },
+            )
+            .put("player_cumulative_total_duration", position)
+        val body = JSONObject()
+            .put("books", JSONArray().put(entry))
+            .put("write_mode", 1)
+            .toString()
+            .toByteArray(Charsets.UTF_8)
+        request(
+            credentials,
+            "/reading/bookapi/read_progress/upload/v1/",
+            params = emptyMap(),
+            body = body,
+        )
+    }
+
+    /**
+     * Add or remove a video from the official account shelf.
+     *
+     * The endpoint acknowledges the operation but does not guarantee that the
+     * shelf changed. Callers should read [favorites] afterwards and only then
+     * present a confirmed result to the user.
+     */
+    suspend fun setFavorite(
+        credentials: RedfruitCredentials,
+        seriesId: String,
+        add: Boolean,
+    ) {
+        require(seriesId.isSeriesId()) { "红果收藏剧集编号无效" }
+        val entry = JSONObject()
+            .put("book_id", seriesId)
+            .put("book_type", 2)
+            .put("modify_time", System.currentTimeMillis())
+            .put("video_shelf_operate_type", if (add) 0 else 1)
+        if (!add) entry.put("group_name", "")
+        val body = JSONObject()
+            .put("is_cancelled", false)
+            .put("update_bookshelf_video_list", JSONArray().put(entry))
+        if (add) {
+            body.put(
+                "shark_extra",
+                JSONObject()
+                    .put("enter_from", "MainFragmentActivity")
+                    .put("previous_page", "")
+                    .put("page_list", "MainFragmentActivity")
+                    .put("is_active_behavior", "true")
+                    .put("inactive_type", "0"),
+            )
+        }
+        request(
+            credentials,
+            "/reading/bookapi/bookshelf/video/update/v1/",
+            params = emptyMap(),
+            body = body.toString().toByteArray(Charsets.UTF_8),
+        )
+    }
+
     private data class FavoriteDetail(val title: String, val cover: String, val episodeCount: Int)
 
     private suspend fun favoriteDetails(
@@ -192,6 +302,13 @@ internal class RedfruitCloudLibrary(
         credentials: RedfruitCredentials,
         path: String,
         params: Map<String, String> = emptyMap(),
+    ): JSONObject = request(credentials, path, params, body = null)
+
+    private suspend fun request(
+        credentials: RedfruitCredentials,
+        path: String,
+        params: Map<String, String>,
+        body: ByteArray?,
     ): JSONObject {
         val cookie = credentials.cookie
         val token = credentials.token
@@ -205,11 +322,16 @@ internal class RedfruitCloudLibrary(
         val signingDevice = registered.filterKeys { it in SIGNING_DEVICE_KEYS }
         val identity = VendorConstants.device + signingDevice + ACCOUNT_VERSION
         val signer = Signer(device = identity)
-        val signed = signer.sign("${API_ORIGIN}${path}", identity + params, identity = identity)
+        val signed = signer.sign(
+            "${API_ORIGIN}${path}",
+            identity + params,
+            body = body,
+            identity = identity,
+        )
         val url = signed.url.toHttpUrlOrNull()
             ?.takeIf { it.isHttps && it.host == API_HOST && it.port == 443 && it.encodedPath == path }
             ?: throw RedfruitCloudException("红果账号请求地址无效")
-        val request = Request.Builder().url(url).get().apply {
+        val request = Request.Builder().url(url).apply {
             signed.headers.forEach { (name, value) -> header(name, value) }
             val deviceCookies = registered.entries
                 .filter { it.key.startsWith("cookie_") }
@@ -225,6 +347,8 @@ internal class RedfruitCloudLibrary(
                 .joinToString("; ")
             if (cookieHeader.isNotBlank()) header("Cookie", cookieHeader)
             if (token.isNotBlank()) header("X-Tt-Token", token)
+            if (body == null) get()
+            else post(body.toRequestBody(JSON_MEDIA_TYPE))
         }.build()
         return read(request)
     }
@@ -306,6 +430,8 @@ internal class RedfruitCloudLibrary(
         const val PAGE_ROWS_LIMIT = 1000
         const val MAX_FAVORITE_ROWS = 12_000
         const val MAX_FAVORITE_DETAILS = 200
+        const val RECENT_PROGRESS_LIMIT = 50
+        val JSON_MEDIA_TYPE = "application/json; charset=UTF-8".toMediaType()
         val SIGNING_DEVICE_KEYS = setOf("device_id", "iid", "cdid", "openudid")
     }
 }

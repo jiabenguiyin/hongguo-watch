@@ -4,20 +4,15 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
-import android.view.LayoutInflater
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
-import android.widget.ProgressBar
-import android.widget.ScrollView
-import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.text.buildSpannedString
 import androidx.core.text.color
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.withResumed
 import coil.imageLoader
 import com.hongguo.watch.BuildConfig
 import com.hongguo.watch.HongguoWatchApp
@@ -25,20 +20,14 @@ import com.hongguo.watch.R
 import com.hongguo.watch.data.DiagUploader
 import com.hongguo.watch.data.PlaybackRoutePreference
 import com.hongguo.watch.data.SettingsStore
-import com.hongguo.watch.data.UpdateApkInstaller
-import com.hongguo.watch.data.UpdateChecker
 import com.hongguo.watch.databinding.ActivitySettingsBinding
 import com.hongguo.watch.player.DecodePath
 import com.hongguo.watch.player.PlayerDiagLog
 import com.hongguo.watch.player.PlayerKernel
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
 
 class SettingsActivity : WatchDisplayActivity() {
     private lateinit var binding: ActivitySettingsBinding
@@ -49,8 +38,7 @@ class SettingsActivity : WatchDisplayActivity() {
     private var currentDecode = DecodePath.AUTO
     private var currentRoute = PlaybackRoutePreference.AUTO
     private var updateChecking = false
-    private var downloadJob: Job? = null
-    private val downloadCancel = AtomicBoolean(false)
+    private val updateDialogs by lazy { UpdateDialogs(this) { showWatchDialog(it) } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,6 +67,13 @@ class SettingsActivity : WatchDisplayActivity() {
             }
             binding.wifiOnlySwitch.isEnabled = true
             binding.screenOffContinueSwitch.isEnabled = true
+            if (EpisodeWheel.findSensor(this@SettingsActivity) != null) {
+                binding.episodeWheelSwitch.isChecked = container.settings.episodeWheelEnabled.first()
+                binding.episodeWheelSwitch.setOnCheckedChangeListener { _, checked ->
+                    lifecycleScope.launch { container.settings.setEpisodeWheelEnabled(checked) }
+                }
+                binding.episodeWheelRow.visibility = View.VISIBLE
+            }
             currentQuality = container.settings.maxQuality.first()
             currentKernel = container.settings.playerKernel.first()
             currentDecode = container.settings.decodePath.first()
@@ -165,12 +160,6 @@ class SettingsActivity : WatchDisplayActivity() {
         refreshVideoCacheUi()
     }
 
-    override fun onDestroy() {
-        downloadCancel.set(true)
-        downloadJob?.cancel()
-        super.onDestroy()
-    }
-
     private fun watchDialogBuilder(): AlertDialog.Builder {
         return AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
     }
@@ -191,198 +180,29 @@ class SettingsActivity : WatchDisplayActivity() {
         updateChecking = true
         binding.checkUpdateButton.isEnabled = false
         Toast.makeText(this, R.string.checking_update, Toast.LENGTH_SHORT).show()
+        val updates = (application as HongguoWatchApp).appUpdates
         lifecycleScope.launch {
-            val outcome = runCatching {
-                withContext(Dispatchers.IO) { UpdateChecker.check() }
-            }
-            updateChecking = false
-            binding.checkUpdateButton.isEnabled = true
-            outcome.onSuccess { result ->
-                if (!result.isNewer) {
-                    showLatestDialog()
-                    return@onSuccess
-                }
-                showUpdateAvailableDialog(result)
-            }.onFailure { err ->
-                Toast.makeText(
-                    this@SettingsActivity,
-                    getString(
-                        R.string.update_check_failed,
-                        err.message ?: getString(R.string.error_network),
-                    ),
-                    Toast.LENGTH_LONG,
-                ).show()
-            }
-        }
-    }
-
-    private fun showLatestDialog() {
-        showWatchDialog(
-            watchDialogBuilder()
-                .setTitle(R.string.update_latest_title)
-                .setMessage(getString(R.string.update_latest, BuildConfig.VERSION_NAME))
-                .setPositiveButton(R.string.update_ok, null)
-                .create(),
-        )
-    }
-
-    private fun showUpdateAvailableDialog(result: UpdateChecker.Result) {
-        val notes = result.body.ifBlank { "前往发布页查看说明。" }.take(280)
-        val pageUrl = result.htmlUrl.ifBlank { UpdateChecker.releasesPageUrl() }
-        val content = LayoutInflater.from(this).inflate(R.layout.dialog_update_available, null)
-        val titleView = content.findViewById<TextView>(R.id.updateTitle)
-        val metaView = content.findViewById<TextView>(R.id.updateMeta)
-        val notesScroll = content.findViewById<ScrollView>(R.id.updateNotesScroll)
-        val notesView = content.findViewById<TextView>(R.id.updateNotes)
-        val primaryButton = content.findViewById<Button>(R.id.updatePrimaryButton)
-        val secondaryButton = content.findViewById<Button>(R.id.updateSecondaryButton)
-        val tertiaryButton = content.findViewById<Button>(R.id.updateTertiaryButton)
-
-        titleView.text = getString(R.string.update_available_title, result.versionName)
-        metaView.text = getString(
-            R.string.update_available_meta,
-            BuildConfig.VERSION_NAME,
-            result.versionName,
-        )
-        notesView.text = notes
-        // 说明过长时限高滚动，保证底部三键始终可见可点
-        notesScroll.post {
-            val maxNotes = WatchUi.updateNotesMaxHeightPx(this@SettingsActivity)
-            if (notesView.height > maxNotes) {
-                val lp = notesScroll.layoutParams
-                lp.height = maxNotes
-                notesScroll.layoutParams = lp
-            }
-        }
-
-        val dialog = watchDialogBuilder()
-            .setView(content)
-            .setCancelable(true)
-            .create()
-
-        // 主：下载安装 / 立即安装；无 APK 时主键改打开发布页
-        when {
-            !result.apkUrl.isNullOrBlank() -> {
-                val existing = UpdateApkInstaller.resolveLocalFile(
-                    this,
-                    result.apkName,
-                    result.versionName,
-                )
-                if (existing.exists() && existing.length() > 0L) {
-                    primaryButton.setText(R.string.update_install_apk)
-                    primaryButton.setOnClickListener {
-                        dialog.dismiss()
-                        installApk(existing)
-                    }
-                } else {
-                    primaryButton.setText(R.string.update_download_apk)
-                    primaryButton.setOnClickListener {
-                        dialog.dismiss()
-                        startApkDownload(result)
-                    }
-                }
-                tertiaryButton.visibility = View.VISIBLE
-                tertiaryButton.setOnClickListener {
-                    dialog.dismiss()
-                    openUrl(pageUrl)
-                }
-            }
-            else -> {
-                primaryButton.setText(R.string.update_open_page)
-                primaryButton.setOnClickListener {
-                    dialog.dismiss()
-                    openUrl(pageUrl)
-                }
-                tertiaryButton.visibility = View.GONE
-            }
-        }
-        secondaryButton.setOnClickListener { dialog.dismiss() }
-
-        showWatchDialog(dialog)
-        // 再压一次宽高：自定义 view 后部分机型会回退到默认窄宽
-        dialog.window?.setLayout(
-            WatchUi.dialogContentWidthPx(this),
-            WindowManager.LayoutParams.WRAP_CONTENT,
-        )
-    }
-
-    private fun startApkDownload(result: UpdateChecker.Result) {
-        val apkUrl = result.apkUrl
-        if (apkUrl.isNullOrBlank()) {
-            Toast.makeText(this, R.string.update_no_apk, Toast.LENGTH_LONG).show()
-            return
-        }
-        downloadJob?.cancel()
-        downloadCancel.set(false)
-
-        val content = LayoutInflater.from(this).inflate(R.layout.dialog_update_progress, null)
-        val progressBar = content.findViewById<ProgressBar>(R.id.progressBar)
-        val progressLabel = content.findViewById<TextView>(R.id.progressLabel)
-        progressBar.progress = 0
-        progressLabel.text = getString(R.string.update_downloading_body, 0)
-
-        val dialog = watchDialogBuilder()
-            .setTitle(R.string.update_downloading_title)
-            .setView(content)
-            .setNegativeButton(R.string.update_cancel) { _, _ ->
-                downloadCancel.set(true)
-                downloadJob?.cancel()
-            }
-            .setCancelable(false)
-            .create()
-        showWatchDialog(dialog)
-
-        downloadJob = lifecycleScope.launch {
-            val outcome = runCatching {
-                withContext(Dispatchers.IO) {
-                    UpdateApkInstaller.download(
-                        context = this@SettingsActivity,
-                        url = apkUrl,
-                        apkName = result.apkName,
-                        versionName = result.versionName,
-                        cancel = downloadCancel,
-                    ) { percent ->
-                        runOnUiThread {
-                            if (!isDestroyed && dialog.isShowing) {
-                                progressBar.progress = percent
-                                progressLabel.text =
-                                    getString(R.string.update_downloading_body, percent)
-                            }
+            try {
+                val outcome = updates.checkManually()
+                lifecycle.withResumed {
+                    if (!isFinishing) {
+                        outcome.onSuccess { result ->
+                            updates.markManualResultShown()
+                            if (result.isNewer) updateDialogs.showAvailable(result) else updateDialogs.showLatest()
+                        }.onFailure { error ->
+                            val message = getString(
+                                R.string.update_check_failed,
+                                error.message ?: getString(R.string.error_network),
+                            )
+                            Toast.makeText(this@SettingsActivity, message, Toast.LENGTH_LONG).show()
                         }
                     }
                 }
-            }
-            if (!isActive) {
-                if (dialog.isShowing) dialog.dismiss()
-                return@launch
-            }
-            if (dialog.isShowing) dialog.dismiss()
-            outcome.onSuccess { file ->
-                showDownloadDoneDialog(file)
-            }.onFailure { err ->
-                if (err is InterruptedException || downloadCancel.get()) return@onFailure
-                Toast.makeText(
-                    this@SettingsActivity,
-                    getString(
-                        R.string.update_download_failed,
-                        err.message ?: getString(R.string.error_network),
-                    ),
-                    Toast.LENGTH_LONG,
-                ).show()
+            } finally {
+                updateChecking = false
+                binding.checkUpdateButton.isEnabled = true
             }
         }
-    }
-
-    private fun showDownloadDoneDialog(apkFile: File) {
-        val message = apkFile.name + "\n\n" + getString(R.string.update_signing_note)
-        showWatchDialog(
-            watchDialogBuilder()
-                .setTitle(R.string.update_download_done)
-                .setMessage(message)
-                .setNegativeButton(R.string.update_later, null)
-                .setPositiveButton(R.string.update_install_apk) { _, _ -> installApk(apkFile) }
-                .create(),
-        )
     }
 
     private fun uploadDiagnostics() {
@@ -422,34 +242,6 @@ class SettingsActivity : WatchDisplayActivity() {
                     Toast.LENGTH_LONG,
                 ).show()
             }
-        }
-    }
-
-    private fun installApk(apkFile: File) {
-        runCatching {
-            // install() 内已：记 pending + 延迟清盘；失败不抛到这里以外
-            UpdateApkInstaller.install(this, apkFile)
-        }.onFailure { err ->
-            if (err is SecurityException) {
-                Toast.makeText(this, R.string.update_install_permission, Toast.LENGTH_LONG).show()
-            } else {
-                Toast.makeText(
-                    this,
-                    getString(
-                        R.string.update_install_failed,
-                        err.message ?: getString(R.string.error_generic),
-                    ),
-                    Toast.LENGTH_LONG,
-                ).show()
-            }
-        }
-    }
-
-    private fun openUrl(url: String) {
-        runCatching {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        }.onFailure {
-            Toast.makeText(this, R.string.error_generic, Toast.LENGTH_SHORT).show()
         }
     }
 

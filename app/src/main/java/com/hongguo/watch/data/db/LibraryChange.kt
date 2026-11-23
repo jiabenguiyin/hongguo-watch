@@ -35,6 +35,9 @@ interface LibraryChangeDao {
     @Query("DELETE FROM library_changes WHERE kind = :kind")
     suspend fun discardKind(kind: String)
 
+    @Query("DELETE FROM library_changes WHERE kind = :kind AND seriesId IN (:seriesIds)")
+    suspend fun discardSeries(kind: String, seriesIds: List<String>)
+
     @Query("SELECT * FROM library_changes ORDER BY sequence ASC")
     suspend fun allInOrder(): List<LibraryChangeEntity>
 

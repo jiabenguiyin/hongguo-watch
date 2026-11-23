@@ -1,90 +1,94 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  手表「发现新版本」弹窗：近全宽 + 可滚动说明 + 竖排三键，
-  避免方屏大圆角（CD12 Max）上横排按钮被裁切。
--->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/updateDialogRoot"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:paddingHorizontal="14dp"
-    android:paddingTop="14dp"
-    android:paddingBottom="12dp">
-
-    <TextView
-        android:id="@+id/updateTitle"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textColor="@color/text_primary"
-        android:textSize="15sp"
-        android:textStyle="bold" />
-
-    <TextView
-        android:id="@+id/updateMeta"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:lineSpacingExtra="2dp"
-        android:textColor="@color/text_secondary"
-        android:textSize="12sp" />
+    android:paddingHorizontal="12dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="6dp">
 
     <ScrollView
         android:id="@+id/updateNotesScroll"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
         android:fadeScrollbars="false"
-        android:fillViewport="false"
         android:overScrollMode="ifContentScrolls"
         android:scrollbars="vertical">
 
-        <TextView
-            android:id="@+id/updateNotes"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:lineSpacingExtra="2dp"
-            android:textColor="@color/text_secondary"
-            android:textSize="12sp" />
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/updateTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_primary"
+                android:textSize="@dimen/watch_title"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/updateMeta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/watch_pad_tight"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/watch_meta" />
+
+            <TextView
+                android:id="@+id/updateNotes"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/watch_pad"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/watch_meta" />
+        </LinearLayout>
     </ScrollView>
 
-    <!-- 主操作：下载安装 / 立即安装 -->
     <Button
         android:id="@+id/updatePrimaryButton"
         android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:layout_marginTop="12dp"
+        android:layout_height="@dimen/watch_control_h"
+        android:layout_marginTop="@dimen/watch_pad"
         android:backgroundTint="@color/accent"
-        android:minHeight="44dp"
         android:text="@string/update_download_apk"
         android:textAllCaps="false"
         android:textColor="@color/text_primary"
-        android:textSize="13sp"
+        android:textSize="@dimen/watch_body"
         android:textStyle="bold" />
 
-    <!-- 次操作：稍后 -->
-    <Button
-        android:id="@+id/updateSecondaryButton"
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="40dp"
-        android:layout_marginTop="6dp"
-        android:backgroundTint="@color/episode_normal"
-        android:minHeight="40dp"
-        android:text="@string/update_later"
-        android:textAllCaps="false"
-        android:textColor="@color/text_primary"
-        android:textSize="12sp" />
+        android:layout_height="@dimen/watch_control_h"
+        android:orientation="horizontal">
 
-    <!-- 三级：打开发布页 -->
-    <Button
-        android:id="@+id/updateTertiaryButton"
-        style="@style/Widget.MaterialComponents.Button.TextButton"
-        android:layout_width="match_parent"
-        android:layout_height="40dp"
-        android:layout_marginTop="2dp"
-        android:minHeight="40dp"
-        android:text="@string/update_open_page"
-        android:textAllCaps="false"
-        android:textColor="@color/text_secondary"
-        android:textSize="12sp" />
+        <Button
+            android:id="@+id/updateSecondaryButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="@dimen/watch_pad_tight"
+            android:layout_weight="1"
+            android:backgroundTint="@color/episode_normal"
+            android:minWidth="0dp"
+            android:paddingHorizontal="@dimen/watch_pad_tight"
+            android:text="@string/update_later"
+            android:textAllCaps="false"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta" />
+
+        <Button
+            android:id="@+id/updateTertiaryButton"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:minWidth="0dp"
+            android:paddingHorizontal="@dimen/watch_pad_tight"
+            android:text="@string/update_open_page"
+            android:textAllCaps="false"
+            android:textColor="@color/text_secondary"
+            android:textSize="@dimen/watch_meta" />
+    </LinearLayout>
 </LinearLayout>

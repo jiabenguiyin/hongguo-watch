@@ -69,6 +69,7 @@ class MainActivity : WatchDisplayActivity() {
     private var feedGeneration = 0
     private var feedJob: Job? = null
     private var feedRankBase = 0
+    private var lastCloudFavoritesSignature: String? = null
     /**
      * 列表内容世代：切 Tab / 搜索 / 分类时递增。
      * 防止首页 feed 异步结果污染库（收藏/历史）adapter。
@@ -84,6 +85,7 @@ class MainActivity : WatchDisplayActivity() {
 
     private val container get() = (application as HongguoWatchApp).container
     private val repo get() = container.repository
+    private val updateDialogs by lazy { UpdateDialogs(this) { showWatchDialog(it) } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -170,6 +172,32 @@ class MainActivity : WatchDisplayActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 container.redfruitAccount.status.collect { state ->
                     if (mode == Mode.MINE) renderMineAccount(state)
+                    if (mode == Mode.LIBRARY &&
+                        librarySegment == LibrarySegmentPolicy.Segment.FAVORITES &&
+                        !state.favoritesLoading &&
+                        state.favorites != null
+                    ) {
+                        val signature = state.favorites.hashCode().toString()
+                        if (signature != lastCloudFavoritesSignature) {
+                            lastCloudFavoritesSignature = signature
+                            loadFavoritesList(fromSwipe = false)
+                        }
+                    }
+                }
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                if (isFinishing) return@repeatOnLifecycle
+                val noticeShown = showFirstRunNotice {
+                    lifecycleScope.launch {
+                        val release = (application as HongguoWatchApp).appUpdates.takeStartupUpdate()
+                        if (!isFinishing) release?.let(updateDialogs::showAvailable)
+                    }
+                }
+                if (!noticeShown) {
+                    val release = (application as HongguoWatchApp).appUpdates.takeStartupUpdate()
+                    if (!isFinishing) release?.let(updateDialogs::showAvailable)
                 }
             }
         }
@@ -232,6 +260,7 @@ class MainActivity : WatchDisplayActivity() {
     override fun onResume() {
         super.onResume()
         container.accountSync.onForeground()
+        container.redfruitAccount.onForeground()
         if (recreateForDisplaySizeChange()) return
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
         // 版本跃迁 / 安装后残留：首页恢复时再扫；仅当实际删掉更新包时 toast
@@ -1110,6 +1139,9 @@ class MainActivity : WatchDisplayActivity() {
     ) {
         mode = Mode.LIBRARY
         librarySegment = segment
+        if (segment != LibrarySegmentPolicy.Segment.FAVORITES) {
+            lastCloudFavoritesSignature = null
+        }
         highlightBottomTabs(library = true)
         hideKeyboard()
         binding.mineContent.visibility = View.GONE
@@ -1278,6 +1310,31 @@ class MainActivity : WatchDisplayActivity() {
         }
     }
 
+    private fun showFirstRunNotice(onDismiss: () -> Unit): Boolean {
+        val preferences = getSharedPreferences(FIRST_RUN_NOTICE_PREFS, Context.MODE_PRIVATE)
+        if (preferences.getBoolean(FIRST_RUN_NOTICE_SHOWN, false)) return false
+
+        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
+            .setTitle(R.string.first_run_notice_title)
+            .setMessage(getString(R.string.first_run_notice_message, getString(R.string.qq_group)))
+            .setPositiveButton(R.string.first_run_notice_acknowledge) { _, _ ->
+                preferences.edit().putBoolean(FIRST_RUN_NOTICE_SHOWN, true).apply()
+            }
+            .create()
+        dialog.setCancelable(false)
+        if (WatchUi.isCompactWatch(this)) {
+            dialog.setOnShowListener {
+                dialog.findViewById<TextView>(android.R.id.message)?.setTextSize(
+                    TypedValue.COMPLEX_UNIT_SP,
+                    11f,
+                )
+            }
+        }
+        dialog.setOnDismissListener { onDismiss() }
+        showWatchDialog(dialog)
+        return true
+    }
+
     private fun loadHistoryList(fromSwipe: Boolean) {
         binding.emptyView.visibility = View.GONE
         applyListLoading(
@@ -1374,7 +1431,10 @@ class MainActivity : WatchDisplayActivity() {
         binding.seriesList.scrollToPosition(0)
         listJob = lifecycleScope.launch {
             try {
-                val favorites = repo.favoritesWithResolvedEpisodeTotals()
+                // Render the Room snapshot first. Resolving every favorite through
+                // the detail endpoint serially made the library look stuck.
+                // DetailActivity refreshes an individual total when it is opened.
+                val favorites = container.redfruitAccount.libraryFavorites()
                 if (token != listGeneration || mode != Mode.LIBRARY ||
                     librarySegment != LibrarySegmentPolicy.Segment.FAVORITES
                 ) {
@@ -1597,6 +1657,8 @@ class MainActivity : WatchDisplayActivity() {
         private const val STATE_LIBRARY = "showLibrary"
         private const val STATE_LIBRARY_SEGMENT = "librarySegment"
         private const val STATE_SEARCH = "searchQuery"
+        private const val FIRST_RUN_NOTICE_PREFS = "first_run_notice"
+        private const val FIRST_RUN_NOTICE_SHOWN = "free_distribution_notice_shown"
         private const val SEARCH_CHIP_ALL = "all"
         private const val SEARCH_CHIP_SHORT = "short"
         private const val SEARCH_CHIP_COMIC = "comic"

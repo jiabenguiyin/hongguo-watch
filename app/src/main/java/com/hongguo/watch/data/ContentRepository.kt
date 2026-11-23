@@ -21,6 +21,8 @@ class ContentRepository internal constructor(
     private val appSource: AppSourceClient,
     private val currentLibrary: suspend () -> LocalLibrary,
     private val settings: SettingsStore,
+    private val onProgressSaved: (WatchHistoryEntity, Int, Boolean) -> Unit = { _, _, _ -> },
+    private val onFavoriteChanged: (FavoriteEntity, Boolean) -> Unit = { _, _ -> },
 ) {
     suspend fun search(query: String, page: Int = 1): SearchPage = withContext(Dispatchers.IO) {
         appSource.search(query, page)
@@ -185,21 +187,23 @@ class ContentRepository internal constructor(
         positionMs: Long,
         durationMs: Long,
         source: SeriesSource,
+        episodeCount: Int = 0,
+        forceCloudSync: Boolean = false,
     ) {
         // 接近片尾记为已看完本集，续播时由调用方决定切下一集；落盘仍保留真实进度。
-        currentLibrary().saveProgress(
-            WatchHistoryEntity(
-                seriesId = seriesId,
-                seriesTitle = seriesTitle,
-                cover = CoverUrls.normalize(cover).ifBlank { cover },
-                episodeId = episodeId,
-                episodeNumber = episodeNumber,
-                positionMs = positionMs.coerceAtLeast(0L),
-                durationMs = durationMs.coerceAtLeast(0L),
-                updatedAt = System.currentTimeMillis(),
-                source = source.name,
-            ),
+        val record = WatchHistoryEntity(
+            seriesId = seriesId,
+            seriesTitle = seriesTitle,
+            cover = CoverUrls.normalize(cover).ifBlank { cover },
+            episodeId = episodeId,
+            episodeNumber = episodeNumber,
+            positionMs = positionMs.coerceAtLeast(0L),
+            durationMs = durationMs.coerceAtLeast(0L),
+            updatedAt = System.currentTimeMillis(),
+            source = source.name,
         )
+        currentLibrary().saveProgress(record)
+        onProgressSaved(record, episodeCount.coerceAtLeast(0), forceCloudSync)
     }
 
     suspend fun historyFor(seriesId: String): WatchHistoryEntity? = currentLibrary().history.find(seriesId)
@@ -250,16 +254,19 @@ class ContentRepository internal constructor(
         cover: String,
         source: SeriesSource,
         episodeCount: Int = 0,
-    ): Boolean = currentLibrary().toggleFavorite(
-        FavoriteEntity(
+    ): Boolean {
+        val record = FavoriteEntity(
             seriesId = seriesId,
             seriesTitle = seriesTitle,
             cover = CoverUrls.normalize(cover).ifBlank { cover },
             source = source.name,
             episodeCount = episodeCount.coerceAtLeast(0),
             updatedAt = System.currentTimeMillis(),
-        ),
-    )
+        )
+        val added = currentLibrary().toggleFavorite(record)
+        onFavoriteChanged(record, added)
+        return added
+    }
 
     suspend fun refreshFavoriteMetadata(
         seriesId: String,

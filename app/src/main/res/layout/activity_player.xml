@@ -9,6 +9,23 @@
     android:splitMotionEvents="false"
     android:keepScreenOn="true">
 
+    <!-- The ROM routes its wheel to the first recognized scrollable view. -->
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/episodeWheelScroll"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="false"
+        android:importantForAccessibility="no"
+        android:overScrollMode="never"
+        android:scrollbars="none">
+
+        <View
+            android:id="@+id/episodeWheelScrollContent"
+            android:layout_width="match_parent"
+            android:layout_height="2000dp"
+            android:importantForAccessibility="no" />
+    </androidx.core.widget.NestedScrollView>
+
     <!-- Media3 默认路径（TextureView） -->
     <androidx.media3.ui.PlayerView
         android:id="@+id/playerView"

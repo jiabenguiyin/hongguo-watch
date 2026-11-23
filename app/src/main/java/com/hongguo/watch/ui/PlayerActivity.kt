@@ -144,6 +144,7 @@ class PlayerActivity : WatchDisplayActivity() {
     private var seriesTitle = ""
     private var cover = ""
     private var source = SeriesSource.APP
+    private var offlineOnly = false
     private var episodeIds: List<String> = emptyList()
     private var episodeNumbers: List<Int> = emptyList()
     private var episodeIndex = 0
@@ -251,6 +252,7 @@ class PlayerActivity : WatchDisplayActivity() {
         source = runCatching {
             SeriesSource.valueOf(intent.getStringExtra(EXTRA_SOURCE) ?: SeriesSource.APP.name)
         }.getOrDefault(SeriesSource.APP)
+        offlineOnly = intent.getBooleanExtra(EXTRA_OFFLINE_ONLY, false)
         episodeIds = intent.getStringArrayListExtra(EXTRA_EPISODE_IDS)?.toList().orEmpty()
         episodeNumbers = intent.getIntegerArrayListExtra(EXTRA_EPISODE_NUMBERS)?.toList().orEmpty()
 
@@ -292,7 +294,17 @@ class PlayerActivity : WatchDisplayActivity() {
             )
             refreshQualityUi()
             refreshSpeedUi()
-            if (episodeIds.isEmpty()) {
+            if (offlineOnly) {
+                val cachedEpisodes = offlineCacheEpisodes(videoCache.listReady(), seriesId)
+                if (cachedEpisodes.isEmpty() || cachedEpisodes.none { it.episodeId == initialEpisodeId }) {
+                    Toast.makeText(this@PlayerActivity, R.string.offline_entry_missing, Toast.LENGTH_LONG).show()
+                    finish()
+                    return@launch
+                }
+                episodeIds = cachedEpisodes.map { it.episodeId }
+                episodeNumbers = cachedEpisodes.map { it.episodeNumber }
+                if (seriesTitle.isBlank()) seriesTitle = cachedEpisodes.first().seriesTitle
+            } else if (episodeIds.isEmpty()) {
                 runCatching { repo.detail(seriesId) }
                     .onSuccess { detail ->
                         episodeIds = detail.episodes.map { it.id }
@@ -1418,6 +1430,14 @@ class PlayerActivity : WatchDisplayActivity() {
                 return@launch
             }
 
+            if (offlineOnly) {
+                if (token != playGeneration) return@launch
+                PlayerDiagLog.e("offline cache missing series=$requestedSeriesId episode=$episodeId")
+                Toast.makeText(this@PlayerActivity, R.string.offline_entry_missing, Toast.LENGTH_LONG).show()
+                finish()
+                return@launch
+            }
+
             if (settings.wifiOnlyNow() && !isWifi()) {
                 if (token != playGeneration) return@launch
                 Toast.makeText(this@PlayerActivity, R.string.error_wifi_only, Toast.LENGTH_LONG).show()
@@ -2481,6 +2501,7 @@ class PlayerActivity : WatchDisplayActivity() {
         const val EXTRA_EPISODE_IDS = "episode_ids"
         const val EXTRA_EPISODE_NUMBERS = "episode_numbers"
         const val EXTRA_START_POSITION_MS = "start_position_ms"
+        const val EXTRA_OFFLINE_ONLY = "offline_only"
 
         private val mediaHttp: OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(8, TimeUnit.SECONDS)

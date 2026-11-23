@@ -1,6 +1,17 @@
 package com.hongguo.watch.ui
 
+import com.hongguo.watch.data.cache.VideoCacheEntry
+
 internal data class InitialEpisode(val index: Int, val positionMs: Long)
+
+internal fun offlineCacheEpisodes(
+    entries: List<VideoCacheEntry>,
+    seriesId: String,
+): List<VideoCacheEntry> = entries
+    .asSequence()
+    .filter { it.ready && it.seriesId == seriesId }
+    .sortedWith(compareBy<VideoCacheEntry> { it.episodeNumber }.thenBy { it.episodeId })
+    .toList()
 
 internal fun selectInitialEpisode(
     episodeIds: List<String>,

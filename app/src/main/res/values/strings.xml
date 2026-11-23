@@ -92,6 +92,7 @@
     <string name="offline_manage">管理离线缓存</string>
     <string name="offline_delete_confirm_title">删除这集？</string>
     <string name="offline_delete_confirm_body">%1$s 第%2$d集（%3$s）</string>
+    <string name="offline_entry_missing">本地缓存文件不存在，请重新缓存后再播放</string>
     <string name="empty_history">暂无观看历史\n看过的剧会显示在这里</string>
     <string name="empty_favorites">暂无收藏\n在详情页点♡即可加入</string>
     <string name="empty_search_result">没有搜到相关短剧</string>

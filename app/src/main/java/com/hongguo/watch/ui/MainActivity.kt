@@ -1235,12 +1235,22 @@ class MainActivity : WatchDisplayActivity() {
     }
 
     private fun playOfflineEntry(entry: VideoCacheEntry) {
+        val cachedEpisodes = offlineCacheEpisodes(container.videoCache.listReady(), entry.seriesId)
         startActivity(
             Intent(this, PlayerActivity::class.java).apply {
                 putExtra(PlayerActivity.EXTRA_SERIES_ID, entry.seriesId)
                 putExtra(PlayerActivity.EXTRA_SERIES_TITLE, entry.seriesTitle)
                 putExtra(PlayerActivity.EXTRA_EPISODE_ID, entry.episodeId)
                 putExtra(PlayerActivity.EXTRA_EPISODE_NUMBER, entry.episodeNumber)
+                putStringArrayListExtra(
+                    PlayerActivity.EXTRA_EPISODE_IDS,
+                    ArrayList(cachedEpisodes.map { it.episodeId }),
+                )
+                putIntegerArrayListExtra(
+                    PlayerActivity.EXTRA_EPISODE_NUMBERS,
+                    ArrayList(cachedEpisodes.map { it.episodeNumber }),
+                )
+                putExtra(PlayerActivity.EXTRA_OFFLINE_ONLY, true)
                 putExtra(PlayerActivity.EXTRA_SOURCE, SeriesSource.APP.name)
             },
         )

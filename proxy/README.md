@@ -14,6 +14,24 @@ Media bytes are **not** proxied — the watch plays CDN URLs directly.
 PORT=8787 BIND=0.0.0.0 HONGGUO_PLAYBACK_PROXY_TOKEN=devsecret ./gradlew :proxy:run
 ```
 
+### Dist (Java 17 bytecode)
+
+```bash
+./gradlew :proxy:installDist :proxy:distTar
+# → proxy/build/distributions/hongguo-playback-proxy.tar.gz
+# → proxy/build/install/proxy/{bin,lib}
+```
+
+On a host with **OpenJDK 17+**:
+
+```bash
+tar -xzf hongguo-playback-proxy.tar.gz
+cd proxy
+PORT=8787 BIND=0.0.0.0 HONGGUO_PLAYBACK_PROXY_TOKEN=secret ./bin/proxy
+```
+
+Store copy (agent builds): `/cursor/stores/self/media/hongguo-playback-proxy.tar.gz`.
+
 Smoke:
 
 ```bash

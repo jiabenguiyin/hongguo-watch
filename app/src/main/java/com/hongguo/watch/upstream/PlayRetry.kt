@@ -6,13 +6,13 @@ import java.io.IOException
 /** 播放模型的候选域名与临时故障分类；路径顺序和总预算由会话健康度决定。 */
 internal object PlayRetryPlan {
     /**
-     * 官方空响应常见于单 host；b 为现行主路径（与 drama 对齐），a/hl/lf 作备选。
-     * MobilePlayback 会再把 primary 放在队首并去重。
+     * 官方 v1 POST 现行主 host 为 a（hongguoTV 0.33.1）；b/hl/lf 作备选。
+     * video_tab 仍优先打 b（见 MobilePlayback）。
      */
     val hosts =
         listOf(
-            "api5-normal-sinfonlineb.fqnovel.com",
             "api5-normal-sinfonlinea.fqnovel.com",
+            "api5-normal-sinfonlineb.fqnovel.com",
             "api5-normal-hl.fqnovel.com",
             "api5-normal-lf.fqnovel.com",
         )

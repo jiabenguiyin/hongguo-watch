@@ -37,4 +37,12 @@ class WatchStatusFormatTest {
         assertEquals("0%", WatchStatusFormat.formatBatteryPercent(-1))
         assertEquals("100%", WatchStatusFormat.formatBatteryPercent(120))
     }
+
+    @Test
+    fun batteryDrawableLevel_tracksPercentAndClamps() {
+        assertEquals(0, WatchStatusFormat.batteryDrawableLevel(0))
+        assertEquals(5_000, WatchStatusFormat.batteryDrawableLevel(50))
+        assertEquals(9_900, WatchStatusFormat.batteryDrawableLevel(99))
+        assertEquals(10_000, WatchStatusFormat.batteryDrawableLevel(150))
+    }
 }

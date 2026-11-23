@@ -8,6 +8,7 @@ import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import coil.request.CachePolicy
 import com.hongguo.watch.data.AppContainer
+import com.hongguo.watch.data.AppUpdateSession
 import com.hongguo.watch.data.UpdateApkInstaller
 import com.hongguo.watch.ui.WatchDisplaySettings
 import com.hongguo.watch.upstream.VendorConstants
@@ -22,6 +23,7 @@ class HongguoWatchApp : Application(), ImageLoaderFactory {
     lateinit var container: AppContainer
         private set
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    internal val appUpdates = AppUpdateSession(appScope)
 
     override fun onCreate() {
         super.onCreate()

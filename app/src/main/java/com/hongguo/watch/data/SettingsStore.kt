@@ -27,11 +27,15 @@ class SettingsStore(private val context: Context) {
     private val playbackRouteKey = stringPreferencesKey("playback_route")
     /** 息屏/退后台续听；默认关（省电）。 */
     private val screenOffContinueKey = booleanPreferencesKey("screen_off_continue")
+    private val episodeWheelEnabledKey = booleanPreferencesKey("episode_wheel_enabled")
 
     val wifiOnly: Flow<Boolean> = context.dataStore.data.map { it[wifiOnlyKey] ?: false }
     /** 熄屏续听：关=熄屏暂停（默认）；开=熄屏继续出声。 */
     val screenOffContinue: Flow<Boolean> = context.dataStore.data.map {
         it[screenOffContinueKey] ?: ScreenOffPlaybackPolicy.DEFAULT_CONTINUE_ENABLED
+    }
+    val episodeWheelEnabled: Flow<Boolean> = context.dataStore.data.map {
+        it[episodeWheelEnabledKey] ?: false
     }
     /** 默认 480；可选 720 / 1080（手动高清，低配表可能发热/卡顿）。 */
     val maxQuality: Flow<Int> = context.dataStore.data.map {
@@ -63,6 +67,10 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setScreenOffContinue(enabled: Boolean) {
         context.dataStore.edit { it[screenOffContinueKey] = enabled }
+    }
+
+    suspend fun setEpisodeWheelEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[episodeWheelEnabledKey] = enabled }
     }
 
     suspend fun setMaxQuality(height: Int) {

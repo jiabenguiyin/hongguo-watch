@@ -21,7 +21,9 @@ import com.hongguo.watch.data.db.FavoriteEntity
 import com.hongguo.watch.data.db.WatchHistoryEntity
 import com.hongguo.watch.data.redfruit.RedfruitAccountError
 import com.hongguo.watch.data.redfruit.RedfruitAccountState
+import com.hongguo.watch.data.redfruit.RedfruitInitialMergeChoice
 import com.hongguo.watch.data.redfruit.RedfruitLoginMode
+import com.hongguo.watch.data.redfruit.RedfruitWriteSyncStatus
 import com.hongguo.watch.databinding.ActivityAccountSyncBinding
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -33,7 +35,9 @@ class AccountSyncActivity : WatchDisplayActivity() {
     private val account get() = container.redfruitAccount
     private val cloudAdapter by lazy { RedfruitCloudAdapter(::openCloudRow) }
     private var cloudMode: CloudMode? = null
+    private var visibleLoginMode: RedfruitLoginMode? = null
     private var shownQr: ByteArray? = null
+    private var initialMergePromptShown = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,7 +59,10 @@ class AccountSyncActivity : WatchDisplayActivity() {
         binding.phoneButton.setOnClickListener { account.startPhone() }
         binding.retryQrButton.setOnClickListener { account.startQr() }
         binding.cancelPairingButton.setOnClickListener { account.cancelLogin() }
-        binding.cancelPhoneButton.setOnClickListener { account.cancelLogin() }
+        binding.cancelPhoneButton.setOnClickListener {
+            hideKeyboard()
+            account.cancelLogin()
+        }
         binding.sendSmsButton.setOnClickListener {
             hideKeyboard()
             account.sendSms(binding.phoneNumber.text?.toString().orEmpty())
@@ -71,6 +78,15 @@ class AccountSyncActivity : WatchDisplayActivity() {
         binding.cloudFavoritesTab.setOnClickListener { showCloud(CloudMode.FAVORITES) }
         binding.syncButton.setOnClickListener { account.refresh() }
         binding.cloudRefreshButton.setOnClickListener { account.refresh() }
+        binding.syncLocalButton.setOnClickListener { confirmLocalSync() }
+        binding.autoSyncSwitch.setOnCheckedChangeListener { _, checked ->
+            if (checked && !account.status.value.autoSyncEnabled) {
+                binding.autoSyncSwitch.isChecked = false
+                confirmEnableAutoSync()
+            } else {
+                account.setAutoSyncEnabled(checked)
+            }
+        }
         binding.signOutButton.setOnClickListener { confirmSignOut() }
 
         render(account.status.value)
@@ -90,6 +106,7 @@ class AccountSyncActivity : WatchDisplayActivity() {
 
     override fun onResume() {
         super.onResume()
+        account.onForeground()
         recreateForDisplaySizeChange()
     }
 
@@ -109,7 +126,10 @@ class AccountSyncActivity : WatchDisplayActivity() {
             render(account.status.value)
             return
         }
-        if (account.status.value.mode == RedfruitLoginMode.QR) account.cancelLogin()
+        if (account.status.value.mode != RedfruitLoginMode.CHOICE) {
+            hideKeyboard()
+            account.cancelLogin()
+        }
         finish()
     }
 
@@ -117,27 +137,25 @@ class AccountSyncActivity : WatchDisplayActivity() {
         if (!::binding.isInitialized) return
         val signedIn = !state.accountName.isNullOrBlank()
         val qrMode = !signedIn && state.mode == RedfruitLoginMode.QR
+        val phoneMode = !signedIn && state.mode == RedfruitLoginMode.PHONE
         val hasQr = qrMode && state.qrImage != null
-        binding.accountStatus.isVisible = !signedIn && !qrMode
-        binding.accountStatus.text = when {
-            state.restoring -> getString(R.string.account_sync_busy)
-            else -> getString(R.string.redfruit_login_prompt)
+        if (visibleLoginMode != state.mode) {
+            visibleLoginMode = state.mode
+            binding.accountScroll.scrollTo(0, 0)
+            if (!phoneMode) binding.smsCode.text?.clear()
         }
+        binding.accountStatus.isVisible = !signedIn && state.mode == RedfruitLoginMode.CHOICE
+        binding.accountStatus.setText(
+            if (state.restoring) R.string.account_sync_busy else R.string.redfruit_login_prompt,
+        )
         binding.syncBusy.isVisible = !signedIn && state.busy && !hasQr
+        binding.syncBusy.setText(if (qrMode) R.string.redfruit_qr_loading else R.string.account_sync_busy)
         binding.syncError.isVisible = state.error != null
         state.error?.let { binding.syncError.setText(errorText(it)) }
 
-        val loginVisible = !signedIn && !state.restoring
-        binding.loginMethodTabs.isVisible = loginVisible && !qrMode
+        binding.loginMethods.isVisible = !signedIn && !state.restoring && state.mode == RedfruitLoginMode.CHOICE
         binding.pairButton.isEnabled = !state.busy
         binding.phoneButton.isEnabled = !state.busy
-        val qrSelected = state.mode != RedfruitLoginMode.PHONE
-        binding.pairButton.isSelected = qrSelected
-        binding.phoneButton.isSelected = !qrSelected
-        val loginTabActive = ContextCompat.getColor(this, R.color.text_primary)
-        val loginTabInactive = ContextCompat.getColor(this, R.color.text_secondary)
-        binding.pairButton.setTextColor(if (qrSelected) loginTabActive else loginTabInactive)
-        binding.phoneButton.setTextColor(if (!qrSelected) loginTabActive else loginTabInactive)
         binding.pairButton.alpha = if (state.busy) 0.55f else 1f
         binding.phoneButton.alpha = if (state.busy) 0.55f else 1f
 
@@ -150,7 +168,6 @@ class AccountSyncActivity : WatchDisplayActivity() {
         )
         showQr(state.qrImage)
 
-        val phoneMode = !signedIn && state.mode == RedfruitLoginMode.PHONE
         binding.phonePanel.isVisible = phoneMode
         binding.phoneNumber.isEnabled = !state.busy && !state.smsRequested
         if (phoneMode) updateSmsButton(state)
@@ -171,7 +188,14 @@ class AccountSyncActivity : WatchDisplayActivity() {
         binding.cloudLibraryPanel.isVisible = inCloud
         binding.toolbarClock.isVisible = !inCloud
         binding.cloudRefreshButton.isVisible = inCloud
-        binding.accountTitle.setText(if (inCloud) R.string.redfruit_cloud_title else R.string.account_sync_title)
+        binding.accountTitle.setText(
+            when {
+                inCloud -> R.string.redfruit_cloud_title
+                qrMode -> R.string.redfruit_qr_login
+                phoneMode -> R.string.redfruit_phone_login
+                else -> R.string.account_sync_title
+            },
+        )
 
         binding.accountDashboard.isVisible = signedIn && !inCloud
         if (!signedIn) cloudAdapter.submitList(emptyList())
@@ -193,10 +217,40 @@ class AccountSyncActivity : WatchDisplayActivity() {
         )
         binding.cloudHistoryButton.text = cloudLabel(R.string.redfruit_cloud_history, state.history)
         binding.cloudFavoritesButton.text = cloudLabel(R.string.redfruit_cloud_favorites, state.favorites)
-        binding.syncButton.isEnabled = !state.busy
-        binding.syncButton.alpha = if (state.busy) 0.55f else 1f
-        binding.signOutButton.isEnabled = !state.busy
-        binding.signOutButton.alpha = if (state.busy) 0.55f else 1f
+        if (binding.autoSyncSwitch.isChecked != state.autoSyncEnabled) {
+            binding.autoSyncSwitch.isChecked = state.autoSyncEnabled
+        }
+        val syncBusy = state.writeSyncStatus == RedfruitWriteSyncStatus.RUNNING
+        binding.autoSyncSwitch.isEnabled = !state.busy && !syncBusy
+        binding.syncLocalButton.isEnabled = !state.busy && !syncBusy
+        binding.syncLocalButton.alpha = if (state.busy || syncBusy) 0.55f else 1f
+        if (state.writeSyncStatus == RedfruitWriteSyncStatus.SUCCESS &&
+            (state.uploadedHistoryCount > 0 || state.uploadedFavoriteCount > 0)
+        ) {
+            binding.writeSyncStatus.text = getString(
+                R.string.redfruit_sync_success_counts,
+                state.uploadedHistoryCount,
+                state.uploadedFavoriteCount,
+            )
+        } else {
+            binding.writeSyncStatus.setText(
+                when (state.writeSyncStatus) {
+                    RedfruitWriteSyncStatus.DISABLED -> R.string.redfruit_sync_disabled
+                    RedfruitWriteSyncStatus.IDLE -> if (state.autoSyncEnabled) {
+                        R.string.redfruit_sync_enabled
+                    } else {
+                        R.string.redfruit_sync_disabled
+                    }
+                    RedfruitWriteSyncStatus.RUNNING -> R.string.redfruit_sync_running
+                    RedfruitWriteSyncStatus.SUCCESS -> R.string.redfruit_sync_success
+                    RedfruitWriteSyncStatus.FAILED -> R.string.redfruit_sync_failed
+                },
+            )
+        }
+        binding.syncButton.isEnabled = !state.busy && !syncBusy
+        binding.syncButton.alpha = if (state.busy || syncBusy) 0.55f else 1f
+        binding.signOutButton.isEnabled = !state.busy && !syncBusy
+        binding.signOutButton.alpha = if (state.busy || syncBusy) 0.55f else 1f
 
         val recent = state.history.orEmpty().firstOrNull { it.episodeId.isNotBlank() || it.episodeNumber > 0 }
         binding.cloudResumeButton.isVisible = recent != null
@@ -206,6 +260,49 @@ class AccountSyncActivity : WatchDisplayActivity() {
         if (recent != null) {
             binding.cloudResumeButton.text = getString(R.string.redfruit_cloud_continue_title, recent.seriesTitle)
         }
+        if (!state.needsInitialMergeChoice) {
+            initialMergePromptShown = false
+        } else {
+            if (state.writeSyncStatus == RedfruitWriteSyncStatus.FAILED && !state.busy) {
+                initialMergePromptShown = false
+            }
+            if (
+                !state.accountName.isNullOrBlank() &&
+                !state.busy &&
+                state.writeSyncStatus != RedfruitWriteSyncStatus.RUNNING &&
+                !initialMergePromptShown
+            ) {
+                showInitialMergePrompt(state)
+            }
+        }
+    }
+
+    private fun showInitialMergePrompt(state: RedfruitAccountState) {
+        initialMergePromptShown = true
+        val message = getString(
+            R.string.redfruit_initial_merge_message,
+            state.localHistoryCount,
+            state.localFavoriteCount,
+        )
+        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
+            .setTitle(R.string.redfruit_initial_merge_title)
+            .setMessage(message)
+            .setPositiveButton(R.string.redfruit_initial_merge) { _, _ ->
+                account.resolveInitialMerge(RedfruitInitialMergeChoice.MERGE)
+            }
+            .setNegativeButton(R.string.redfruit_cloud_only) { _, _ ->
+                account.resolveInitialMerge(RedfruitInitialMergeChoice.CLOUD_ONLY)
+            }
+            .setNeutralButton(R.string.redfruit_initial_merge_later, null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.isAllCaps = false
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.isAllCaps = false
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.isAllCaps = false
+        }
+        dialog.show()
+        dialog.window?.setLayout(WatchUi.dialogContentWidthPx(this), WindowManager.LayoutParams.WRAP_CONTENT)
+        dialog.window?.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)
     }
 
     private fun confirmSignOut() {
@@ -214,6 +311,28 @@ class AccountSyncActivity : WatchDisplayActivity() {
             .setMessage(R.string.redfruit_cloud_sign_out_message)
             .setNegativeButton(R.string.update_cancel, null)
             .setPositiveButton(R.string.account_sync_sign_out) { _, _ -> account.signOut() }
+            .show()
+        dialog.window?.setLayout(WatchUi.dialogContentWidthPx(this), WindowManager.LayoutParams.WRAP_CONTENT)
+        dialog.window?.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)
+    }
+
+    private fun confirmEnableAutoSync() {
+        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
+            .setTitle(R.string.redfruit_auto_sync_confirm_title)
+            .setMessage(R.string.redfruit_auto_sync_confirm_message)
+            .setNegativeButton(R.string.update_cancel, null)
+            .setPositiveButton(R.string.redfruit_auto_sync) { _, _ -> account.setAutoSyncEnabled(true) }
+            .show()
+        dialog.window?.setLayout(WatchUi.dialogContentWidthPx(this), WindowManager.LayoutParams.WRAP_CONTENT)
+        dialog.window?.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)
+    }
+
+    private fun confirmLocalSync() {
+        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
+            .setTitle(R.string.redfruit_sync_local_confirm_title)
+            .setMessage(R.string.redfruit_sync_local_confirm_message)
+            .setNegativeButton(R.string.update_cancel, null)
+            .setPositiveButton(R.string.redfruit_sync_local) { _, _ -> account.syncLocalNow() }
             .show()
         dialog.window?.setLayout(WatchUi.dialogContentWidthPx(this), WindowManager.LayoutParams.WRAP_CONTENT)
         dialog.window?.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)

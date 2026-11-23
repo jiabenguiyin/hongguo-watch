@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">红果终端</string>
+    <string name="first_run_notice_title">免费软件，欢迎转载</string>
+    <string name="first_run_notice_message">软件免费，欢迎按 GPL-3.0 转载到其他应用商店。\n请注明作者张の梦想，保留许可声明；修改版注明改动并提供源码。\n项目：github.com/jiabenguiyin/hongguo-watch\n%1$s（设置里也可查看）。</string>
+    <string name="first_run_notice_acknowledge">我知道了</string>
     <string name="tab_home">首页</string>
     <string name="tab_library">库</string>
     <string name="tab_history">历史</string>
@@ -216,8 +219,9 @@
     <string name="update_latest_title">已是最新</string>
     <string name="update_latest">当前已是最新版本（%1$s）</string>
     <string name="update_available_title">发现新版本 %1$s</string>
-    <string name="update_available_meta">当前 %1$s\n最新 %2$s</string>
+    <string name="update_available_meta">当前 %1$s · 最新 %2$s</string>
     <string name="update_available_body">当前 %1$s\n最新 %2$s\n\n%3$s</string>
+    <string name="update_notes_missing">前往发布页查看说明。</string>
     <string name="update_open_page">打开发布页</string>
     <string name="update_download_apk">下载安装</string>
     <string name="update_install_apk">立即安装</string>

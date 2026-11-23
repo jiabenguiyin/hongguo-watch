@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
+import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
@@ -20,7 +21,9 @@ import android.widget.FrameLayout
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.annotation.OptIn
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -35,6 +38,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.recyclerview.widget.GridLayoutManager
+import com.hongguo.watch.BuildConfig
 import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
 import com.hongguo.watch.data.NoPlayableRenditionException
@@ -123,6 +127,7 @@ class PlayerActivity : WatchDisplayActivity() {
     /** 递增以作废过期的取流结果（快速切集 / 退后台）。 */
     private var playGeneration = 0
     private var playerForeground = false
+    private var episodeWheelEnabled = false
     /** 设置「息屏续听」；默认关。 */
     private var screenOffContinue = ScreenOffPlaybackPolicy.DEFAULT_CONTINUE_ENABLED
     private lateinit var powerController: PlaybackPowerController
@@ -179,6 +184,8 @@ class PlayerActivity : WatchDisplayActivity() {
     private var downX = 0f
     private var downY = 0f
     private var touchDownTime: Long? = null
+    private var lastEpisodeWheelStepAtMs = 0L
+    private var episodeWheelScrollBridge: EpisodeScrollBridge? = null
     private var tapCancelled = false
     private var downContentX = 0f
     private var scrubStartPos = 0L
@@ -260,6 +267,7 @@ class PlayerActivity : WatchDisplayActivity() {
             if (left != oldLeft || top != oldTop || right != oldRight || bottom != oldBottom) applyVideoTransform()
         }
         binding.playerView.useController = false
+        episodeWheelScrollBridge = EpisodeScrollBridge(binding.episodeWheelScroll, ::onEpisodeWheelStep)
         // TextureView + 保留最后一帧，减轻 OEM SurfaceView 黑屏
         binding.playerView.setKeepContentOnPlayerReset(true)
         applyVideoTransform()
@@ -305,7 +313,72 @@ class PlayerActivity : WatchDisplayActivity() {
             startPositionMs = initialEpisode.positionMs
             refreshEpisodePicker()
             loadCurrent()
+            bindEpisodeWheel()
         }
+    }
+
+    private fun bindEpisodeWheel() {
+        val wheel = EpisodeWheel.create(this, ::onEpisodeWheelStep) ?: return
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                try {
+                    settings.episodeWheelEnabled.collect { enabled ->
+                        episodeWheelEnabled = enabled
+                        if (BuildConfig.DEBUG) {
+                            Log.d(
+                                WHEEL_LOG_TAG,
+                                "enabled=$enabled index=$episodeIndex total=${episodeIds.size} focus=${hasWindowFocus()}",
+                            )
+                        }
+                        wheel.setEnabled(enabled)
+                        episodeWheelScrollBridge?.setEnabled(enabled)
+                    }
+                } finally {
+                    wheel.setEnabled(false)
+                    episodeWheelScrollBridge?.setEnabled(false)
+                }
+            }
+        }
+    }
+
+    /**
+     * The watch framework sends its proprietary wheel callback to the resumed Activity.
+     * Its default implementation scrolls the decor view; consume it as an episode step.
+     */
+    @androidx.annotation.Keep
+    fun onEncoderChage(timeSincePreviousMs: Int, scrollDelta: Int) {
+        if (BuildConfig.DEBUG) {
+            Log.d(
+                WHEEL_LOG_TAG,
+                "activity callback interval=$timeSincePreviousMs delta=$scrollDelta enabled=$episodeWheelEnabled",
+            )
+        }
+        if (!episodeWheelEnabled) return
+        EpisodeWheel.frameworkScrollStep(scrollDelta)?.let(::onEpisodeWheelStep)
+    }
+
+    private fun onEpisodeWheelStep(step: Int) {
+        val now = SystemClock.uptimeMillis()
+        val blockedBy = when {
+            !playerForeground -> "background"
+            isFinishing -> "finishing"
+            !hasWindowFocus() -> "focus"
+            userSeeking -> "seeking"
+            touchDownTime != null -> "touch"
+            binding.sheetScrim.visibility == View.VISIBLE -> "sheet"
+            loadingPhaseOverride == PlayerLoadingPolicy.Phase.NEXT_SEASON -> "next-season"
+            now - lastEpisodeWheelStepAtMs < EPISODE_WHEEL_DEBOUNCE_MS -> "debounce"
+            else -> null
+        }
+        if (blockedBy != null) {
+            if (BuildConfig.DEBUG) {
+                Log.d(WHEEL_LOG_TAG, "step=$step ignored=$blockedBy locked=$locked")
+            }
+            return
+        }
+        lastEpisodeWheelStepAtMs = now
+        if (BuildConfig.DEBUG) Log.d(WHEEL_LOG_TAG, "step=$step episode=$episodeIndex locked=$locked")
+        switchEpisode(episodeIndex + step)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -1269,6 +1342,11 @@ class PlayerActivity : WatchDisplayActivity() {
     private fun switchEpisode(index: Int) {
         if (index !in episodeIds.indices) return
         saveProgress(force = true)
+        // The previous engine can still finish while the next URL is being fetched.
+        releasePlayer(save = false)
+        syncPlaybackPower()
+        seasonGeneration++
+        seasonJob?.cancel()
         episodeIndex = index
         startPositionMs = 0L
         seasonPrepared = false
@@ -1277,6 +1355,7 @@ class PlayerActivity : WatchDisplayActivity() {
         // 切集重置回退/切流状态，但保留设备默认软解偏好
         resetPlaybackRecoveryState()
         refreshEpisodePicker()
+        updatePlayPause()
         loadCurrent()
     }
 
@@ -1567,7 +1646,7 @@ class PlayerActivity : WatchDisplayActivity() {
                 }
 
                 override fun onCompletion() {
-                    if (token != playGeneration) return
+                    if (ijkEngine !== engine || token != playGeneration) return
                     saveProgress(force = true)
                     if (episodeIndex < episodeIds.lastIndex) {
                         switchEpisode(episodeIndex + 1)
@@ -1700,6 +1779,7 @@ class PlayerActivity : WatchDisplayActivity() {
 
         exo.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
+                if (player !== exo) return
                 updatePlayPause()
                 when (playbackState) {
                     Player.STATE_BUFFERING -> {
@@ -2207,6 +2287,8 @@ class PlayerActivity : WatchDisplayActivity() {
                 // loadCurrent 会立刻显示起播「加载中…」
                 loadCurrent()
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                if (token != seasonGeneration) return@launch
                 setLoadingIndicator(visible = false, immediate = true)
                 Toast.makeText(
                     this@PlayerActivity,
@@ -2283,6 +2365,8 @@ class PlayerActivity : WatchDisplayActivity() {
                 positionMs = position,
                 durationMs = duration,
                 source = source,
+                episodeCount = episodeIds.size,
+                forceCloudSync = force,
             )
         }
     }
@@ -2353,6 +2437,9 @@ class PlayerActivity : WatchDisplayActivity() {
             // 退后台取消未完成跨季
             seasonGeneration++
             seasonJob?.cancel()
+            if (loadingPhaseOverride == PlayerLoadingPolicy.Phase.NEXT_SEASON) {
+                setLoadingIndicator(visible = false, immediate = true)
+            }
             syncPlaybackPower()
         }
         super.onStop()
@@ -2375,6 +2462,9 @@ class PlayerActivity : WatchDisplayActivity() {
     }
 
     companion object {
+        private const val WHEEL_LOG_TAG = "HgwWheelScroll"
+        private const val EPISODE_WHEEL_DEBOUNCE_MS = 500L
+
         private const val TAG = PlayerDiagLog.TAG
         /** 锁定后小解锁钮自动隐藏（与普通控件栏相近）。 */
         private const val UNLOCK_CHIP_AUTO_HIDE_MS = 3_200L

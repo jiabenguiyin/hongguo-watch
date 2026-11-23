@@ -50,6 +50,7 @@ class MineActivity : WatchDisplayActivity() {
 
     override fun onResume() {
         super.onResume()
+        container.redfruitAccount.onForeground()
         recreateForDisplaySizeChange()
     }
 

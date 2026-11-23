@@ -2,12 +2,18 @@ package com.hongguo.watch.upstream
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.Assume
 import org.junit.Test
 
 /**
- * Live probe against fqnovel (not a CI assertion). Run:
+ * Live end-to-end probe mirroring official 7.4.5.32 play sequence:
+ * device_register → register cookies → PlayerSigner (MetaSec stand-in) →
+ * video_tab / multi_video_model ladder.
+ *
  * `HONGGUO_LIVE_PROBE=1 ./gradlew :app:testDebugUnitTest --tests '*.LiveOfficialPlaybackProbe'`
  */
 class LiveOfficialPlaybackProbe {
@@ -23,26 +29,55 @@ class LiveOfficialPlaybackProbe {
         val http = OkHttpClient.Builder()
             .connectTimeout(12, TimeUnit.SECONDS)
             .readTimeout(12, TimeUnit.SECONDS)
-            .callTimeout(20, TimeUnit.SECONDS)
+            .callTimeout(25, TimeUnit.SECONDS)
             .build()
-        val device = mapOf(
-            "device_id" to VendorConstants.device.getValue("device_id"),
-            "iid" to VendorConstants.device.getValue("iid"),
-            "cdid" to (VendorConstants.device["cdid"] ?: UUID.randomUUID().toString()),
-        )
-        val now = System.currentTimeMillis()
-        println("PROBE episode=$episodeId device_id=${device["device_id"]} now=$now")
-        println("PROBE signer=MobilePlayback.signer (PlayerSigner / no MetaSec)")
 
+        println("PROBE flow=register→cookies→PlayerSigner→video_tab→multi_video_model")
+        println("PROBE metasec_available=${MetaSecPlayback.isAvailable()} (expected false)")
+        println("PROBE episode=$episodeId")
+
+        val seed = VendorConstants.device + mapOf("cdid" to UUID.randomUUID().toString())
+        val body = DeviceRegister.payload(seed)
+        val registerReq = Request.Builder().url(DeviceRegister.url())
+        DeviceRegister.headers(body, seed).forEach { (k, v) -> registerReq.header(k, v) }
+        registerReq.post(body.toRequestBody("application/octet-stream".toMediaType()))
+
+        val registered = try {
+            http.newCall(registerReq.build()).execute().use { response ->
+                val text = response.body?.string().orEmpty()
+                println("PROBE register http=${response.code} bytes=${text.length} setCookie=${response.headers("Set-Cookie").size}")
+                DeviceRegister.parse(text, response.headers("Set-Cookie"))
+            }
+        } catch (e: Exception) {
+            println("PROBE register FAIL ${e.javaClass.simpleName}: ${e.message}")
+            null
+        }
+
+        val device = if (registered != null) {
+            println(
+                "PROBE register OK device_id=${registered.deviceId} iid=${registered.installId} " +
+                    "cookies=${registered.cookies.keys.sorted()}",
+            )
+            seed + mapOf(
+                "device_id" to registered.deviceId,
+                "iid" to registered.installId,
+            )
+        } else {
+            println("PROBE register skipped → seeded VendorConstants identity")
+            seed
+        }
+        val cookies = registered?.cookies.orEmpty()
+        val now = System.currentTimeMillis()
         val attempts = mutableListOf<String>()
         try {
-            RequestScope.withDeadline(System.nanoTime() + TimeUnit.SECONDS.toNanos(28)) {
+            RequestScope.withDeadline(System.nanoTime() + TimeUnit.SECONDS.toNanos(32)) {
                 val ladder = MobilePlayback.ladder(
                     episodeId,
                     device,
                     http,
                     MobilePlayback.signer,
                     now,
+                    registerCookies = cookies,
                     onAttempt = { a ->
                         val line =
                             "attempt route=${a.route} outcome=${a.outcome} code=${a.code} " +

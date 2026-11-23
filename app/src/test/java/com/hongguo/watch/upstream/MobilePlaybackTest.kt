@@ -225,17 +225,32 @@ class MobilePlaybackTest {
     }
 
     @Test
-    fun registerCookiesAreNotAttachedToModelTransport() {
+    fun registerCookiesAreAttachedOnOfficialPlayTransport() {
         val cookies = mapOf("install_id" to "654321", "store-region" to "cn", "ttreq" to "1")
         MobilePlayback.ladder(
             "123",
             device,
             http(listOf(model(videoTab = true))) { request ->
-                assertNull(request.header("Cookie"))
+                assertEquals("install_id=654321; store-region=cn; ttreq=1", request.header("Cookie"))
+                assertEquals("cn", request.header("x-tt-store-region"))
+                assertEquals("did", request.header("x-tt-store-region-src"))
             },
             passthroughSigner,
             1000,
             registerCookies = cookies,
+        )
+    }
+
+    @Test
+    fun sessionCookiesAreStrippedFromRegisterCookieJar() {
+        val cookies = mapOf(
+            "install_id" to "654321",
+            "sessionid" to "account-session",
+            "ttreq" to "1",
+        )
+        assertEquals(
+            mapOf("install_id" to "654321", "ttreq" to "1"),
+            MobilePlayback.sanitizeRegisterCookies(cookies),
         )
     }
 

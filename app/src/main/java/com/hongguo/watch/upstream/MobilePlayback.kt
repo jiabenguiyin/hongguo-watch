@@ -39,13 +39,11 @@ internal data class PlaybackRouteAttempt(
 )
 
 /**
- * Playback against Fanqie model endpoints (aligned with jycao2/hongguoTV kotlin-v0.33.1).
- *
- * Official APIs silently drop v5 placeholder helios/medusa headers (empty HTTP 200).
- * Working path: pick `_rticket` via v5 branch search, then attach **PlayerSigner**
- * (Argus/Ladon stand-in; official app uses MetaSec/`libmetasec_ml.so`). Prefer GET
- * `video_tab/multi_video_model/v1/` (Baidu official 7.4.5.32 DEX; also has `video_tab/video_model`),
- * then POST `/novel/player/multi_video_model/v1` (no `/player/`, no `dr_scene`, **74532**).
+ * Playback against Fanqie model endpoints — mirror official 红果 **7.4.5.32** sequence:
+ * device_register → register cookies → signed headers → GET video_tab/multi_video_model →
+ * POST multi_video_model → stream. Official MetaSec (`libmetasec_ml.so`) cannot be
+ * redistributed; [MetaSecPlayback] documents blockers. Watch uses GPL **PlayerSigner**
+ * (Argus/Ladon stand-in) until a lawful MetaSec path exists.
  */
 internal object MobilePlayback {
     private val v5Signer = Signer(mobileV5 = true)
@@ -128,17 +126,16 @@ internal object MobilePlayback {
         signer: MobilePlaybackSigner,
         now: Long,
         preference: PlaybackRoutePreference = PlaybackRoutePreference.AUTO,
-        @Suppress("UNUSED_PARAMETER")
         registerCookies: Map<String, String> = emptyMap(),
         onAttempt: (PlaybackRouteAttempt) -> Unit = {},
         onRoute: (String) -> Unit = {},
     ): StreamLadder {
-        // registerCookies ignored: hongguoTV 0.33.1 model transport uses CookieJar.NO_COOKIES.
         require(id.matches(Regex("[0-9]{1,30}")))
         RequestScope.ensureWithinDeadline()
+        val cookies = sanitizeRegisterCookies(registerCookies)
         val hosts = modelHosts()
         val pending = ArrayDeque(Route.entries)
-        // hongguoTV 0.33.1: GET video_tab (real sign) first; POST v1 is spare.
+        // Official AUTO: GET video_tab first; POST multi_video_model is spare.
         if (preference == PlaybackRoutePreference.AUTO) {
             pending.remove(Route.VIDEO_TAB)
             pending.addFirst(Route.VIDEO_TAB)
@@ -213,11 +210,11 @@ internal object MobilePlayback {
                 val ladder = when (route) {
                     Route.VIDEO_TAB ->
                         ladderOnVideoTab(
-                            id, device, http, signer, ticket, routeDeadline, claimFollowup,
+                            id, device, http, signer, ticket, routeDeadline, claimFollowup, cookies,
                         )
                     Route.VIDEO_MODEL ->
                         ladderOnVideoModel(
-                            id, device, http, signer, ticket, routeDeadline, claimFollowup,
+                            id, device, http, signer, ticket, routeDeadline, claimFollowup, cookies,
                         )
                     Route.PRELOAD ->
                         ladderOnHost(
@@ -230,6 +227,7 @@ internal object MobilePlayback {
                             routeDeadline = routeDeadline,
                             preload = true,
                             claimFollowup = claimFollowup,
+                            registerCookies = cookies,
                         )
                     else ->
                         ladderOnHost(
@@ -242,6 +240,7 @@ internal object MobilePlayback {
                             routeDeadline = routeDeadline,
                             preload = false,
                             claimFollowup = claimFollowup,
+                            registerCookies = cookies,
                         )
                 }
                 report(route, "ok", start, 200)
@@ -316,6 +315,31 @@ internal object MobilePlayback {
             "_rticket" to now.toString(),
         )
 
+    /** Anonymous device_register cookies only (install_id / store-region / ttreq …). */
+    internal fun sanitizeRegisterCookies(raw: Map<String, String>): Map<String, String> {
+        val allow = setOf(
+            "install_id", "ttreq", "store-region", "store-region-src", "odin_tt", "uid_tt",
+        )
+        return raw.filter { (name, value) ->
+            name in allow && value.isNotBlank() && value.length <= 512 &&
+                value.all { it in ' '..'~' && it != ';' && it != ',' }
+        }
+    }
+
+    private fun Request.Builder.attachRegisterSession(
+        registerCookies: Map<String, String>,
+    ): Request.Builder {
+        if (registerCookies.isEmpty()) return this
+        header("Cookie", registerCookies.entries.joinToString("; ") { "${it.key}=${it.value}" })
+        registerCookies["store-region"]?.let { header("x-tt-store-region", it) }
+        registerCookies["store-region-src"]?.let { header("x-tt-store-region-src", it) }
+            ?: registerCookies["store-region"]?.let { header("x-tt-store-region-src", "did") }
+        return this
+    }
+
+    private fun playTransport(http: OkHttpClient): OkHttpClient =
+        http.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
+
     /** Official POST `/novel/player/multi_video_model/v1` (or legacy preload scene). */
     private fun ladderOnHost(
         host: String,
@@ -327,6 +351,7 @@ internal object MobilePlayback {
         routeDeadline: Long,
         preload: Boolean,
         claimFollowup: () -> Boolean,
+        registerCookies: Map<String, String>,
     ): StreamLadder {
         val query = playbackQuery(device, now)
         val path = if (preload) {
@@ -357,13 +382,14 @@ internal object MobilePlayback {
                 "x-ss-stub",
                 MessageDigest.getInstance("MD5").digest(bytes).joinToString("") { "%02X".format(it) },
             )
+            .attachRegisterSession(registerCookies)
         val signed = signer.sign(url.toString(), bytes, query)
         request.url(signed.url)
         signed.headers.forEach { (k, v) -> request.header(k, v) }
         RequestScope.ensureActive()
         request.post(bytes.toRequestBody("application/json; charset=utf-8".toMediaType()))
-        // Match working TV: model posts do not attach account/register cookies.
-        val transport = http.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
+        // CookieJar.NO_COOKIES: register session is on Cookie header only (no account session).
+        val transport = playTransport(http)
         return RequestScope.execute(transport.newCall(request.build()), routeDeadline) { response ->
             val stage = if (preload) "preload" else "mobile-model"
             val data = modelData(response, stage, host)
@@ -388,6 +414,7 @@ internal object MobilePlayback {
         now: Long,
         routeDeadline: Long,
         claimFollowup: () -> Boolean,
+        registerCookies: Map<String, String>,
     ): StreamLadder {
         var lastEmpty: EmptyPlaybackResponseException? = null
         var lastTransient: IOException? = null
@@ -413,12 +440,13 @@ internal object MobilePlayback {
                     .header("User-Agent", PLAYBACK_UA)
                     .header("Accept", "application/json")
                     .header("Content-Encoding", "gzip")
+                    .attachRegisterSession(registerCookies)
                 val signed = signer.sign(url.toString(), bytes, query)
                 request.url(signed.url)
                 signed.headers.forEach { (k, v) -> request.header(k, v) }
                 RequestScope.ensureActive()
                 request.post(bytes.toRequestBody("application/json; charset=utf-8".toMediaType()))
-                val transport = http.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
+                val transport = playTransport(http)
                 return RequestScope.execute(transport.newCall(request.build()), hostDeadline) { response ->
                     val data = modelData(response, "video-model", host)
                     directModel(data)?.let {
@@ -450,6 +478,7 @@ internal object MobilePlayback {
         now: Long,
         routeDeadline: Long,
         claimFollowup: () -> Boolean,
+        registerCookies: Map<String, String>,
     ): StreamLadder {
         val query = linkedMapOf<String, String>().apply {
             putAll(VendorConstants.device)
@@ -494,9 +523,10 @@ internal object MobilePlayback {
                 val request = Request.Builder().url(signed.url)
                     .header("User-Agent", TAB_UA)
                     .header("Accept", "application/json; charset=utf-8,application/x-protobuf")
+                    .attachRegisterSession(registerCookies)
                 signed.headers.forEach { (key, value) -> request.header(key, value) }
                 request.get()
-                val transport = http.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
+                val transport = playTransport(http)
                 return RequestScope.execute(transport.newCall(request.build()), routeDeadline) { response ->
                     val data = modelData(response, "video-tab", url.host)
                     val entries = data.optJSONObject("video_model_data") ?: data

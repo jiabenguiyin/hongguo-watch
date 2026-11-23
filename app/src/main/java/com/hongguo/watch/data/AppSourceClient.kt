@@ -697,8 +697,8 @@ class AppSourceClient(
             if (prefs.getString(KEY_CDID, "").isNullOrBlank()) {
                 prefs.edit().putString(KEY_CDID, UUID.randomUUID().toString()).apply()
             }
-            // Upgraded installs may lack register cookies; refresh once so model POSTs
-            // can send Win-style store-region / install_id / ttreq cookies.
+            // Official play flow needs register cookies on video_tab / multi_video_model.
+            // Refresh once when upgraded installs lack store-region / install_id / ttreq.
             if (registerCookies().isEmpty()) {
                 runCatching { registerDeviceLocked() }
             }

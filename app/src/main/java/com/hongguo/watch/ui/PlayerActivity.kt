@@ -42,6 +42,7 @@ import com.hongguo.watch.BuildConfig
 import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
 import com.hongguo.watch.data.NoPlayableRenditionException
+import com.hongguo.watch.data.PublicPlaybackFallback
 import com.hongguo.watch.data.SettingsStore
 import com.hongguo.watch.data.model.Episode
 import com.hongguo.watch.data.model.RelatedWork
@@ -1506,7 +1507,22 @@ class PlayerActivity : WatchDisplayActivity() {
                     activeKernel = PlayerKernel.IJK
                     softDecodePreferred = true
                 }
-                binding.playerNotice.visibility = if (stream.isPreview) View.VISIBLE else View.GONE
+                when {
+                    stream.sourceLabel == PublicPlaybackFallback.SOURCE_LABEL -> {
+                        binding.playerNotice.setText(R.string.playback_public_backup_notice)
+                        binding.playerNotice.visibility = View.VISIBLE
+                        binding.qualityButton.setText(R.string.playback_public_quality)
+                    }
+                    stream.isPreview -> {
+                        binding.playerNotice.setText(R.string.play_preview_notice)
+                        binding.playerNotice.visibility = View.VISIBLE
+                        refreshQualityUi()
+                    }
+                    else -> {
+                        binding.playerNotice.visibility = View.GONE
+                        refreshQualityUi()
+                    }
+                }
                 PlayerDiagLog.markPlayStart(
                     codec = stream.codec.ifBlank { "?" },
                     quality = stream.quality,

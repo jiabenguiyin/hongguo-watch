@@ -16,6 +16,8 @@ import com.hongguo.watch.upstream.DeviceRegister
 import com.hongguo.watch.upstream.EmptyPlaybackResponseException
 import com.hongguo.watch.upstream.LadderParseResult
 import com.hongguo.watch.upstream.MobilePlayback
+import com.hongguo.watch.upstream.PlayRetryPlan
+import com.hongguo.watch.upstream.PlaybackSourceException
 import com.hongguo.watch.upstream.Rendition
 import com.hongguo.watch.upstream.RequestScope
 import com.hongguo.watch.upstream.Signer
@@ -48,6 +50,7 @@ class AppSourceClient(
 ) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val signer = Signer()
+    private val publicPlaybackFallback by lazy { PublicPlaybackFallback(client = client) }
     private val clock: () -> Long = System::currentTimeMillis
     private val relatedCache = ConcurrentHashMap<String, List<RelatedWork>>()
     private val playbackIdentityRefreshLock = Any()
@@ -482,10 +485,47 @@ class AppSourceClient(
         require(SERIES_ID.matches(seriesId.trim())) { "无效剧集 ID" }
         val vid = episodeId.trim()
         require(SERIES_ID.matches(vid)) { "无效分集 ID" }
-        val ladder = RequestScope.withDeadline(
-            System.nanoTime() + TimeUnit.SECONDS.toNanos(12),
-        ) {
-            fetchMobileLadder(vid, routePreference)
+        var publicFallbackAttempted = false
+        fun tryPublicFallback(): StreamSelection? {
+            publicFallbackAttempted = true
+            val stream = try {
+                publicPlaybackFallback.resolve(seriesId, vid)
+            } catch (error: Exception) {
+                RequestScope.ensureActive()
+                PlayerDiagLog.w("public 360p fallback unavailable: ${error.javaClass.simpleName}")
+                null
+            } ?: return null
+            PlayerDiagLog.w("official playback unavailable → public 360p fallback")
+            val rendition = Rendition(
+                quality = 360,
+                codec = "h264",
+                width = null,
+                height = null,
+                url = stream.url,
+                key = null,
+            )
+            return StreamSelection(
+                stream = stream,
+                renditions = listOf(rendition),
+                selectedKey = StreamFailover.key(rendition),
+            )
+        }
+        if (routePreference == PlaybackRoutePreference.PUBLIC_360P) {
+            tryPublicFallback()?.let { return it }
+        }
+
+        val ladder = try {
+            RequestScope.withDeadline(
+                System.nanoTime() + TimeUnit.SECONDS.toNanos(12),
+            ) {
+                fetchMobileLadder(vid, routePreference)
+            }
+        } catch (error: Exception) {
+            RequestScope.ensureActive()
+            if (!publicFallbackAttempted && shouldTryPublicFallback(error)) {
+                tryPublicFallback()?.let { return it }
+            }
+            throw error
         }
         val capped = maxHeight.coerceIn(240, 1080)
         val parse = ladder.parseResult().let {
@@ -496,13 +536,36 @@ class AppSourceClient(
             }
         }
         PlayerDiagLog.logLadder(parse, capped, preferAvc = preferAvc, avcOnly = avcOnly)
-        return selectFromLadder(
-            renditions = ladder.renditions,
-            maxHeight = capped,
-            preferAvc = preferAvc,
-            avcOnly = avcOnly,
-            excludeKeys = excludeKeys,
-        )
+        return try {
+            selectFromLadder(
+                renditions = ladder.renditions,
+                maxHeight = capped,
+                preferAvc = preferAvc,
+                avcOnly = avcOnly,
+                excludeKeys = excludeKeys,
+            )
+        } catch (error: NoPlayableRenditionException) {
+            RequestScope.ensureActive()
+            if (!publicFallbackAttempted) tryPublicFallback()?.let { return it }
+            throw error
+        }
+    }
+
+    private fun shouldTryPublicFallback(error: Exception): Boolean = when (error) {
+        is java.util.concurrent.CancellationException,
+        is InterruptedException,
+        -> false
+        is NoPlayableRenditionException,
+        is EmptyPlaybackResponseException,
+        -> true
+        is PlaybackSourceException -> when (error.reason) {
+            PlaybackSourceException.Reason.REJECTED -> false
+            PlaybackSourceException.Reason.HTTP_REJECTED ->
+                error.upstreamCode !in setOf(401, 403, 429)
+            else -> true
+        }
+        is IOException -> PlayRetryPlan.temporary(error)
+        else -> false
     }
 
     fun fetchStream(

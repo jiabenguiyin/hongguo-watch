@@ -105,4 +105,21 @@ class WatchDecodePolicyTest {
             WatchDecodePolicy.effectiveMaxQuality(720, fragileSoc = false, memClassMb = 192),
         )
     }
+
+    @Test
+    fun softHevcDoesNotForce360ByDefault() {
+        // 短播 / 起播：fragile 低内存仍 480，不因软解 HEVC 硬压 360
+        org.junit.Assert.assertEquals(
+            480,
+            WatchDecodePolicy.effectiveMaxQuality(
+                userMaxQuality = 720,
+                fragileSoc = true,
+                memClassMb = 192,
+            ),
+        )
+        org.junit.Assert.assertEquals(
+            360,
+            WatchDecodePolicy.SOFT_LAG_STEP_DOWN_QUALITY,
+        )
+    }
 }

@@ -479,6 +479,7 @@
                     android:layout_weight="1"
                     android:background="@android:color/transparent"
                     android:contentDescription="@string/cd_prev"
+                    android:minWidth="36dp"
                     android:padding="8dp"
                     android:scaleType="centerInside"
                     android:src="@drawable/ic_prev" />
@@ -503,6 +504,7 @@
                     android:layout_weight="1"
                     android:background="@android:color/transparent"
                     android:contentDescription="@string/cd_next"
+                    android:minWidth="36dp"
                     android:padding="8dp"
                     android:scaleType="centerInside"
                     android:src="@drawable/ic_next" />

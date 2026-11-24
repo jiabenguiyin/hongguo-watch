@@ -54,6 +54,10 @@ object MediaCodecCaps {
         )
     }
 
+    /** 本机是否有可用 HEVC 硬解（不含软解伪装名）。CD_Watch_A 等 fragileSoc 通常为 false。 */
+    fun hasHevcHardware(): Boolean =
+        enumerateAvcHevc().any { it.mime.contains("hevc") && it.hardware && !it.software }
+
     fun summaryLines(): List<String> {
         val lines = enumerateAvcHevc()
         if (lines.isEmpty()) {
@@ -65,6 +69,7 @@ object MediaCodecCaps {
             append("decoder summary avc=${avc.size} hevc=${hevc.size}")
             append(" avcSw=${avc.count { it.software }} avcHw=${avc.count { it.hardware }}")
             append(" hevcSw=${hevc.count { it.software }} hevcHw=${hevc.count { it.hardware }}")
+            append(" hasHevcHw=${hasHevcHardware()}")
             append(
                 " usableHevcSoft=${hevc.any { it.software && it.maxWidth >= 640 && it.maxHeight >= 360 }}",
             )

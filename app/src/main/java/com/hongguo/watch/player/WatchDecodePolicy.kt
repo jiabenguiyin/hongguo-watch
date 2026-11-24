@@ -22,11 +22,17 @@ object WatchDecodePolicy {
     private const val WATCH_MAX_SHORT_SIDE_PX = 480
     private const val WATCH_MAX_LONG_SIDE_PX = 640
 
-    /** 脆弱 SoC / 低内存默认清晰度上限（≤480p AVC）。 */
+    /** 脆弱 SoC / 低内存默认清晰度上限（≤480p；短播不偷偷压到 360）。 */
     const val FRAGILE_DEFAULT_MAX_QUALITY = 480
 
     /** 低内存阈值（MB）；CD12 Max / UWS6152 实测 memClass=192。 */
     const val LOW_MEM_CLASS_MB = 192
+
+    /** 软解久播卡顿后，会话内一次性降一档的目标（480→360）；不改用户设置。 */
+    const val SOFT_LAG_STEP_DOWN_QUALITY = 360
+
+    /** 软解连续播放多久后，若再遇久卡才允许会话内降一档（毫秒）。 */
+    const val SOFT_LAG_STEP_DOWN_AFTER_MS = 3 * 60_000L
 
     enum class VideoCodecMode {
         /** 系统默认顺序 */
@@ -91,17 +97,27 @@ object WatchDecodePolicy {
     }
 
     /**
-     * 脆弱 SoC + 低内存：有效清晰度上限压到 ≤480p（仍可选更低；用户设 720 也会被钳制）。
-     * 其它设备尊重用户设置。
+     * 脆弱 SoC + 低内存：有效清晰度上限 ≤480p（与 0.5.6 一致）。
+     * 软解 HEVC 久播卡顿改由会话内降档（→360），短播不强制低压。
+     * 其它设备尊重用户设置。选流仍 preferAvc。
      */
-    fun effectiveMaxQuality(context: Context, userMaxQuality: Int): Int =
+    @Suppress("UNUSED_PARAMETER")
+    fun effectiveMaxQuality(
+        context: Context,
+        userMaxQuality: Int,
+        softDecode: Boolean = true,
+    ): Int =
         effectiveMaxQuality(
             userMaxQuality = userMaxQuality,
             fragileSoc = isFragileSoc(),
             memClassMb = memoryClassMb(context),
         )
 
-    fun effectiveMaxQuality(userMaxQuality: Int, fragileSoc: Boolean, memClassMb: Int): Int {
+    fun effectiveMaxQuality(
+        userMaxQuality: Int,
+        fragileSoc: Boolean,
+        memClassMb: Int,
+    ): Int {
         val user = userMaxQuality.coerceIn(240, 1080)
         if (!fragileSoc) return user
         return if (memClassMb in 1..LOW_MEM_CLASS_MB) {
@@ -110,6 +126,10 @@ object WatchDecodePolicy {
             user
         }
     }
+
+    /** IJK 软解在脆弱 SoC 上减轻解码/缓冲压力（丢帧；不砍默认清晰度）。 */
+    fun preferLightIjkSoftLoad(context: Context, softDecode: Boolean): Boolean =
+        softDecode && (isFragileSoc() || shouldPreferSoftwareDecode(context))
 
     fun isFragileSoc(
         manufacturer: String = Build.MANUFACTURER.orEmpty(),

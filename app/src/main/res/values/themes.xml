@@ -20,6 +20,9 @@
         <item name="android:background">@color/bg_elevated</item>
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
+        <!-- single-choice 默认字色常跟 DayNight 浅色走，强制白字 -->
+        <item name="android:textColorAlertDialogListItem">@color/text_primary</item>
+        <item name="colorOnSurface">@color/text_primary</item>
         <item name="colorPrimary">@color/accent</item>
         <item name="colorAccent">@color/text_primary</item>
         <item name="colorControlActivated">@color/accent</item>

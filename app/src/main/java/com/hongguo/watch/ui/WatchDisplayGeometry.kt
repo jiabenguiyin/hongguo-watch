@@ -29,6 +29,24 @@ internal object WatchDisplayGeometry {
         return ceil(radius - sqrt(distance * (2.0 * radius - distance))).toInt()
     }
 
+    /**
+     * 底栏「选集 / 倍速」左右内收：够清圆角即可。
+     * 全量 [cornerSideInset] 在方屏大圆角上会留下巨大空沟（0.5.6）；横屏必须封顶。
+     */
+    fun bottomChromeSidePad(
+        sidePad: Int,
+        cornerSideInset: Int,
+        landscape: Boolean,
+        cornerSafe: Boolean,
+        landscapeCapPx: Int,
+        portraitCapPx: Int,
+    ): Int {
+        if (!landscape && !cornerSafe) return sidePad
+        val cap = if (landscape) landscapeCapPx.coerceAtLeast(0) else portraitCapPx.coerceAtLeast(0)
+        val cappedCorner = minOf(cornerSideInset.coerceAtLeast(0), cap)
+        return maxOf(sidePad.coerceAtLeast(0), cappedCorner)
+    }
+
     fun preferredInsets(
         widthPx: Int,
         heightPx: Int,

@@ -152,10 +152,6 @@
                         style="@style/Widget.HongguoWatch.SettingsArrow" />
                 </LinearLayout>
 
-                <TextView
-                    style="@style/Widget.HongguoWatch.SettingsHint"
-                    android:text="@string/playback_route_hint" />
-
                 <LinearLayout
                     android:id="@+id/playbackProxyButton"
                     style="@style/Widget.HongguoWatch.SettingsAction"
@@ -176,10 +172,6 @@
                     <TextView
                         style="@style/Widget.HongguoWatch.SettingsArrow" />
                 </LinearLayout>
-
-                <TextView
-                    style="@style/Widget.HongguoWatch.SettingsHint"
-                    android:text="@string/playback_proxy_hint" />
 
                 <LinearLayout style="@style/Widget.HongguoWatch.SettingsRow">
 
@@ -211,6 +203,34 @@
                         android:id="@+id/episodeWheelSwitch"
                         style="@style/Widget.HongguoWatch.SettingsSwitch"
                         android:text="@string/settings_episode_wheel" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                style="@style/Widget.HongguoWatch.SettingsHeading"
+                android:text="@string/settings_section_time" />
+
+            <LinearLayout
+                style="@style/Widget.HongguoWatch.SettingsGroup">
+
+                <LinearLayout
+                    android:id="@+id/timeLockButton"
+                    style="@style/Widget.HongguoWatch.SettingsAction">
+
+                    <ImageView
+                        style="@style/Widget.HongguoWatch.SettingsIcon"
+                        android:src="@drawable/ic_lock" />
+
+                    <TextView
+                        style="@style/Widget.HongguoWatch.SettingsRowTitle"
+                        android:text="@string/time_lock_title" />
+
+                    <TextView
+                        android:id="@+id/timeLockStatus"
+                        style="@style/Widget.HongguoWatch.SettingsValue" />
+
+                    <TextView
+                        style="@style/Widget.HongguoWatch.SettingsArrow" />
                 </LinearLayout>
             </LinearLayout>
 

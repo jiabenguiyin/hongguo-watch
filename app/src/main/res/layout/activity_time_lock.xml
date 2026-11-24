@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/timeLockRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:orientation="vertical"
+    android:paddingHorizontal="@dimen/watch_pad"
+    android:paddingTop="@dimen/watch_pad_tight"
+    android:paddingBottom="@dimen/watch_pad_tight">
+
+    <LinearLayout
+        android:id="@+id/timeLockToolbar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingBottom="4dp">
+
+        <TextView
+            android:id="@+id/backButton"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_control_button"
+            android:contentDescription="@string/settings_back"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="@string/back"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:text="@string/time_lock_title"
+            android:textColor="@color/accent"
+            android:textSize="@dimen/watch_title"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/toolbarClock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:contentDescription="@string/cd_toolbar_clock"
+            android:fontFamily="sans-serif-medium"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:overScrollMode="ifContentScrolls">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="@dimen/watch_pad">
+
+            <LinearLayout style="@style/Widget.HongguoWatch.SettingsGroup">
+
+                <LinearLayout style="@style/Widget.HongguoWatch.SettingsRow">
+
+                    <ImageView
+                        style="@style/Widget.HongguoWatch.SettingsIcon"
+                        android:src="@drawable/ic_lock" />
+
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/timeLockSwitch"
+                        style="@style/Widget.HongguoWatch.SettingsSwitch"
+                        android:text="@string/time_lock_label" />
+                </LinearLayout>
+
+                <TextView
+                    style="@style/Widget.HongguoWatch.SettingsHint"
+                    android:text="@string/time_lock_hint" />
+
+                <LinearLayout
+                    android:id="@+id/dailyLimitButton"
+                    style="@style/Widget.HongguoWatch.SettingsAction">
+
+                    <ImageView
+                        style="@style/Widget.HongguoWatch.SettingsIcon"
+                        android:src="@drawable/ic_settings_screen_off" />
+
+                    <TextView
+                        style="@style/Widget.HongguoWatch.SettingsRowTitle"
+                        android:text="@string/time_lock_daily_limit" />
+
+                    <TextView
+                        android:id="@+id/dailyLimitStatus"
+                        style="@style/Widget.HongguoWatch.SettingsValue" />
+
+                    <TextView style="@style/Widget.HongguoWatch.SettingsArrow" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                style="@style/Widget.HongguoWatch.SettingsGroup"
+                android:layout_marginTop="@dimen/watch_pad_tight">
+
+                <LinearLayout style="@style/Widget.HongguoWatch.SettingsRow">
+
+                    <ImageView
+                        style="@style/Widget.HongguoWatch.SettingsIcon"
+                        android:src="@drawable/ic_settings_update" />
+
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/restReminderSwitch"
+                        style="@style/Widget.HongguoWatch.SettingsSwitch"
+                        android:text="@string/time_lock_rest_reminder" />
+                </LinearLayout>
+
+                <LinearLayout style="@style/Widget.HongguoWatch.SettingsRow">
+
+                    <TextView
+                        style="@style/Widget.HongguoWatch.SettingsRowTitle"
+                        android:layout_marginStart="40dp"
+                        android:text="@string/time_lock_rest_interval" />
+
+                    <TextView
+                        style="@style/Widget.HongguoWatch.SettingsValue"
+                        android:text="@string/time_lock_smart" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                style="@style/Widget.HongguoWatch.SettingsGroup"
+                android:layout_marginTop="@dimen/watch_pad_tight">
+
+                <LinearLayout style="@style/Widget.HongguoWatch.SettingsRow">
+
+                    <ImageView
+                        style="@style/Widget.HongguoWatch.SettingsIcon"
+                        android:src="@drawable/ic_settings_screen_off" />
+
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/sleepReminderSwitch"
+                        style="@style/Widget.HongguoWatch.SettingsSwitch"
+                        android:text="@string/time_lock_sleep_reminder" />
+                </LinearLayout>
+
+                <LinearLayout style="@style/Widget.HongguoWatch.SettingsRow">
+
+                    <TextView
+                        style="@style/Widget.HongguoWatch.SettingsRowTitle"
+                        android:layout_marginStart="40dp"
+                        android:text="@string/time_lock_sleep_time" />
+
+                    <TextView
+                        style="@style/Widget.HongguoWatch.SettingsValue"
+                        android:text="@string/time_lock_smart" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/usageLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/watch_pad"
+                android:gravity="center"
+                android:textColor="@color/text_secondary"
+                android:textSize="@dimen/watch_meta" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

@@ -64,6 +64,11 @@
             android:screenOrientation="portrait" />
 
         <activity
+            android:name=".ui.TimeLockActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
             android:name=".ui.AccountSyncActivity"
             android:exported="false"
             android:screenOrientation="portrait" />

@@ -137,7 +137,8 @@ class ContentRepository internal constructor(
     )
 
     /**
-     * 相关季列表。优先 App plan 接口；失败时用标题 stem 搜索作降级列表（不保证可自动连播）。
+     * 相关季列表。优先 App plan 接口（按 book/series id）；
+     * 失败时用标题 stem 仅作**展示**降级，不可用于自动连播。
      */
     suspend fun related(seriesId: String, seriesTitle: String = "", force: Boolean = false): List<RelatedWork> =
         withContext(Dispatchers.IO) {
@@ -165,19 +166,15 @@ class ContentRepository internal constructor(
             }
         }
 
-    /** 末集跨季：官方相关优先，标题唯一命中下一季作降级。 */
+    /**
+     * 末集跨季：只走相关作品接口返回的稳定 ID / season_index。
+     * 禁止标题搜索降级，避免同名异剧误跳。
+     */
     suspend fun resolveNextSeason(seriesId: String, seriesTitle: String): RelatedWork? =
         withContext(Dispatchers.IO) {
             val current = Series(id = seriesId, title = seriesTitle, source = SeriesSource.APP)
-            val related = runCatching { related(seriesId, seriesTitle) }.getOrDefault(emptyList())
+            val related = runCatching { appSource.fetchRelated(seriesId) }.getOrDefault(emptyList())
             RelatedWorks.nextSeason(current, related)
-                ?: run {
-                    val stem = RelatedWorks.stem(seriesTitle)
-                    if (stem.length < 2) return@run null
-                    val page = runCatching { appSource.search(stem.take(12), page = 1) }.getOrNull()
-                        ?: return@run null
-                    RelatedWorks.nextFromSearchFallback(current, page.items)
-                }
         }
 
     suspend fun recentHistory(): List<WatchHistoryEntity> = currentLibrary().history.recent()
@@ -222,6 +219,8 @@ class ContentRepository internal constructor(
     }
 
     suspend fun clearHistory() = currentLibrary().clearHistory()
+
+    suspend fun deleteHistory(seriesId: String) = currentLibrary().deleteHistory(seriesId)
 
     suspend fun favorites(): List<FavoriteEntity> = currentLibrary().favorites.list()
 

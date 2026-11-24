@@ -138,6 +138,7 @@ class PlayerActivity : WatchDisplayActivity() {
     private val repo get() = (application as HongguoWatchApp).container.repository
     private val settings get() = (application as HongguoWatchApp).container.settings
     private val videoCache get() = (application as HongguoWatchApp).container.videoCache
+    private val timeLock get() = (application as HongguoWatchApp).container.timeLock
     /** 当前是否走本地缓存文件（与网络流二选一）。 */
     private var playingFromCache = false
 
@@ -325,6 +326,18 @@ class PlayerActivity : WatchDisplayActivity() {
             episodeIndex = initialEpisode.index
             startPositionMs = initialEpisode.positionMs
             refreshEpisodePicker()
+            if (timeLock.isBlocked()) {
+                pauseActive()
+                TimeLockGate.showLockDialog(
+                    activity = this@PlayerActivity,
+                    timeLock = timeLock,
+                    onUnlocked = {
+                        playActive()
+                        updatePlayPause()
+                    },
+                    onCancel = { finish() },
+                )
+            }
             loadCurrent()
             bindEpisodeWheel()
         }
@@ -601,6 +614,22 @@ class PlayerActivity : WatchDisplayActivity() {
         val sidePad = safe?.let { maxOf(it.left, it.right) } ?: preferred.horizontal
         val topSafe = safe?.top ?: preferred.top
         val bottomSafe = safe?.bottom ?: preferred.vertical
+        // 横屏底栏左右：圆角会裁「选集 / 倍速」，按角弧再内收一截
+        val landscape = resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE || landscapePreferred
+        val metrics = resources.displayMetrics
+        val cornerRadius = WatchDisplayGeometry.fallbackCornerRadius(
+            widthPx = metrics.widthPixels,
+            heightPx = metrics.heightPixels,
+            round = round,
+            compact = cornerSafe,
+        )
+        val bottomCornerSide = WatchDisplayGeometry.cornerSideInset(cornerRadius, bottomSafe)
+        val bottomSidePad = if (landscape || cornerSafe) {
+            maxOf(sidePad, bottomCornerSide, WatchUi.dp(this, if (landscape) 28f else 20f))
+        } else {
+            sidePad
+        }
         // 状态条：顶/左右吃系统栏与圆角，背景仍由 topChrome 铺满
         binding.playerStatusStrip.setPadding(
             sidePad,
@@ -611,9 +640,9 @@ class PlayerActivity : WatchDisplayActivity() {
         binding.midControls.setPadding(sidePad, 0, sidePad, 0)
         // 底栏按钮行：左右+底安全边；整栏容器与进度贴真底
         binding.bottomButtons.setPadding(
-            sidePad,
+            bottomSidePad,
             binding.bottomButtons.paddingTop,
-            sidePad,
+            bottomSidePad,
             bottomSafe,
         )
         val available = resources.displayMetrics.widthPixels - sidePad * 2
@@ -2260,6 +2289,26 @@ class PlayerActivity : WatchDisplayActivity() {
                 ticks++
                 // ~8s 写一次历史（500ms×16）；暂停/退出另有 force 落盘
                 if (ticks % 16 == 0 && isActive) saveProgress(force = false)
+                // 时间锁：播放中累计观看时长；超额后整应用锁死至 PIN
+                if (isActivelyPlaying()) {
+                    timeLock.addUsage(500L)
+                    if (ticks % 4 == 0 && timeLock.isBlocked()) {
+                        pauseActive()
+                        updatePlayPause()
+                        saveProgress(force = true)
+                        withContext(Dispatchers.Main) {
+                            TimeLockGate.showLockDialog(
+                                activity = this@PlayerActivity,
+                                timeLock = timeLock,
+                                onUnlocked = {
+                                    playActive()
+                                    updatePlayPause()
+                                },
+                                onCancel = { finish() },
+                            )
+                        }
+                    }
+                }
             }
         }
     }

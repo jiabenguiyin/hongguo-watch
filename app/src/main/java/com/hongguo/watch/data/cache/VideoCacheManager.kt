@@ -161,6 +161,41 @@ class VideoCacheManager(
         }
     }
 
+    /** 删除某部剧全部已缓存分集。 */
+    suspend fun removeSeries(seriesId: String): Int = withContext(Dispatchers.IO) {
+        val id = seriesId.trim()
+        if (id.isEmpty()) return@withContext 0
+        indexMutex.withLock {
+            val victims = memoryIndex.filter { it.seriesId == id }
+            if (victims.isEmpty()) return@withLock 0
+            victims.forEach { entry ->
+                jobs.remove(entry.id)?.cancel()
+                runCatching { File(rootDir, entry.fileName).delete() }
+                runCatching { File(rootDir, "${entry.fileName}.part").delete() }
+            }
+            memoryIndex.removeAll { it.seriesId == id }
+            persistIndexUnlocked()
+            victims.size
+        }
+    }
+
+    /** 按剧分组：每部剧一条摘要，分集按集号升序。 */
+    fun listSeriesGroups(): List<VideoCacheSeriesGroup> {
+        return listReady()
+            .groupBy { it.seriesId }
+            .map { (seriesId, episodes) ->
+                val ordered = episodes.sortedBy { it.episodeNumber }
+                VideoCacheSeriesGroup(
+                    seriesId = seriesId,
+                    seriesTitle = ordered.firstOrNull()?.seriesTitle.orEmpty().ifBlank { seriesId },
+                    episodeCount = ordered.size,
+                    totalBytes = ordered.sumOf { it.sizeBytes },
+                    episodes = ordered,
+                )
+            }
+            .sortedByDescending { group -> group.episodes.maxOfOrNull { it.lastAccessMs } ?: 0L }
+    }
+
     suspend fun clearAll() = withContext(Dispatchers.IO) {
         jobs.values.forEach { it.cancel() }
         jobs.clear()

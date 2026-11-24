@@ -8,8 +8,8 @@ import com.hongguo.watch.upstream.str
 import org.json.JSONObject
 
 /**
- * 对照 N3urda/hongguoTV `RelatedWorks`：解析 App 族 plan 相关作品，并保守挑选下一季。
- * 不猜无关标题；待上线 / 禁播 / 非唯一候选一律不自动跳。
+ * 解析 App 族 plan 相关作品，并按稳定 ID / season_index 挑选下一季。
+ * 自动连播不得仅靠标题字符串相等——同名异剧会误跳。
  */
 object RelatedWorks {
     private val seasonSuffix = Regex("第?([0-9零〇一二两三四五六七八九十百]+)季$")
@@ -37,9 +37,17 @@ object RelatedWorks {
         return (total + digit).takeIf { it > 0 }
     }
 
+    /** 展示排序用；自动连播不依赖此 stem。 */
     fun stem(title: String): String = title.trim()
         .replace(seasonSuffix, "")
         .replace(Regex("[\\p{P}\\p{Z}\\s]"), "")
+
+    /** 仅解析「当前剧」自身标题上的季号，不当作跨剧匹配键。 */
+    fun seasonIndexFromOwnTitle(title: String): Int? {
+        val trimmed = title.trim()
+        val suffix = seasonSuffix.find(trimmed) ?: return 1
+        return seasonNumber(suffix.groupValues[1])
+    }
 
     fun ordered(current: Series, rows: List<RelatedWork>): List<RelatedWork> = rows.sortedWith(
         compareBy<RelatedWork> { if (stem(it.series.title) == stem(current.title)) 0 else 1 }
@@ -51,24 +59,20 @@ object RelatedWorks {
             },
     )
 
-    /** 保守：同 stem、连续季号、唯一可播候选。 */
+    /**
+     * 下一季：只认相关作品接口已按 book/series id 关联出的候选，
+     * 用 [RelatedWork.seasonIndex]（或候选自身标题季号）对齐连续季；
+     * **不**用标题 stem 过滤，避免同名异剧误命中。
+     */
     fun nextSeason(current: Series, rows: List<RelatedWork>): RelatedWork? {
-        val title = current.title.trim()
-        val suffix = seasonSuffix.find(title)
-        val number = suffix?.groupValues?.get(1)?.let(::seasonNumber)
-            ?: if (suffix == null) 1 else return null
-        val currentStem = stem(title)
-        if (currentStem.isBlank()) return null
+        val currentIndex = seasonIndexFromOwnTitle(current.title) ?: return null
+        val target = currentIndex + 1
         return rows.filter { row ->
-            val candidateTitle = row.series.title.trim()
-            val candidateSuffix = seasonSuffix.find(candidateTitle)
-            val fromTitle = candidateSuffix?.groupValues?.get(1)?.let(::seasonNumber)
-            val index = row.seasonIndex.takeIf { it > 0 } ?: fromTitle
-            !row.upcoming &&
-                row.series.id != current.id &&
-                index == number + 1 &&
-                (fromTitle == null || fromTitle == index) &&
-                stem(candidateTitle) == currentStem
+            if (row.upcoming || row.series.id == current.id) return@filter false
+            val index = row.seasonIndex.takeIf { it > 0 }
+                ?: seasonSuffix.find(row.series.title.trim())?.groupValues?.get(1)?.let(::seasonNumber)
+                ?: return@filter false
+            index == target
         }.singleOrNull()
     }
 
@@ -83,7 +87,7 @@ object RelatedWorks {
             .filter { it.optInt("show_type") == 547 || it.str("cell_name") == "相关作品" }
             .flatMap { cell -> cell.optJSONArray("video_data")?.objects().orEmpty() }
             .mapNotNull { row ->
-                val id = row.str("series_id")
+                val id = row.str("series_id").ifBlank { row.str("book_id") }
                 val title = row.str("title")
                 val type = row.optInt("content_type")
                 if (
@@ -119,29 +123,6 @@ object RelatedWorks {
             }
             .distinctBy { it.series.id }
             .sortedWith(compareBy { it.seasonIndex.takeIf { n -> n > 0 } ?: Int.MAX_VALUE })
-    }
-
-    /** 标题搜索降级：仅当唯一命中「下一季」时返回。 */
-    fun nextFromSearchFallback(current: Series, candidates: List<Series>): RelatedWork? {
-        val title = current.title.trim()
-        val suffix = seasonSuffix.find(title)
-        val number = suffix?.groupValues?.get(1)?.let(::seasonNumber)
-            ?: if (suffix == null) 1 else return null
-        val currentStem = stem(title)
-        if (currentStem.isBlank()) return null
-        val rows = candidates.mapNotNull { series ->
-            if (series.id == current.id) return@mapNotNull null
-            val candidateSuffix = seasonSuffix.find(series.title.trim())
-            val fromTitle = candidateSuffix?.groupValues?.get(1)?.let(::seasonNumber) ?: return@mapNotNull null
-            if (stem(series.title) != currentStem || fromTitle != number + 1) return@mapNotNull null
-            RelatedWork(
-                series = series,
-                seasonLabel = "第${fromTitle}季",
-                upcoming = false,
-                seasonIndex = fromTitle,
-            )
-        }
-        return rows.singleOrNull()
     }
 
     private fun safeCover(value: String): String = CoverUrls.normalize(value)

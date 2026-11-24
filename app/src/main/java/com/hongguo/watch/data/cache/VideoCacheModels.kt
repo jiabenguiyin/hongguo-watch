@@ -54,3 +54,14 @@ data class VideoCacheSpaceSummary(
         if (budgetBytes <= 0L) 0
         else ((usedBytes * 100L) / budgetBytes).toInt().coerceIn(0, 100)
 }
+
+/** 离线缓存按剧分组。 */
+data class VideoCacheSeriesGroup(
+    val seriesId: String,
+    val seriesTitle: String,
+    val episodeCount: Int,
+    val totalBytes: Long,
+    val episodes: List<VideoCacheEntry>,
+) {
+    val sizeLabel: String get() = VideoCacheManager.formatBytes(totalBytes)
+}

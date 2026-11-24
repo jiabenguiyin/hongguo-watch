@@ -177,6 +177,13 @@ class PlayerActivity : WatchDisplayActivity() {
     private var activeStreamInfo: StreamInfo? = null
     private var stallWatchJob: Job? = null
     private var stallAnchorPositionMs = 0L
+    /**
+     * 会话内软解久卡降档上限（不写 DataStore）。
+     * fragileSoc + 无 HEVC 硬解时初始即 ≤360；久播再卡可再压一档。
+     */
+    private var sessionSoftQualityCap: Int? = null
+    private var softLagStepDownDone = false
+    private var softPlayStartedAtElapsedMs = 0L
 
     private lateinit var episodeAdapter: EpisodeAdapter
     private lateinit var audioManager: AudioManager
@@ -614,7 +621,7 @@ class PlayerActivity : WatchDisplayActivity() {
         val sidePad = safe?.let { maxOf(it.left, it.right) } ?: preferred.horizontal
         val topSafe = safe?.top ?: preferred.top
         val bottomSafe = safe?.bottom ?: preferred.vertical
-        // 横屏底栏左右：圆角会裁「选集 / 倍速」，按角弧再内收一截
+        // 横屏底栏左右：清圆角即可，勿把角弧全量内收（0.5.6 过大留白）
         val landscape = resources.configuration.orientation ==
             android.content.res.Configuration.ORIENTATION_LANDSCAPE || landscapePreferred
         val metrics = resources.displayMetrics
@@ -625,12 +632,15 @@ class PlayerActivity : WatchDisplayActivity() {
             compact = cornerSafe,
         )
         val bottomCornerSide = WatchDisplayGeometry.cornerSideInset(cornerRadius, bottomSafe)
-        val bottomSidePad = if (landscape || cornerSafe) {
-            maxOf(sidePad, bottomCornerSide, WatchUi.dp(this, if (landscape) 28f else 20f))
-        } else {
-            sidePad
-        }
-        // 状态条：顶/左右吃系统栏与圆角，背景仍由 topChrome 铺满
+        val bottomSidePad = WatchDisplayGeometry.bottomChromeSidePad(
+            sidePad = sidePad,
+            cornerSideInset = bottomCornerSide,
+            landscape = landscape,
+            cornerSafe = cornerSafe,
+            landscapeCapPx = WatchUi.dp(this, 18f),
+            portraitCapPx = WatchUi.dp(this, 20f),
+        )
+        // 状态条 / 中区锁：只用常规 sidePad，勿跟底栏巨大角弧 pad
         binding.playerStatusStrip.setPadding(
             sidePad,
             topSafe,
@@ -645,7 +655,7 @@ class PlayerActivity : WatchDisplayActivity() {
             bottomSidePad,
             bottomSafe,
         )
-        val available = resources.displayMetrics.widthPixels - sidePad * 2
+        val available = resources.displayMetrics.widthPixels - bottomSidePad * 2
         // Leave space for all five actions when large UI settings narrow the controls row.
         val compact = available < WatchUi.dp(this, 208f)
         listOf(
@@ -668,6 +678,10 @@ class PlayerActivity : WatchDisplayActivity() {
         }
         val iconPad = WatchUi.dp(this, if (compact) 5f else 8f)
         val playPad = WatchUi.dp(this, if (compact) 6f else 14f)
+        // 竖/横屏均保底宽度，避免底栏 pad 变大时上/下集被压扁
+        val prevNextMin = WatchUi.dp(this, 36f)
+        binding.prevButton.minimumWidth = prevNextMin
+        binding.nextButton.minimumWidth = prevNextMin
         binding.prevButton.setPadding(iconPad, iconPad, iconPad, iconPad)
         binding.nextButton.setPadding(iconPad, iconPad, iconPad, iconPad)
         binding.playPauseButton.setPadding(playPad, playPad, playPad, playPad)
@@ -1416,6 +1430,45 @@ class PlayerActivity : WatchDisplayActivity() {
         activeStreamInfo = null
         stallWatchJob?.cancel()
         stallWatchJob = null
+        sessionSoftQualityCap = null
+        softLagStepDownDone = false
+        softPlayStartedAtElapsedMs = 0L
+    }
+
+    /** 用户设置 ∩ 设备钳制 ∩ 会话软解降档。preferAvc 选流不变。 */
+    private fun resolveEffectiveMaxQuality(userMax: Int = currentQuality): Int {
+        val device = WatchDecodePolicy.effectiveMaxQuality(
+            context = this,
+            userMaxQuality = userMax,
+            softDecode = softDecodePreferred,
+        )
+        val session = sessionSoftQualityCap
+        return if (session != null) minOf(device, session) else device
+    }
+
+    /**
+     * 软解久播后再遇久卡：会话内降到 ≤360p 一次（不改用户设置）。
+     * @return true 已发起重载。
+     */
+    private fun trySoftLagQualityStepDown(positionMs: Long, reason: String): Boolean {
+        if (softLagStepDownDone || playingFromCache) return false
+        if (!softDecodePreferred || !WatchDecodePolicy.isFragileSoc()) return false
+        if (softPlayStartedAtElapsedMs <= 0L) return false
+        val played = android.os.SystemClock.elapsedRealtime() - softPlayStartedAtElapsedMs
+        if (played < WatchDecodePolicy.SOFT_LAG_STEP_DOWN_AFTER_MS) return false
+        val target = WatchDecodePolicy.SOFT_LAG_STEP_DOWN_QUALITY
+        val currentEff = resolveEffectiveMaxQuality()
+        if (currentEff <= target) return false
+        softLagStepDownDone = true
+        sessionSoftQualityCap = target
+        PlayerDiagLog.w(
+            "softLag step-down[$reason] → ${target}p after ${played}ms soft " +
+                "(was effective=${currentEff}p)",
+        )
+        startPositionMs = positionMs.coerceAtLeast(0L)
+        // 允许同档以外的更低档；不清 failed keys，避免立刻回到高温档
+        loadCurrent()
+        return true
     }
 
     private fun resetDecodePolicyForDevice() {
@@ -1479,13 +1532,15 @@ class PlayerActivity : WatchDisplayActivity() {
             try {
                 playingFromCache = false
                 val userMax = settings.maxQualityNow()
-                val effectiveMax = WatchDecodePolicy.effectiveMaxQuality(this@PlayerActivity, userMax)
                 currentQuality = userMax
+                val effectiveMax = resolveEffectiveMaxQuality(userMax)
                 if (token != playGeneration) return@launch
                 refreshQualityUi()
                 if (effectiveMax < userMax) {
                     PlayerDiagLog.i(
-                        "fragileSoc quality clamp user=${userMax}p → effective=${effectiveMax}p",
+                        "quality clamp soft=$softDecodePreferred " +
+                            "user=${userMax}p → effective=${effectiveMax}p " +
+                            "sessionCap=${sessionSoftQualityCap}",
                     )
                 }
                 val selection = if (
@@ -1680,6 +1735,7 @@ class PlayerActivity : WatchDisplayActivity() {
             context = this,
             textureView = binding.ijkTexture,
             softDecode = softDecodePreferred,
+            lightSoftLoad = WatchDecodePolicy.preferLightIjkSoftLoad(this, softDecodePreferred),
             listener = object : IjkPlayerEngine.Listener {
                 override fun onPrepared() {
                     if (token != playGeneration) return
@@ -1698,6 +1754,9 @@ class PlayerActivity : WatchDisplayActivity() {
                     videoFrameRendered = true
                     firstFrameWatchJob?.cancel()
                     PlayerDiagLog.markFirstFrame()
+                    if (softDecodePreferred && softPlayStartedAtElapsedMs <= 0L) {
+                        softPlayStartedAtElapsedMs = android.os.SystemClock.elapsedRealtime()
+                    }
                     if (loadingWanted) {
                         applyLoadingText()
                         ensureProlongedHintScheduled()
@@ -1889,6 +1948,9 @@ class PlayerActivity : WatchDisplayActivity() {
                 applyVideoTransform()
                 firstFrameWatchJob?.cancel()
                 PlayerDiagLog.markFirstFrame()
+                if (softDecodePreferred && softPlayStartedAtElapsedMs <= 0L) {
+                    softPlayStartedAtElapsedMs = android.os.SystemClock.elapsedRealtime()
+                }
                 if (loadingWanted) {
                     applyLoadingText()
                     ensureProlongedHintScheduled()
@@ -2016,7 +2078,7 @@ class PlayerActivity : WatchDisplayActivity() {
         }
     }
 
-    /** 首帧后长时间缓冲且进度不前进 → 视为卡顿超时，自动切流。 */
+    /** 首帧后长时间缓冲且进度不前进 → 软解久播先降档，再切流。 */
     private fun watchStall(buffering: Boolean, token: Int, stream: StreamInfo) {
         if (!buffering || !videoFrameRendered || playingFromCache) {
             stallWatchJob?.cancel()
@@ -2034,6 +2096,7 @@ class PlayerActivity : WatchDisplayActivity() {
                 "stall timeout ${StreamFailover.STALL_TIMEOUT_MS}ms " +
                     "pos=$pos anchor=$stallAnchorPositionMs codec=${stream.codec}",
             )
+            if (trySoftLagQualityStepDown(pos, reason = "stall_timeout")) return@launch
             if (!tryPlaybackFailover(
                     stream, pos, reason = "stall_timeout", trySameQualityBackup = remoteVideo != null,
                 )
@@ -2073,7 +2136,7 @@ class PlayerActivity : WatchDisplayActivity() {
             ?: StreamFailover.key(stream.quality, stream.codec, stream.url)
         // currentQuality 已与用户设置同步；切流不改写 DataStore
         val userMax = currentQuality
-        val effectiveMax = WatchDecodePolicy.effectiveMaxQuality(this, userMax)
+        val effectiveMax = resolveEffectiveMaxQuality(userMax)
 
         val currentEpisodeId = episodeIds.getOrNull(episodeIndex)
         val hasCurrentLadder = ladderRenditions.isNotEmpty() && ladderEpisodeId == currentEpisodeId

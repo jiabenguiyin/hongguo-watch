@@ -105,4 +105,36 @@ class WatchDecodePolicyTest {
             WatchDecodePolicy.effectiveMaxQuality(720, fragileSoc = false, memClassMb = 192),
         )
     }
+
+    @Test
+    fun effectiveMaxQualityCapsSoftHevcPathAt360() {
+        org.junit.Assert.assertEquals(
+            360,
+            WatchDecodePolicy.effectiveMaxQuality(
+                userMaxQuality = 720,
+                fragileSoc = true,
+                memClassMb = 192,
+                softHevcPath = true,
+            ),
+        )
+        org.junit.Assert.assertEquals(
+            360,
+            WatchDecodePolicy.effectiveMaxQuality(
+                userMaxQuality = 480,
+                fragileSoc = true,
+                memClassMb = 256,
+                softHevcPath = true,
+            ),
+        )
+        // 有硬解路径（softHevcPath=false）仍按低内存 480
+        org.junit.Assert.assertEquals(
+            480,
+            WatchDecodePolicy.effectiveMaxQuality(
+                userMaxQuality = 720,
+                fragileSoc = true,
+                memClassMb = 192,
+                softHevcPath = false,
+            ),
+        )
+    }
 }

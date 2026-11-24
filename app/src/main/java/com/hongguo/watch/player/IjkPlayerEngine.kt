@@ -22,6 +22,8 @@ class IjkPlayerEngine(
     private val textureView: TextureView,
     private val softDecode: Boolean,
     private val listener: Listener,
+    /** 脆弱 SoC 软解：更强丢帧 + 更小缓冲，降低久播发热/PPT。 */
+    private val lightSoftLoad: Boolean = false,
 ) {
     interface Listener {
         fun onPrepared()
@@ -61,7 +63,7 @@ class IjkPlayerEngine(
         ensureLibs()
         val ijk = IjkMediaPlayer()
         player = ijk
-        applyOptions(ijk, softDecode)
+        applyOptions(ijk, softDecode, lightSoftLoad)
         ijk.setOnPreparedListener {
             if (released.get()) return@setOnPreparedListener
             if (positionMs > 0) ijk.seekTo(positionMs)
@@ -107,7 +109,8 @@ class IjkPlayerEngine(
             ijk.setDataSource(context, Uri.parse(stream.url), headers)
         }
         PlayerDiagLog.i(
-            "ijk prepare soft=$softDecode codec=${stream.codec.ifBlank { "?" }} q=${stream.quality}",
+            "ijk prepare soft=$softDecode light=$lightSoftLoad " +
+                "codec=${stream.codec.ifBlank { "?" }} q=${stream.quality}",
         )
         ijk.prepareAsync()
     }
@@ -230,8 +233,12 @@ class IjkPlayerEngine(
             }
         }
 
-        fun applyOptions(player: IjkMediaPlayer, softDecode: Boolean) {
-            // 手表路径默认软解：mediacodec=0 → FFmpeg 软解（含标准 HEVC）
+        fun applyOptions(
+            player: IjkMediaPlayer,
+            softDecode: Boolean,
+            lightSoftLoad: Boolean = false,
+        ) {
+            // 手表路径默认软解：mediacodec=0 → FFmpeg 软解（含标准 HEVC / bytevc1）
             player.setOption(
                 IjkMediaPlayer.OPT_CATEGORY_PLAYER,
                 "mediacodec",
@@ -244,14 +251,31 @@ class IjkPlayerEngine(
                 0,
             )
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "opensles", 0)
-            player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 4)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "start-on-prepared", 0)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "soundtouch", 1)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 1)
-            player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max-buffer-size", 6 * 1024 * 1024)
-            player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "max_cached_duration", 6_000)
+            // 缓冲保持与默认同级（或略大），避免中途缓冲退化；软解减负靠丢帧/skip，不靠砍缓冲
+            player.setOption(
+                IjkMediaPlayer.OPT_CATEGORY_PLAYER,
+                "max-buffer-size",
+                if (softDecode && lightSoftLoad) 8 * 1024 * 1024 else 6 * 1024 * 1024,
+            )
+            player.setOption(
+                IjkMediaPlayer.OPT_CATEGORY_PLAYER,
+                "max_cached_duration",
+                if (softDecode && lightSoftLoad) 8_000L else 6_000L,
+            )
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "min-frames", 5)
-            player.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_loop_filter", 48)
+            if (softDecode && lightSoftLoad) {
+                // 软解久播：更敢丢帧，CPU 跟不上时别拖成 PPT
+                player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 8)
+                // skip_frame: 8 = AVDISCARD_NONREF
+                player.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_frame", 8)
+                player.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_loop_filter", 48)
+            } else {
+                player.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 4)
+                player.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_loop_filter", 48)
+            }
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "analyzeduration", 100)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_clear", 1)
             player.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "fflags", "flush_packets")

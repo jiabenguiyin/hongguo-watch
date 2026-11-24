@@ -9,6 +9,8 @@ import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
+import androidx.core.text.buildSpannedString
+import androidx.core.text.color
 import androidx.lifecycle.lifecycleScope
 import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
@@ -143,12 +145,17 @@ class TimeLockActivity : WatchDisplayActivity() {
 
     private fun showLimitDialog() {
         val options = TimeLockStore.LIMIT_OPTIONS_MINUTES
-        val labels = options.map { TimeLockStore.formatLimitLabel(it) }.toTypedArray()
+        // 默认 single-choice 行可能仍用浅色主题字色 → 深底上看不见；强制主色白字
+        val textColor = ContextCompat.getColor(this, R.color.text_primary)
+        fun lightLabel(label: CharSequence): CharSequence = buildSpannedString {
+            color(textColor) { append(label) }
+        }
+        val labels = options.map { lightLabel(TimeLockStore.formatLimitLabel(it)) }.toTypedArray()
         lifecycleScope.launch {
             val current = timeLock.dailyLimitMinutesNow()
             val checked = options.indexOf(TimeLockStore.normalizeLimit(current)).coerceAtLeast(0)
             val dialog = AlertDialog.Builder(this@TimeLockActivity, R.style.Theme_HongguoWatch_AlertDialog)
-                .setTitle(R.string.time_lock_daily_limit)
+                .setTitle(lightLabel(getText(R.string.time_lock_daily_limit)))
                 .setSingleChoiceItems(labels, checked) { chooser, index ->
                     chooser.dismiss()
                     lifecycleScope.launch {
@@ -159,6 +166,19 @@ class TimeLockActivity : WatchDisplayActivity() {
                 .setNegativeButton(R.string.update_cancel, null)
                 .create()
             showWatchDialog(dialog)
+            // 列表行拉满弹窗宽度，避免左挤右空
+            dialog.listView?.let { list ->
+                list.setPadding(0, list.paddingTop, 0, list.paddingBottom)
+                list.clipToPadding = false
+                for (i in 0 until list.childCount) {
+                    list.getChildAt(i)?.minimumWidth = list.width
+                }
+                list.post {
+                    for (i in 0 until list.childCount) {
+                        list.getChildAt(i)?.minimumWidth = list.width
+                    }
+                }
+            }
         }
     }
 

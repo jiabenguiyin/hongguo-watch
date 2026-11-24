@@ -107,34 +107,19 @@ class WatchDecodePolicyTest {
     }
 
     @Test
-    fun effectiveMaxQualityCapsSoftHevcPathAt360() {
-        org.junit.Assert.assertEquals(
-            360,
-            WatchDecodePolicy.effectiveMaxQuality(
-                userMaxQuality = 720,
-                fragileSoc = true,
-                memClassMb = 192,
-                softHevcPath = true,
-            ),
-        )
-        org.junit.Assert.assertEquals(
-            360,
-            WatchDecodePolicy.effectiveMaxQuality(
-                userMaxQuality = 480,
-                fragileSoc = true,
-                memClassMb = 256,
-                softHevcPath = true,
-            ),
-        )
-        // 有硬解路径（softHevcPath=false）仍按低内存 480
+    fun softHevcDoesNotForce360ByDefault() {
+        // 短播 / 起播：fragile 低内存仍 480，不因软解 HEVC 硬压 360
         org.junit.Assert.assertEquals(
             480,
             WatchDecodePolicy.effectiveMaxQuality(
                 userMaxQuality = 720,
                 fragileSoc = true,
                 memClassMb = 192,
-                softHevcPath = false,
             ),
+        )
+        org.junit.Assert.assertEquals(
+            360,
+            WatchDecodePolicy.SOFT_LAG_STEP_DOWN_QUALITY,
         )
     }
 }

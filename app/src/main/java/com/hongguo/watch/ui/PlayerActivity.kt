@@ -179,7 +179,7 @@ class PlayerActivity : WatchDisplayActivity() {
     private var stallAnchorPositionMs = 0L
     /**
      * 会话内软解久卡降档上限（不写 DataStore）。
-     * fragileSoc + 无 HEVC 硬解时初始即 ≤360；久播再卡可再压一档。
+     * 起播仍用设备默认 ≤480p；久播卡顿后才可压到 360。
      */
     private var sessionSoftQualityCap: Int? = null
     private var softLagStepDownDone = false

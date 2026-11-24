@@ -475,15 +475,7 @@ class DetailActivity : WatchDisplayActivity() {
                 return@launch
             }
             val userMax = settings.maxQualityNow()
-            val soft = WatchDecodePolicy.resolveSoftDecode(
-                this@DetailActivity,
-                settings.decodePathNow(),
-            )
-            val effectiveMax = WatchDecodePolicy.effectiveMaxQuality(
-                this@DetailActivity,
-                userMax,
-                softDecode = soft,
-            )
+            val effectiveMax = WatchDecodePolicy.effectiveMaxQuality(this@DetailActivity, userMax)
             val queuedIds = ArrayList<String>(pending.size)
             var lastError: String? = null
             for (ep in pending) {

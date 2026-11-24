@@ -58,6 +58,9 @@ class SettingsActivity : WatchDisplayActivity() {
         binding.displaySettingsButton.setOnClickListener {
             startActivity(Intent(this, DisplaySettingsActivity::class.java))
         }
+        binding.timeLockButton.setOnClickListener {
+            startActivity(Intent(this, TimeLockActivity::class.java))
+        }
         binding.versionLabel.text =
             getString(R.string.setting_version_status, BuildConfig.VERSION_NAME)
 
@@ -169,6 +172,21 @@ class SettingsActivity : WatchDisplayActivity() {
             if (isDefault) R.string.display_shape_auto else R.string.settings_display_custom,
         )
         refreshVideoCacheUi()
+        refreshTimeLockStatus()
+    }
+
+    private fun refreshTimeLockStatus() {
+        lifecycleScope.launch {
+            val lock = container.timeLock
+            if (lock.enabledNow()) {
+                binding.timeLockStatus.text = getString(
+                    R.string.time_lock_status_on,
+                    com.hongguo.watch.data.TimeLockStore.formatLimitLabel(lock.dailyLimitMinutesNow()),
+                )
+            } else {
+                binding.timeLockStatus.setText(R.string.time_lock_status_off)
+            }
+        }
     }
 
     private fun watchDialogBuilder(): AlertDialog.Builder {

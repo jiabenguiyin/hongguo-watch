@@ -5,14 +5,20 @@ import com.hongguo.watch.data.model.Series
 import com.hongguo.watch.data.model.SeriesSource
 import com.hongguo.watch.upstream.objects
 import com.hongguo.watch.upstream.str
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * 对照 N3urda/hongguoTV `RelatedWorks`：解析 App 族 plan 相关作品，并保守挑选下一季。
- * 不猜无关标题；待上线 / 禁播 / 非唯一候选一律不自动跳。
+ * 相关作品 / 同 IP 季表解析。
+ *
+ * 官方自动续季对照 aston314 `SeriesSeasons`：走
+ * `from=single_col_same_ip_series` 完整同 IP 选择器，按 **season_index + 1**
+ * 找下一季；**不**用 `detail_page_more_related`（会混入跨工作室同名/同 IP 推荐）。
+ * 列表展示仍可用 related cell。
  */
 object RelatedWorks {
     private val seasonSuffix = Regex("第?([0-9零〇一二两三四五六七八九十百]+)季$")
+    private val officialSeasonLabel = Regex("^第([1-9][0-9]*)季$")
     private val seriesIdRegex = Regex("^[1-9][0-9]{5,29}$")
 
     private fun seasonNumber(value: String): Int? {
@@ -37,9 +43,16 @@ object RelatedWorks {
         return (total + digit).takeIf { it > 0 }
     }
 
+    /** 展示排序用。 */
     fun stem(title: String): String = title.trim()
         .replace(seasonSuffix, "")
         .replace(Regex("[\\p{P}\\p{Z}\\s]"), "")
+
+    fun seasonIndexFromOwnTitle(title: String): Int? {
+        val trimmed = title.trim()
+        val suffix = seasonSuffix.find(trimmed) ?: return 1
+        return seasonNumber(suffix.groupValues[1])
+    }
 
     fun ordered(current: Series, rows: List<RelatedWork>): List<RelatedWork> = rows.sortedWith(
         compareBy<RelatedWork> { if (stem(it.series.title) == stem(current.title)) 0 else 1 }
@@ -51,27 +64,42 @@ object RelatedWorks {
             },
     )
 
-    /** 保守：同 stem、连续季号、唯一可播候选。 */
-    fun nextSeason(current: Series, rows: List<RelatedWork>): RelatedWork? {
-        val title = current.title.trim()
-        val suffix = seasonSuffix.find(title)
-        val number = suffix?.groupValues?.get(1)?.let(::seasonNumber)
-            ?: if (suffix == null) 1 else return null
-        val currentStem = stem(title)
-        if (currentStem.isBlank()) return null
-        return rows.filter { row ->
-            val candidateTitle = row.series.title.trim()
-            val candidateSuffix = seasonSuffix.find(candidateTitle)
-            val fromTitle = candidateSuffix?.groupValues?.get(1)?.let(::seasonNumber)
-            val index = row.seasonIndex.takeIf { it > 0 } ?: fromTitle
+    /**
+     * 自动连播下一季：只认 **同 IP 季表**（[parseSameIpSeries]）里，
+     * 以当前 [seriesId] 的官方 `season_index` 为基准、唯一连续 +1 的可播季。
+     *
+     * - 当前剧不在同 IP 表里 → null（不强猜）
+     * - 仅有「相关推荐 / 他工作室同题材」而无同 IP 后继 → null
+     * - 多个 season_index 冲突 → null
+     */
+    fun nextSeasonFromSameIp(currentId: String, sameIpRows: List<RelatedWork>): RelatedWork? {
+        val id = currentId.trim()
+        if (id.isEmpty()) return null
+        val current = sameIpRows.firstOrNull { it.series.id == id } ?: return null
+        val currentIndex = current.seasonIndex.takeIf { it > 0 } ?: return null
+        val target = currentIndex + 1
+        return sameIpRows.filter { row ->
             !row.upcoming &&
-                row.series.id != current.id &&
-                index == number + 1 &&
-                (fromTitle == null || fromTitle == index) &&
-                stem(candidateTitle) == currentStem
+                row.series.id != id &&
+                row.seasonIndex == target
         }.singleOrNull()
     }
 
+    /**
+     * @deprecated 仅保留给相关列表启发式；自动连播请用 [nextSeasonFromSameIp]。
+     * 对 `detail_page_more_related` 若只按 season_index 挑选，会把 A 公司第3季
+     * 误接到 B 公司同题材第4季——官方不会这么做。
+     */
+    fun nextSeason(current: Series, rows: List<RelatedWork>): RelatedWork? {
+        // 相关 cell 不做自动跳：避免跨工作室同题材误跳。
+        // 若调用方误把 related 当 same-IP 传入且含 current id，可走 same-IP 路径。
+        if (rows.any { it.series.id == current.id }) {
+            return nextSeasonFromSameIp(current.id, rows)
+        }
+        return null
+    }
+
+    /** `from=detail_page_more_related`：详情「相关作品」展示用。 */
     fun parse(raw: String, currentId: String): List<RelatedWork> {
         val root = JSONObject(raw)
         if (root.optInt("code", -1) != 0) {
@@ -82,66 +110,101 @@ object RelatedWorks {
         return cells.objects()
             .filter { it.optInt("show_type") == 547 || it.str("cell_name") == "相关作品" }
             .flatMap { cell -> cell.optJSONArray("video_data")?.objects().orEmpty() }
-            .mapNotNull { row ->
-                val id = row.str("series_id")
-                val title = row.str("title")
-                val type = row.optInt("content_type")
-                if (
-                    id == currentId ||
-                    !seriesIdRegex.matches(id) ||
-                    title.isBlank() ||
-                    type !in listOf(1004, 1007)
-                ) {
-                    return@mapNotNull null
-                }
-                val upcoming = type == 1007
-                if (!upcoming && (row.optBoolean("disable_play") || row.optInt("episode_cnt") <= 0)) {
-                    return@mapNotNull null
-                }
-                val seasonIndex = row.optInt("season_index").coerceAtLeast(0)
-                val season = row.optJSONObject("tag_info")?.str("text").orEmpty().ifBlank {
-                    if (seasonIndex > 0) "第${seasonIndex}季" else ""
-                }
-                RelatedWork(
-                    series = Series(
-                        id = id,
-                        title = title,
-                        cover = safeCover(row.str("cover").ifEmpty { row.str("cover_url") }),
-                        description = row.str("video_desc"),
-                        episodeCount = row.optInt("episode_cnt").coerceAtLeast(0),
-                        tags = listOfNotNull(season.takeIf { it.isNotBlank() }),
-                        source = SeriesSource.APP,
-                    ),
-                    seasonLabel = season,
-                    upcoming = upcoming,
-                    seasonIndex = seasonIndex,
-                )
-            }
+            .mapNotNull { row -> toRelatedWork(row, currentId, includeCurrent = false) }
             .distinctBy { it.series.id }
             .sortedWith(compareBy { it.seasonIndex.takeIf { n -> n > 0 } ?: Int.MAX_VALUE })
     }
 
-    /** 标题搜索降级：仅当唯一命中「下一季」时返回。 */
-    fun nextFromSearchFallback(current: Series, candidates: List<Series>): RelatedWork? {
-        val title = current.title.trim()
-        val suffix = seasonSuffix.find(title)
-        val number = suffix?.groupValues?.get(1)?.let(::seasonNumber)
-            ?: if (suffix == null) 1 else return null
-        val currentStem = stem(title)
-        if (currentStem.isBlank()) return null
-        val rows = candidates.mapNotNull { series ->
-            if (series.id == current.id) return@mapNotNull null
-            val candidateSuffix = seasonSuffix.find(series.title.trim())
-            val fromTitle = candidateSuffix?.groupValues?.get(1)?.let(::seasonNumber) ?: return@mapNotNull null
-            if (stem(series.title) != currentStem || fromTitle != number + 1) return@mapNotNull null
-            RelatedWork(
-                series = series,
-                seasonLabel = "第${fromTitle}季",
-                upcoming = false,
-                seasonIndex = fromTitle,
-            )
+    /**
+     * `from=single_col_same_ip_series`：官方同 IP 完整季表（含当前季）。
+     * 对照 aston314 `parseSeriesSeasons`：扫全部 `video_data`，季标签优先
+     * `secondary_info_list[].content`（「第N季」）。
+     */
+    fun parseSameIpSeries(raw: String, currentId: String): List<RelatedWork> {
+        val root = JSONObject(raw)
+        if (root.optInt("code", -1) != 0) {
+            throw IllegalStateException("同系列季表接口暂不可用")
         }
-        return rows.singleOrNull()
+        val blocks = root.optJSONArray("data")
+            ?: throw IllegalStateException("同系列季表数据格式已变化")
+        val rows = ArrayList<RelatedWork>()
+        val seen = HashSet<String>()
+        for (block in blocks.objects()) {
+            val videoData = block.optJSONArray("video_data") ?: continue
+            for (row in videoData.objects()) {
+                val work = toRelatedWork(row, currentId, includeCurrent = true) ?: continue
+                if (!seen.add(work.series.id)) continue
+                rows.add(work)
+            }
+        }
+        return rows.sortedWith(
+            compareBy { it.seasonIndex.takeIf { n -> n > 0 } ?: Int.MAX_VALUE },
+        )
+    }
+
+    private fun toRelatedWork(
+        row: JSONObject,
+        currentId: String,
+        includeCurrent: Boolean,
+    ): RelatedWork? {
+        val id = row.str("series_id").ifBlank { row.str("book_id") }
+        val title = row.str("title")
+        if (!seriesIdRegex.matches(id) || title.isBlank()) return null
+        if (!includeCurrent && id == currentId) return null
+
+        val type = row.optInt("content_type")
+        // related cell：只要 1004/1007；same-IP 选择器偶发缺 content_type，仍收
+        val typeOk = type in listOf(1004, 1007) || (includeCurrent && type == 0)
+        if (!typeOk) return null
+
+        val subscribe = row.optJSONObject("subscribe_item")
+        val episodeCnt = row.optInt("episode_cnt").coerceAtLeast(0)
+        val upcoming = type == 1007 ||
+            subscribe != null ||
+            (includeCurrent && episodeCnt <= 0)
+        if (!upcoming && (row.optBoolean("disable_play") || episodeCnt <= 0)) {
+            return null
+        }
+
+        val fromSecondary = seasonLabelFromSecondary(row.optJSONArray("secondary_info_list"))
+        val seasonIndexField = row.optInt("season_index").coerceAtLeast(0)
+        val seasonIndex = when {
+            fromSecondary != null -> fromSecondary
+            seasonIndexField > 0 -> seasonIndexField
+            else -> seasonSuffix.find(title.trim())?.groupValues?.get(1)?.let(::seasonNumber) ?: 0
+        }
+        val season = when {
+            fromSecondary != null -> "第${fromSecondary}季"
+            seasonIndexField > 0 -> row.optJSONObject("tag_info")?.str("text").orEmpty()
+                .ifBlank { "第${seasonIndexField}季" }
+            seasonIndex > 0 -> "第${seasonIndex}季"
+            else -> row.optJSONObject("tag_info")?.str("text").orEmpty()
+        }
+        return RelatedWork(
+            series = Series(
+                id = id,
+                title = title,
+                cover = safeCover(row.str("cover").ifEmpty { row.str("cover_url") }),
+                description = row.str("video_desc"),
+                episodeCount = episodeCnt,
+                tags = listOfNotNull(season.takeIf { it.isNotBlank() }),
+                source = SeriesSource.APP,
+            ),
+            seasonLabel = season,
+            upcoming = upcoming,
+            seasonIndex = seasonIndex,
+        )
+    }
+
+    private fun seasonLabelFromSecondary(list: JSONArray?): Int? {
+        if (list == null) return null
+        for (i in 0 until list.length()) {
+            val item = list.optJSONObject(i) ?: continue
+            val content = item.str("content")
+            val match = officialSeasonLabel.find(content) ?: continue
+            return match.groupValues[1].toIntOrNull()?.takeIf { it > 0 }
+        }
+        return null
     }
 
     private fun safeCover(value: String): String = CoverUrls.normalize(value)

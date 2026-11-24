@@ -173,6 +173,7 @@ class DetailActivity : WatchDisplayActivity() {
         if (recreateForDisplaySizeChange()) return
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
         WatchUi.applySafePadding(binding.detailRoot, topChrome = binding.detailToolbar)
+        TimeLockGate.enforceIfBlocked(this, container.timeLock)
         lifecycleScope.launch {
             refreshFavoriteUi()
             refreshDownloadChrome()
@@ -775,26 +776,32 @@ class DetailActivity : WatchDisplayActivity() {
     }
 
     private fun openPlayer(episode: Episode, resume: Boolean) {
-        val position = if (resume && episode.id == resumeEpisodeId) resumePositionMs else 0L
-        startActivity(
-            Intent(this, PlayerActivity::class.java).apply {
-                putExtra(PlayerActivity.EXTRA_SERIES_ID, seriesId)
-                putExtra(PlayerActivity.EXTRA_SERIES_TITLE, seriesTitle)
-                putExtra(PlayerActivity.EXTRA_COVER, cover)
-                putExtra(PlayerActivity.EXTRA_SOURCE, source.name)
-                putExtra(PlayerActivity.EXTRA_EPISODE_ID, episode.id)
-                putExtra(PlayerActivity.EXTRA_EPISODE_NUMBER, episode.number)
-                putExtra(PlayerActivity.EXTRA_START_POSITION_MS, position)
-                putStringArrayListExtra(
-                    PlayerActivity.EXTRA_EPISODE_IDS,
-                    ArrayList(episodes.map { it.id }),
-                )
-                putIntegerArrayListExtra(
-                    PlayerActivity.EXTRA_EPISODE_NUMBERS,
-                    ArrayList(episodes.map { it.number }),
-                )
-            },
-        )
+        lifecycleScope.launch {
+            if (container.timeLock.isBlocked()) {
+                TimeLockGate.showLockDialog(this@DetailActivity, container.timeLock)
+                return@launch
+            }
+            val position = if (resume && episode.id == resumeEpisodeId) resumePositionMs else 0L
+            startActivity(
+                Intent(this@DetailActivity, PlayerActivity::class.java).apply {
+                    putExtra(PlayerActivity.EXTRA_SERIES_ID, seriesId)
+                    putExtra(PlayerActivity.EXTRA_SERIES_TITLE, seriesTitle)
+                    putExtra(PlayerActivity.EXTRA_COVER, cover)
+                    putExtra(PlayerActivity.EXTRA_SOURCE, source.name)
+                    putExtra(PlayerActivity.EXTRA_EPISODE_ID, episode.id)
+                    putExtra(PlayerActivity.EXTRA_EPISODE_NUMBER, episode.number)
+                    putExtra(PlayerActivity.EXTRA_START_POSITION_MS, position)
+                    putStringArrayListExtra(
+                        PlayerActivity.EXTRA_EPISODE_IDS,
+                        ArrayList(episodes.map { it.id }),
+                    )
+                    putIntegerArrayListExtra(
+                        PlayerActivity.EXTRA_EPISODE_NUMBERS,
+                        ArrayList(episodes.map { it.number }),
+                    )
+                },
+            )
+        }
     }
 
     companion object {

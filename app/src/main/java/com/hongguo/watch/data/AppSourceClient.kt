@@ -53,6 +53,7 @@ class AppSourceClient(
     private val publicPlaybackFallback by lazy { PublicPlaybackFallback(client = client) }
     private val clock: () -> Long = System::currentTimeMillis
     private val relatedCache = ConcurrentHashMap<String, List<RelatedWork>>()
+    private val sameIpCache = ConcurrentHashMap<String, List<RelatedWork>>()
     private val playbackIdentityRefreshLock = Any()
     private var lastPlaybackIdentityRefreshAtMs: Long? = null
 
@@ -413,41 +414,16 @@ class AppSourceClient(
     }
 
     /**
-     * 相关作品 / 同系列季表。对照 hongguoTV：
+     * 相关作品（详情展示）。对照 hongguoTV：
      * `GET .../reading/bookapi/plan/v:version/` + `scene=10` + `from=detail_page_more_related`。
+     * **不要**单独用它做自动续季：会混入跨工作室同题材推荐。
      */
     fun fetchRelated(seriesId: String, force: Boolean = false): List<RelatedWork> {
         val id = seriesId.trim()
         require(SERIES_ID.matches(id)) { "无效剧集 ID" }
         if (!force) relatedCache[id]?.let { return it }
         ensureDevice()
-
-        val values = identityQuery().toMutableMap()
-        for (k in listOf("version_code", "manifest_version_code", "update_version_code", "pv_player")) {
-            values[k] = "72232"
-        }
-        values["version_name"] = "7.2.2.32"
-        values.putAll(
-            mapOf(
-                "scene" to "10",
-                "from" to "detail_page_more_related",
-                "book_id" to id,
-                "new_search_middle_page" to "false",
-                "bookstore_tab_type" to "0",
-                "query_history_removed" to "false",
-                "user_is_login" to "0",
-                "bookstore_tab" to "0",
-                "search_middle_page_version" to "0",
-                "pad_column_detail" to "0",
-                "hot_word_exchange" to "false",
-                "device_level" to "3",
-                "limit" to "0",
-                "offset" to "0",
-                "is_horizontal_screen" to "false",
-                "reader_single_col_from_ip_strategy" to "false",
-            ),
-        )
-
+        val values = planQuery(id, from = "detail_page_more_related")
         var lastError: Exception? = null
         for (host in RELATED_HOSTS) {
             try {
@@ -468,6 +444,75 @@ class AppSourceClient(
             lastError?.message ?: "相关作品暂时无法加载",
             lastError,
         )
+    }
+
+    /**
+     * 官方同 IP 完整季表（含当前季）。对照 aston314 `SeriesSeasons`：
+     * `from=single_col_same_ip_series` + `filter_ids=<book_id>`。
+     * 自动续季只认这条通路的 `season_index + 1`。
+     */
+    fun fetchSameIpSeries(seriesId: String, force: Boolean = false): List<RelatedWork> {
+        val id = seriesId.trim()
+        require(SERIES_ID.matches(id)) { "无效剧集 ID" }
+        if (!force) sameIpCache[id]?.let { return it }
+        ensureDevice()
+        val values = planQuery(id, from = "single_col_same_ip_series").toMutableMap()
+        values["filter_ids"] = id
+        values["total_chapter_num"] = "0"
+        values["current_chapter_num"] = "0"
+        values["post_id"] = "0"
+        var lastError: Exception? = null
+        for (host in RELATED_HOSTS) {
+            try {
+                val signed = signer.sign("https://$host/reading/bookapi/plan/v:version/", values)
+                val raw = execute(signed)
+                if (raw.isBlank()) {
+                    lastError = IllegalStateException("同系列季表接口暂无响应")
+                    continue
+                }
+                val rows = RelatedWorks.parseSameIpSeries(raw, id)
+                if (rows.isNotEmpty()) {
+                    sameIpCache[id] = rows
+                    return rows
+                }
+                lastError = IllegalStateException("同系列季表为空")
+            } catch (e: Exception) {
+                lastError = e
+            }
+        }
+        throw IllegalStateException(
+            lastError?.message ?: "同系列季表暂时无法加载",
+            lastError,
+        )
+    }
+
+    private fun planQuery(bookId: String, from: String): MutableMap<String, String> {
+        val values = identityQuery().toMutableMap()
+        for (k in listOf("version_code", "manifest_version_code", "update_version_code", "pv_player")) {
+            values[k] = "72232"
+        }
+        values["version_name"] = "7.2.2.32"
+        values.putAll(
+            mapOf(
+                "scene" to "10",
+                "from" to from,
+                "book_id" to bookId,
+                "new_search_middle_page" to "false",
+                "bookstore_tab_type" to "0",
+                "query_history_removed" to "false",
+                "user_is_login" to "0",
+                "bookstore_tab" to "0",
+                "search_middle_page_version" to "0",
+                "pad_column_detail" to "0",
+                "hot_word_exchange" to "false",
+                "device_level" to "3",
+                "limit" to "0",
+                "offset" to "0",
+                "is_horizontal_screen" to "false",
+                "reader_single_col_from_ip_strategy" to "false",
+            ),
+        )
+        return values
     }
 
     /**

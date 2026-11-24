@@ -68,6 +68,10 @@ class SeriesListAdapter(
     private val onHotWordClick: ((Series) -> Unit)? = null,
     private val onDiscoveryClick: ((Series) -> Unit)? = null,
     private val onHeaderAction: (() -> Unit)? = null,
+    /** 历史「续」：续播；缺省与 [onClick] 相同。 */
+    private val onResumeClick: ((Series) -> Unit)? = null,
+    /** 历史长按删除等。 */
+    private val onItemLongClick: ((Series) -> Boolean)? = null,
     private val onClick: (Series) -> Unit,
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     private val rows = mutableListOf<HomeRow>()
@@ -411,19 +415,28 @@ class SeriesListAdapter(
                 ranked -> {
                     binding.playButton.visibility = View.GONE
                     binding.actionHint.visibility = View.GONE
+                    binding.actionHint.setOnClickListener(null)
                 }
                 showResumeHint -> {
                     binding.playButton.visibility = View.GONE
                     binding.actionHint.visibility = View.VISIBLE
                     binding.actionHint.text = binding.root.context.getString(R.string.resume_hint)
+                    // 「续」单独续播；封面/标题走 onClick（详情）
+                    binding.actionHint.setOnClickListener {
+                        (onResumeClick ?: onClick).invoke(series)
+                    }
                 }
                 else -> {
                     binding.actionHint.visibility = View.GONE
+                    binding.actionHint.setOnClickListener(null)
                     binding.playButton.visibility = View.VISIBLE
                     binding.playButton.setOnClickListener { onClick(series) }
                 }
             }
             binding.root.setOnClickListener { onClick(series) }
+            binding.root.setOnLongClickListener {
+                onItemLongClick?.invoke(series) == true
+            }
         }
     }
 

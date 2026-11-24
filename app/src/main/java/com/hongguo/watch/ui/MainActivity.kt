@@ -26,6 +26,7 @@ import com.hongguo.watch.R
 import com.hongguo.watch.data.UpdateApkInstaller
 import com.hongguo.watch.data.cache.VideoCacheEntry
 import com.hongguo.watch.data.cache.VideoCacheManager
+import com.hongguo.watch.data.cache.VideoCacheSeriesGroup
 import com.hongguo.watch.data.model.HomeCategory
 import com.hongguo.watch.data.model.Series
 import com.hongguo.watch.data.model.SeriesSource
@@ -103,10 +104,22 @@ class MainActivity : WatchDisplayActivity() {
             onHotWordClick = { openSeries(it) },
             onDiscoveryClick = { openSeries(it) },
             onHeaderAction = { refreshHotBatch() },
+            onResumeClick = { resumeHistorySeries(it) },
+            onItemLongClick = { series ->
+                if (mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.HISTORY) {
+                    confirmDeleteHistory(series)
+                    true
+                } else {
+                    false
+                }
+            },
         ) { openSeries(it) }
         offlineAdapter = OfflineCacheAdapter(
+            onOpenSeries = { openOfflineSeries(it) },
+            onBackToSeries = { closeOfflineSeriesDrillIn() },
             onPlay = { playOfflineEntry(it) },
-            onDelete = { confirmDeleteOfflineEntry(it) },
+            onDeleteEpisode = { confirmDeleteOfflineEntry(it) },
+            onDeleteSeries = { confirmDeleteOfflineSeries(it) },
             onClearAll = { confirmClearOfflineCache() },
         )
         binding.seriesList.layoutManager = LinearLayoutManager(this)
@@ -263,6 +276,12 @@ class MainActivity : WatchDisplayActivity() {
         container.redfruitAccount.onForeground()
         if (recreateForDisplaySizeChange()) return
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
+        // 时间锁：额度用尽则锁住应用直至 PIN
+        TimeLockGate.enforceIfBlocked(
+            activity = this,
+            timeLock = container.timeLock,
+            finishIfCancel = false,
+        )
         // 版本跃迁 / 安装后残留：首页恢复时再扫；仅当实际删掉更新包时 toast
         lifecycleScope.launch(Dispatchers.IO) {
             runCatching {
@@ -1138,6 +1157,9 @@ class MainActivity : WatchDisplayActivity() {
         segment: LibrarySegmentPolicy.Segment = librarySegment,
     ) {
         mode = Mode.LIBRARY
+        if (segment != LibrarySegmentPolicy.Segment.OFFLINE) {
+            offlineAdapter.closeSeries()
+        }
         librarySegment = segment
         if (segment != LibrarySegmentPolicy.Segment.FAVORITES) {
             lastCloudFavoritesSignature = null
@@ -1212,18 +1234,20 @@ class MainActivity : WatchDisplayActivity() {
             ),
         )
         val token = beginListLoad(clearAdapter = false)
-        binding.seriesList.scrollToPosition(0)
+        if (!offlineAdapter.isDrilledIn()) {
+            binding.seriesList.scrollToPosition(0)
+        }
         listJob = lifecycleScope.launch {
             try {
                 val summary = withContext(Dispatchers.IO) { container.videoCache.spaceSummary() }
-                val entries = withContext(Dispatchers.IO) { container.videoCache.listReady() }
+                val groups = withContext(Dispatchers.IO) { container.videoCache.listSeriesGroups() }
                 if (token != listGeneration || mode != Mode.LIBRARY ||
                     librarySegment != LibrarySegmentPolicy.Segment.OFFLINE
                 ) {
                     return@launch
                 }
                 useOfflineAdapter()
-                offlineAdapter.submit(summary, entries)
+                offlineAdapter.submit(summary, groups)
                 // 空态写在列表头内，避免盖住占用进度
                 binding.emptyView.visibility = View.GONE
             } finally {
@@ -1234,26 +1258,44 @@ class MainActivity : WatchDisplayActivity() {
         }
     }
 
+    private fun openOfflineSeries(group: VideoCacheSeriesGroup) {
+        offlineAdapter.openSeries(group)
+        binding.pageSubtitle.text = getString(R.string.offline_series_subtitle, group.seriesTitle)
+        binding.seriesList.scrollToPosition(0)
+    }
+
+    private fun closeOfflineSeriesDrillIn() {
+        offlineAdapter.closeSeries()
+        binding.pageSubtitle.text = getString(R.string.offline_subtitle)
+        binding.seriesList.scrollToPosition(0)
+    }
+
     private fun playOfflineEntry(entry: VideoCacheEntry) {
-        val cachedEpisodes = offlineCacheEpisodes(container.videoCache.listReady(), entry.seriesId)
-        startActivity(
-            Intent(this, PlayerActivity::class.java).apply {
-                putExtra(PlayerActivity.EXTRA_SERIES_ID, entry.seriesId)
-                putExtra(PlayerActivity.EXTRA_SERIES_TITLE, entry.seriesTitle)
-                putExtra(PlayerActivity.EXTRA_EPISODE_ID, entry.episodeId)
-                putExtra(PlayerActivity.EXTRA_EPISODE_NUMBER, entry.episodeNumber)
-                putStringArrayListExtra(
-                    PlayerActivity.EXTRA_EPISODE_IDS,
-                    ArrayList(cachedEpisodes.map { it.episodeId }),
-                )
-                putIntegerArrayListExtra(
-                    PlayerActivity.EXTRA_EPISODE_NUMBERS,
-                    ArrayList(cachedEpisodes.map { it.episodeNumber }),
-                )
-                putExtra(PlayerActivity.EXTRA_OFFLINE_ONLY, true)
-                putExtra(PlayerActivity.EXTRA_SOURCE, SeriesSource.APP.name)
-            },
-        )
+        lifecycleScope.launch {
+            if (container.timeLock.isBlocked()) {
+                TimeLockGate.showLockDialog(this@MainActivity, container.timeLock)
+                return@launch
+            }
+            val cachedEpisodes = offlineCacheEpisodes(container.videoCache.listReady(), entry.seriesId)
+            startActivity(
+                Intent(this@MainActivity, PlayerActivity::class.java).apply {
+                    putExtra(PlayerActivity.EXTRA_SERIES_ID, entry.seriesId)
+                    putExtra(PlayerActivity.EXTRA_SERIES_TITLE, entry.seriesTitle)
+                    putExtra(PlayerActivity.EXTRA_EPISODE_ID, entry.episodeId)
+                    putExtra(PlayerActivity.EXTRA_EPISODE_NUMBER, entry.episodeNumber)
+                    putStringArrayListExtra(
+                        PlayerActivity.EXTRA_EPISODE_IDS,
+                        ArrayList(cachedEpisodes.map { it.episodeId }),
+                    )
+                    putIntegerArrayListExtra(
+                        PlayerActivity.EXTRA_EPISODE_NUMBERS,
+                        ArrayList(cachedEpisodes.map { it.episodeNumber }),
+                    )
+                    putExtra(PlayerActivity.EXTRA_OFFLINE_ONLY, true)
+                    putExtra(PlayerActivity.EXTRA_SOURCE, SeriesSource.APP.name)
+                },
+            )
+        }
     }
 
     private fun confirmDeleteOfflineEntry(entry: VideoCacheEntry) {
@@ -1276,6 +1318,40 @@ class MainActivity : WatchDisplayActivity() {
                     Toast.makeText(this@MainActivity, R.string.offline_deleted, Toast.LENGTH_SHORT)
                         .show()
                     if (mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.OFFLINE) {
+                        loadOfflineCacheList(fromSwipe = false)
+                    }
+                    refreshLibraryCacheHook()
+                }
+            }
+            .setNegativeButton(R.string.update_cancel, null)
+            .create()
+        showWatchDialog(dialog)
+    }
+
+    private fun confirmDeleteOfflineSeries(group: VideoCacheSeriesGroup) {
+        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
+            .setTitle(R.string.offline_delete_series_confirm_title)
+            .setMessage(
+                getString(
+                    R.string.offline_delete_series_confirm_body,
+                    group.seriesTitle,
+                    group.episodeCount,
+                    group.sizeLabel,
+                ),
+            )
+            .setPositiveButton(R.string.offline_delete_series) { _, _ ->
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) {
+                        container.videoCache.removeSeries(group.seriesId)
+                    }
+                    Toast.makeText(
+                        this@MainActivity,
+                        R.string.offline_series_deleted,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    offlineAdapter.closeSeries()
+                    if (mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.OFFLINE) {
+                        binding.pageSubtitle.text = getString(R.string.offline_subtitle)
                         loadOfflineCacheList(fromSwipe = false)
                     }
                     refreshLibraryCacheHook()
@@ -1586,43 +1662,71 @@ class MainActivity : WatchDisplayActivity() {
     }
 
     private fun openSeries(series: Series) {
-        when {
-            mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.HISTORY -> {
-                lifecycleScope.launch {
-                    val history = repo.historyFor(series.id)
-                    val intent = Intent(this@MainActivity, PlayerActivity::class.java).apply {
-                        putExtra(PlayerActivity.EXTRA_SERIES_ID, series.id)
-                        putExtra(PlayerActivity.EXTRA_SERIES_TITLE, series.title)
-                        putExtra(PlayerActivity.EXTRA_COVER, series.cover)
-                        putExtra(PlayerActivity.EXTRA_SOURCE, series.source.name)
-                        if (history != null) {
-                            putExtra(PlayerActivity.EXTRA_EPISODE_ID, history.episodeId)
-                            putExtra(PlayerActivity.EXTRA_EPISODE_NUMBER, history.episodeNumber)
-                            putExtra(
-                                PlayerActivity.EXTRA_START_POSITION_MS,
-                                repo.resumePositionMs(history),
-                            )
-                        }
+        lifecycleScope.launch {
+            if (container.timeLock.isBlocked()) {
+                TimeLockGate.showLockDialog(this@MainActivity, container.timeLock)
+                return@launch
+            }
+            // 历史：点封面/标题进详情；「续」走 resumeHistorySeries
+            startActivity(
+                Intent(this@MainActivity, DetailActivity::class.java).apply {
+                    putExtra(DetailActivity.EXTRA_SERIES_ID, series.id)
+                    putExtra(DetailActivity.EXTRA_SERIES_TITLE, series.title)
+                    putExtra(DetailActivity.EXTRA_COVER, series.cover)
+                    putExtra(DetailActivity.EXTRA_INTRO, series.description)
+                    putExtra(DetailActivity.EXTRA_SOURCE, series.source.name)
+                    putStringArrayListExtra(
+                        DetailActivity.EXTRA_TAGS,
+                        ArrayList(series.tags),
+                    )
+                },
+            )
+        }
+    }
+
+    private fun resumeHistorySeries(series: Series) {
+        lifecycleScope.launch {
+            if (container.timeLock.isBlocked()) {
+                TimeLockGate.showLockDialog(this@MainActivity, container.timeLock)
+                return@launch
+            }
+            val history = repo.historyFor(series.id)
+            startActivity(
+                Intent(this@MainActivity, PlayerActivity::class.java).apply {
+                    putExtra(PlayerActivity.EXTRA_SERIES_ID, series.id)
+                    putExtra(PlayerActivity.EXTRA_SERIES_TITLE, series.title)
+                    putExtra(PlayerActivity.EXTRA_COVER, series.cover)
+                    putExtra(PlayerActivity.EXTRA_SOURCE, series.source.name)
+                    if (history != null) {
+                        putExtra(PlayerActivity.EXTRA_EPISODE_ID, history.episodeId)
+                        putExtra(PlayerActivity.EXTRA_EPISODE_NUMBER, history.episodeNumber)
+                        putExtra(
+                            PlayerActivity.EXTRA_START_POSITION_MS,
+                            repo.resumePositionMs(history),
+                        )
                     }
-                    startActivity(intent)
+                },
+            )
+        }
+    }
+
+    private fun confirmDeleteHistory(series: Series) {
+        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
+            .setTitle(R.string.history_delete_confirm_title)
+            .setMessage(getString(R.string.history_delete_confirm_body, series.title))
+            .setPositiveButton(R.string.history_delete) { _, _ ->
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) { repo.deleteHistory(series.id) }
+                    Toast.makeText(this@MainActivity, R.string.history_deleted, Toast.LENGTH_SHORT)
+                        .show()
+                    if (mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.HISTORY) {
+                        loadHistoryList(fromSwipe = false)
+                    }
                 }
             }
-            else -> {
-                startActivity(
-                    Intent(this, DetailActivity::class.java).apply {
-                        putExtra(DetailActivity.EXTRA_SERIES_ID, series.id)
-                        putExtra(DetailActivity.EXTRA_SERIES_TITLE, series.title)
-                        putExtra(DetailActivity.EXTRA_COVER, series.cover)
-                        putExtra(DetailActivity.EXTRA_INTRO, series.description)
-                        putExtra(DetailActivity.EXTRA_SOURCE, series.source.name)
-                        putStringArrayListExtra(
-                            DetailActivity.EXTRA_TAGS,
-                            ArrayList(series.tags),
-                        )
-                    },
-                )
-            }
-        }
+            .setNegativeButton(R.string.update_cancel, null)
+            .create()
+        showWatchDialog(dialog)
     }
 
     private fun highlightBottomTabs(

@@ -30,6 +30,14 @@ internal class LocalLibrary(private val database: AppDatabase) {
         recordChange(HISTORY_CLEAR, "", deleted = true)
     }
 
+    suspend fun deleteHistory(seriesId: String) = database.withTransaction {
+        val id = seriesId.trim()
+        if (id.isEmpty()) return@withTransaction
+        history.deleteAll(listOf(id))
+        changes.discardSeries(HISTORY, listOf(id))
+        recordChange(HISTORY, id, deleted = true)
+    }
+
     suspend fun toggleFavorite(record: FavoriteEntity): Boolean = database.withTransaction {
         val isFavorite = !favorites.exists(record.seriesId)
         if (isFavorite) favorites.upsert(record) else favorites.delete(record.seriesId)

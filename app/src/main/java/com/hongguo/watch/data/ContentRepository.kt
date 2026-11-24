@@ -167,14 +167,16 @@ class ContentRepository internal constructor(
         }
 
     /**
-     * 末集跨季：只走相关作品接口返回的稳定 ID / season_index。
-     * 禁止标题搜索降级，避免同名异剧误跳。
+     * 末集跨季：只走官方同 IP 季表（`single_col_same_ip_series`）的
+     * `season_index + 1`。禁止用 `detail_page_more_related` / 标题搜索，
+     * 避免 A 公司第3季误跳 B 公司同题材第4季。
      */
+    @Suppress("UNUSED_PARAMETER") // seriesTitle 保留给调用方；自动续季不看标题
     suspend fun resolveNextSeason(seriesId: String, seriesTitle: String): RelatedWork? =
         withContext(Dispatchers.IO) {
-            val current = Series(id = seriesId, title = seriesTitle, source = SeriesSource.APP)
-            val related = runCatching { appSource.fetchRelated(seriesId) }.getOrDefault(emptyList())
-            RelatedWorks.nextSeason(current, related)
+            val sameIp = runCatching { appSource.fetchSameIpSeries(seriesId) }
+                .getOrDefault(emptyList())
+            RelatedWorks.nextSeasonFromSameIp(seriesId, sameIp)
         }
 
     suspend fun recentHistory(): List<WatchHistoryEntity> = currentLibrary().history.recent()

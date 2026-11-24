@@ -28,81 +28,100 @@ class RelatedWorksTest {
     )
 
     @Test
-    fun nextSeason_picksBySeasonIndexAmongRelatedIds() {
-        val current = series("100001", "示例短剧")
-        val next = RelatedWorks.nextSeason(
-            current,
-            listOf(
-                related("100002", "示例短剧第二季", seasonIndex = 2),
-                related("100003", "示例短剧第三季", seasonIndex = 3),
-            ),
+    fun nextSeasonFromSameIp_picksConsecutiveIndex() {
+        val rows = listOf(
+            related("100001", "示例短剧", seasonIndex = 1),
+            related("100002", "示例短剧第二季", seasonIndex = 2),
+            related("100003", "示例短剧第三季", seasonIndex = 3),
         )
+        val next = RelatedWorks.nextSeasonFromSameIp("100001", rows)
         assertEquals("100002", next?.series?.id)
     }
 
     @Test
-    fun nextSeason_doesNotMatchSolelyOnDisplayName() {
-        // 同名异剧：搜索降级曾会把「另一部示例短剧第二季」当成下一季。
-        val current = series("100001", "示例短剧")
-        val wrongFranchise = related(
-            id = "999999",
-            title = "示例短剧第二季",
-            seasonIndex = 0, // 无 API season_index，仅标题像下一季
-        )
-        // 无 season_index 且相关列表里只有异剧同名时：不得仅靠标题认下一季
-        // （本函数若解析标题季号会命中；因此故意给 season_index=0 并依赖「仅当 index 可解析」——
-        //  标题「…第二季」仍可解析。正确约束是：候选必须来自相关 API 且唯一。
-        //  这里用两部同名「第二季」证明 singleOrNull 拒绝歧义。）
-        val ambiguous = RelatedWorks.nextSeason(
-            current,
-            listOf(
-                wrongFranchise.copy(
-                    series = series("999999", "示例短剧第二季"),
-                    seasonIndex = 2,
-                ),
-                related("888888", "示例短剧第二季", seasonIndex = 2),
+    fun nextSeasonFromSameIp_requiresCurrentInList() {
+        // same-IP 表缺当前剧 → 不强猜
+        assertNull(
+            RelatedWorks.nextSeasonFromSameIp(
+                "100001",
+                listOf(related("100002", "示例短剧第二季", seasonIndex = 2)),
             ),
         )
-        assertNull(ambiguous)
     }
 
     @Test
-    fun nextSeason_ignoresUnrelatedSameTitleWhenCorrectIdPresent() {
-        val current = series("100001", "霸道总裁")
-        val next = RelatedWorks.nextSeason(
-            current,
-            listOf(
-                related("200001", "霸道总裁", seasonIndex = 2), // 同名异剧，但 API 给了 season 2
-                related("100002", "霸道总裁2", seasonIndex = 2),
-            ),
-        )
-        // 两部都是 season 2 → 歧义，拒绝自动跳
-        assertNull(next)
-    }
-
-    @Test
-    fun nextSeason_uniqueRelatedIdWinsEvenIfTitlesDiffer() {
-        val current = series("100001", "示例短剧")
-        val next = RelatedWorks.nextSeason(
-            current,
-            listOf(
-                related("100002", "示例短剧·续章", seasonIndex = 2),
-                related("300001", "完全无关的剧第二季", seasonIndex = 5),
-            ),
-        )
-        assertEquals("100002", next?.series?.id)
-        assertTrue(RelatedWorks.stem(next!!.series.title) != RelatedWorks.stem("完全无关的剧第二季"))
-    }
-
-    @Test
-    fun nextSeason_skipsUpcoming() {
+    fun nextSeason_relatedOnlyWithoutCurrent_returnsNull() {
+        // detail_page_more_related 不含当前 id：不得当自动续季源
         val current = series("100001", "示例短剧")
         assertNull(
             RelatedWorks.nextSeason(
                 current,
-                listOf(related("100002", "示例短剧第二季", seasonIndex = 2, upcoming = true)),
+                listOf(related("100002", "示例短剧第二季", seasonIndex = 2)),
             ),
         )
+    }
+
+    @Test
+    fun nextSeason_studioA_s3_doesNotAutoJumpToStudioB_s4() {
+        // A 公司第3季：同 IP 表只有自家 1–3；related 却推了 B 公司同题材第4季
+        val studioASeason3 = "200003"
+        val studioBSeason4 = "900004"
+        val sameIp = listOf(
+            related("200001", "霸道总裁的隐婚娇妻", seasonIndex = 1),
+            related("200002", "霸道总裁的隐婚娇妻第二季", seasonIndex = 2),
+            related("200003", "霸道总裁的隐婚娇妻第三季", seasonIndex = 3),
+        )
+        val relatedOtherStudio = listOf(
+            related(
+                studioBSeason4,
+                "霸道总裁的隐婚娇妻第四季", // 同题材、他工作室
+                seasonIndex = 4,
+            ),
+            related("777777", "别的相关短剧", seasonIndex = 1),
+        )
+
+        // 同 IP 表无第4季 → 不自动跳
+        assertNull(RelatedWorks.nextSeasonFromSameIp(studioASeason3, sameIp))
+        // related-only（无当前 id）→ 不自动跳
+        assertNull(
+            RelatedWorks.nextSeason(
+                series(studioASeason3, "霸道总裁的隐婚娇妻第三季"),
+                relatedOtherStudio,
+            ),
+        )
+        // resolveNextSeason 只喂 sameIp，绝不把 related 并进去（见 ContentRepository）
+    }
+
+    @Test
+    fun nextSeasonFromSameIp_ambiguousDuplicateIndex_returnsNull() {
+        val rows = listOf(
+            related("100001", "示例短剧", seasonIndex = 1),
+            related("100002", "示例短剧第二季", seasonIndex = 2),
+            related("100099", "示例短剧贰季", seasonIndex = 2),
+        )
+        assertNull(RelatedWorks.nextSeasonFromSameIp("100001", rows))
+    }
+
+    @Test
+    fun nextSeasonFromSameIp_skipsUpcoming() {
+        val rows = listOf(
+            related("100001", "示例短剧", seasonIndex = 1),
+            related("100002", "示例短剧第二季", seasonIndex = 2, upcoming = true),
+        )
+        assertNull(RelatedWorks.nextSeasonFromSameIp("100001", rows))
+    }
+
+    @Test
+    fun nextSeason_doesNotMatchSolelyOnDisplayName() {
+        val current = series("100001", "示例短剧")
+        val ambiguous = RelatedWorks.nextSeason(
+            current,
+            listOf(
+                related("999999", "示例短剧第二季", seasonIndex = 2),
+                related("888888", "示例短剧第二季", seasonIndex = 2),
+            ),
+        )
+        assertNull(ambiguous)
     }
 
     @Test
@@ -124,7 +143,40 @@ class RelatedWorksTest {
         """.trimIndent()
         val rows = RelatedWorks.parse(raw, "100001")
         assertEquals(listOf("100002", "100003"), rows.map { it.series.id })
-        val next = RelatedWorks.nextSeason(series("100001", "示例短剧"), rows)
-        assertEquals("100002", next?.series?.id)
+        // related 解析结果不含当前 id → 自动续季拒绝
+        assertNull(RelatedWorks.nextSeason(series("100001", "示例短剧"), rows))
+    }
+
+    @Test
+    fun parseSameIpSeries_includesCurrentAndSecondaryLabel() {
+        val raw = """
+            {"code":0,"data":[{"video_data":[
+              {"series_id":"100001","title":"示例短剧","content_type":1004,
+               "disable_play":false,"episode_cnt":20,"cover":"",
+               "secondary_info_list":[{"content":"第1季"}]},
+              {"series_id":"100002","title":"示例短剧续","content_type":1004,
+               "disable_play":false,"episode_cnt":20,"cover":"",
+               "secondary_info_list":[{"content":"第2季"}]},
+              {"series_id":"900004","title":"他工作室同题材第四季","content_type":1004,
+               "disable_play":false,"episode_cnt":20,"cover":"",
+               "secondary_info_list":[{"content":"第4季"}]}
+            ]}]}
+        """.trimIndent()
+        val rows = RelatedWorks.parseSameIpSeries(raw, "100001")
+        assertEquals(listOf("100001", "100002", "900004"), rows.map { it.series.id })
+        assertEquals(1, rows[0].seasonIndex)
+        assertEquals(2, rows[1].seasonIndex)
+        // 同 IP 表里 1→2 唯一；4 不是连续后继
+        assertEquals("100002", RelatedWorks.nextSeasonFromSameIp("100001", rows)?.series?.id)
+        assertNull(RelatedWorks.nextSeasonFromSameIp("100002", rows))
+    }
+
+    @Test
+    fun stem_stripsSeasonSuffix() {
+        assertEquals(
+            RelatedWorks.stem("示例短剧"),
+            RelatedWorks.stem("示例短剧第二季"),
+        )
+        assertTrue(RelatedWorks.stem("示例短剧").isNotEmpty())
     }
 }

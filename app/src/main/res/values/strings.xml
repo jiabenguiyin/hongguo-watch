@@ -108,7 +108,7 @@
     <string name="offline_series_deleted">已删除该剧缓存</string>
     <string name="offline_clear_confirm_title">清空视频缓存？</string>
     <string name="offline_clear_confirm_body">将删除全部已缓存分集（约 %1$s），不可恢复。</string>
-    <string name="offline_empty">暂无离线内容\n请到详情页点「下载」按段（如 1–50）或多选 / 全季</string>
+    <string name="offline_empty">暂无离线内容</string>
     <string name="offline_manage">管理离线缓存</string>
     <string name="offline_delete_confirm_title">删除这集？</string>
     <string name="offline_delete_confirm_body">%1$s 第%2$d集（%3$s）</string>

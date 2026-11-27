@@ -40,7 +40,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
@@ -210,9 +209,6 @@ class MainActivity : WatchDisplayActivity() {
         binding.segmentFavorites.setOnClickListener {
             showLibrary(segment = LibrarySegmentPolicy.Segment.FAVORITES)
         }
-        binding.segmentChase.setOnClickListener {
-            showLibrary(segment = LibrarySegmentPolicy.Segment.CHASE)
-        }
         binding.segmentHistory.setOnClickListener {
             showLibrary(segment = LibrarySegmentPolicy.Segment.HISTORY)
         }
@@ -251,17 +247,12 @@ class MainActivity : WatchDisplayActivity() {
                     if (mode == Mode.LIBRARY &&
                         !state.favoritesLoading &&
                         state.favorites != null &&
-                        (librarySegment == LibrarySegmentPolicy.Segment.FAVORITES ||
-                            librarySegment == LibrarySegmentPolicy.Segment.CHASE)
+                        librarySegment == LibrarySegmentPolicy.Segment.FAVORITES
                     ) {
                         val signature = state.favorites.hashCode().toString()
                         if (signature != lastCloudFavoritesSignature) {
                             lastCloudFavoritesSignature = signature
-                            if (librarySegment == LibrarySegmentPolicy.Segment.FAVORITES) {
-                                loadFavoritesList(fromSwipe = false)
-                            } else {
-                                loadChaseList(fromSwipe = false)
-                            }
+                            loadFavoritesList(fromSwipe = false)
                         }
                     }
                 }
@@ -1279,12 +1270,6 @@ class MainActivity : WatchDisplayActivity() {
                     useSeriesAdapter(posterGrid = poster)
                     loadFavoritesList(fromSwipe)
                 }
-                LibrarySegmentPolicy.Segment.CHASE -> {
-                    binding.libraryCacheHook.visibility = View.GONE
-                    binding.pageSubtitle.visibility = View.GONE
-                    useSeriesAdapter(posterGrid = poster)
-                    loadChaseList(fromSwipe)
-                }
             }
         }
     }
@@ -1718,11 +1703,8 @@ class MainActivity : WatchDisplayActivity() {
                     container.chaseUpdates.seedIfAbsent(fav.seriesId, fav.episodeCount)
                 }
                 val historyMap = repo.recentHistory().associateBy { it.seriesId }
-                val chase = container.redfruitAccount.libraryChaseBooks()
-                val chaseIds = chase?.filter { it.isChasedUpdates || it.episodeCount > it.lastSerialCount }
-                    ?.map { it.seriesId }
-                    ?.toHashSet()
-                    .orEmpty()
+                // 追更分段已撤；收藏卡「更新」角标仅用本地游标，不打云端 chase_book
+                val chaseIds = emptySet<String>()
                 if (libraryLayoutList) {
                     val rows = favorites.map { fav ->
                         favoriteClassicRow(fav, historyMap[fav.seriesId])
@@ -1767,149 +1749,6 @@ class MainActivity : WatchDisplayActivity() {
                     binding.emptyView.text = libraryEmptyText(R.string.empty_favorites)
                     refreshFavoritesEditChrome()
                 }
-            } finally {
-                if (token == listGeneration) {
-                    applyListLoading(ListLoadingPolicy.Indicator.NONE)
-                }
-            }
-        }
-    }
-
-    /**
-     * 追更：本地 last_serial_count 可用面优先。
-     * 云端 chase_book 短超时试一次；失败/空/超时一律本地，绝不卡转圈。
-     * 不在此处分集解析全部收藏详情（会拖死手表网络）。
-     */
-    private fun loadChaseList(fromSwipe: Boolean) {
-        binding.emptyView.visibility = View.GONE
-        binding.pageSubtitle.visibility = View.GONE
-        applyListLoading(
-            ListLoadingPolicy.choose(
-                swipeRefreshing = fromSwipe || binding.swipeRefresh.isRefreshing,
-                clearingList = true,
-                hasVisibleContent = false,
-            ),
-        )
-        val token = beginListLoad(clearAdapter = true)
-        adapter.showResumeHint = false
-        adapter.selectionMode = false
-        binding.seriesList.scrollToPosition(0)
-        listJob = lifecycleScope.launch {
-            try {
-                val favorites = container.redfruitAccount.libraryFavorites()
-                val historyMap = repo.recentHistory().associateBy { it.seriesId }
-                // 云端未稳定：最多等 2.5s，超时当本地
-                val remote = withTimeoutOrNull(2_500) {
-                    container.redfruitAccount.libraryChaseBooks()
-                }
-                if (token != listGeneration || mode != Mode.LIBRARY ||
-                    librarySegment != LibrarySegmentPolicy.Segment.CHASE
-                ) {
-                    return@launch
-                }
-                val usingCloud = !remote.isNullOrEmpty()
-                val posters = if (usingCloud) {
-                    val favById = favorites.associateBy { it.seriesId }
-                    remote.orEmpty()
-                        .filter { it.isChasedUpdates || it.episodeCount > it.lastSerialCount }
-                        .filter {
-                            matchesLibrarySearch(
-                                it.seriesTitle.ifBlank { favById[it.seriesId]?.seriesTitle.orEmpty() },
-                            )
-                        }
-                        .mapNotNull { chase ->
-                            if (libraryLayoutList) return@mapNotNull null
-                            val fav = favById[chase.seriesId]
-                            val series = Series(
-                                id = chase.seriesId,
-                                title = chase.seriesTitle.ifBlank { fav?.seriesTitle.orEmpty() }
-                                    .ifBlank { "剧集 ${chase.seriesId}" },
-                                cover = com.hongguo.watch.data.CoverUrls.normalize(
-                                    chase.cover.ifBlank { fav?.cover.orEmpty() },
-                                ),
-                                episodeCount = chase.episodeCount.takeIf { it > 0 }
-                                    ?: fav?.episodeCount ?: 0,
-                                source = SeriesSource.APP,
-                            )
-                            HomeRow.Poster(
-                                series = series,
-                                watchedEpisode = historyMap[chase.seriesId]?.episodeNumber,
-                                totalEpisodes = series.episodeCount.takeIf { it > 0 },
-                                hasUpdate = true,
-                            )
-                        }
-                } else {
-                    favorites.mapNotNull { fav ->
-                        if (!matchesLibrarySearch(fav.seriesTitle)) return@mapNotNull null
-                        if (!container.chaseUpdates.hasSeed(fav.seriesId)) {
-                            container.chaseUpdates.seedIfAbsent(fav.seriesId, fav.episodeCount)
-                            return@mapNotNull null
-                        }
-                        val last = container.chaseUpdates.lastSerialCount(fav.seriesId)
-                        if (!ChaseUpdatePolicy.hasUpdate(fav.episodeCount, last, seeded = true)) {
-                            return@mapNotNull null
-                        }
-                        if (libraryLayoutList) null
-                        else favoritePosterRow(fav, historyMap[fav.seriesId]?.episodeNumber, setOf(fav.seriesId))
-                    }
-                }
-                val classicRows = if (!libraryLayoutList) {
-                    emptyList()
-                } else if (usingCloud) {
-                    val favById = favorites.associateBy { it.seriesId }
-                    remote.orEmpty()
-                        .filter { it.isChasedUpdates || it.episodeCount > it.lastSerialCount }
-                        .filter {
-                            matchesLibrarySearch(
-                                it.seriesTitle.ifBlank { favById[it.seriesId]?.seriesTitle.orEmpty() },
-                            )
-                        }
-                        .map { chase ->
-                            val fav = favById[chase.seriesId]
-                            val history = historyMap[chase.seriesId]
-                            HomeRow.Item(
-                                series = Series(
-                                    id = chase.seriesId,
-                                    title = chase.seriesTitle.ifBlank { fav?.seriesTitle.orEmpty() }
-                                        .ifBlank { "剧集 ${chase.seriesId}" },
-                                    cover = com.hongguo.watch.data.CoverUrls.normalize(
-                                        chase.cover.ifBlank { fav?.cover.orEmpty() },
-                                    ),
-                                    episodeCount = chase.episodeCount.takeIf { it > 0 }
-                                        ?: fav?.episodeCount ?: 0,
-                                    source = SeriesSource.APP,
-                                ),
-                                watchedEpisode = history?.episodeNumber,
-                                totalEpisodes = (chase.episodeCount.takeIf { it > 0 }
-                                    ?: fav?.episodeCount)?.takeIf { it > 0 },
-                                progressPercent = null,
-                            )
-                        }
-                } else {
-                    favorites.mapNotNull { fav ->
-                        if (!matchesLibrarySearch(fav.seriesTitle)) return@mapNotNull null
-                        if (!container.chaseUpdates.hasSeed(fav.seriesId)) {
-                            container.chaseUpdates.seedIfAbsent(fav.seriesId, fav.episodeCount)
-                            return@mapNotNull null
-                        }
-                        val last = container.chaseUpdates.lastSerialCount(fav.seriesId)
-                        if (!ChaseUpdatePolicy.hasUpdate(fav.episodeCount, last, seeded = true)) {
-                            return@mapNotNull null
-                        }
-                        favoriteClassicRow(fav, historyMap[fav.seriesId])
-                    }
-                }
-                val count = if (libraryLayoutList) classicRows.size else posters.size
-                val rows = if (libraryLayoutList) classicRows else posters
-                if (token != listGeneration || mode != Mode.LIBRARY ||
-                    librarySegment != LibrarySegmentPolicy.Segment.CHASE
-                ) {
-                    return@launch
-                }
-                adapter.submit(rows)
-                binding.seriesList.scrollToPosition(0)
-                binding.emptyView.visibility = if (count == 0) View.VISIBLE else View.GONE
-                binding.emptyView.text = libraryEmptyText(R.string.empty_chase)
             } finally {
                 if (token == listGeneration) {
                     applyListLoading(ListLoadingPolicy.Indicator.NONE)
@@ -1985,7 +1824,6 @@ class MainActivity : WatchDisplayActivity() {
             view.paint.isFakeBoldText = selected
         }
         style(binding.segmentFavorites, segment == LibrarySegmentPolicy.Segment.FAVORITES)
-        style(binding.segmentChase, segment == LibrarySegmentPolicy.Segment.CHASE)
         style(binding.segmentHistory, segment == LibrarySegmentPolicy.Segment.HISTORY)
         style(binding.segmentOffline, segment == LibrarySegmentPolicy.Segment.OFFLINE)
     }

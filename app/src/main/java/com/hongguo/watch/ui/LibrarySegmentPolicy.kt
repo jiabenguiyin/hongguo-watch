@@ -3,9 +3,9 @@ package com.hongguo.watch.ui
 import kotlin.math.abs
 
 /**
- * 库页内「收藏 / 追更 / 历史 / 离线」分段切换策略。
+ * 库页内「收藏 / 历史 / 离线」分段切换策略。
  *
- * 点赞 / 预约云端未打通前不进分段（避免失败空页）。
+ * 点赞 / 预约 / 追更 云端未打通前不进分段（避免失败空页与转圈）。
  * 左右滑只在库内相邻分段之间移动；到边即停，不循环。
  *
  * 三列 / 列表是全局布局模式（设置开关），对各分段共用；
@@ -14,14 +14,12 @@ import kotlin.math.abs
 object LibrarySegmentPolicy {
     enum class Segment {
         FAVORITES,
-        CHASE,
         HISTORY,
         OFFLINE,
     }
 
     val ORDER: List<Segment> = listOf(
         Segment.FAVORITES,
-        Segment.CHASE,
         Segment.HISTORY,
         Segment.OFFLINE,
     )

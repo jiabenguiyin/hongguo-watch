@@ -10,19 +10,11 @@ class LibrarySegmentPolicyTest {
     @Test
     fun flingMovesOnlyToAdjacentSegment() {
         assertEquals(
-            LibrarySegmentPolicy.Segment.CHASE,
+            LibrarySegmentPolicy.Segment.HISTORY,
             LibrarySegmentPolicy.targetAfterFling(
                 LibrarySegmentPolicy.Segment.FAVORITES,
                 velocityX = -1200f,
                 velocityY = 100f,
-            ),
-        )
-        assertEquals(
-            LibrarySegmentPolicy.Segment.HISTORY,
-            LibrarySegmentPolicy.targetAfterFling(
-                LibrarySegmentPolicy.Segment.CHASE,
-                velocityX = -1200f,
-                velocityY = 0f,
             ),
         )
         assertEquals(
@@ -36,7 +28,7 @@ class LibrarySegmentPolicyTest {
         assertEquals(
             LibrarySegmentPolicy.Segment.FAVORITES,
             LibrarySegmentPolicy.targetAfterFling(
-                LibrarySegmentPolicy.Segment.CHASE,
+                LibrarySegmentPolicy.Segment.HISTORY,
                 velocityX = 1200f,
                 velocityY = 50f,
             ),
@@ -87,19 +79,18 @@ class LibrarySegmentPolicyTest {
     }
 
     @Test
-    fun posterGridFollowsListModeForUsableSegments() {
-        for (segment in LibrarySegmentPolicy.ORDER) {
-            assertTrue(LibrarySegmentPolicy.usesPosterGrid(segment, listMode = false))
-            assertFalse(LibrarySegmentPolicy.usesPosterGrid(segment, listMode = true))
-        }
+    fun usableSegmentsAreFavoritesHistoryOffline() {
         assertEquals(
             listOf(
                 LibrarySegmentPolicy.Segment.FAVORITES,
-                LibrarySegmentPolicy.Segment.CHASE,
                 LibrarySegmentPolicy.Segment.HISTORY,
                 LibrarySegmentPolicy.Segment.OFFLINE,
             ),
             LibrarySegmentPolicy.ORDER,
         )
+        for (segment in LibrarySegmentPolicy.ORDER) {
+            assertTrue(LibrarySegmentPolicy.usesPosterGrid(segment, listMode = false))
+            assertFalse(LibrarySegmentPolicy.usesPosterGrid(segment, listMode = true))
+        }
     }
 }

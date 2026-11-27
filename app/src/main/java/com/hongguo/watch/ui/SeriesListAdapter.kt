@@ -65,8 +65,8 @@ sealed class HomeRow {
     ) : HomeRow()
 
     /**
-     * 库收藏/点赞/预约/追更三列海报。
-     * 默认 meta 为进度「已看集/总集」；[metaLabel] 非空时覆盖（如预约「N万热度」）。
+     * 库收藏等三列海报。
+     * 默认 meta 为进度「已看集/总集」；[metaLabel] 非空时覆盖。
      */
     data class Poster(
         val series: Series,

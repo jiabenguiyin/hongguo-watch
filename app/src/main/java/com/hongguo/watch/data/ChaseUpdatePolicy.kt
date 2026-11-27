@@ -35,9 +35,10 @@ object ChaseUpdatePolicy {
     }
 
     /**
-     * 详情「收藏」按钮旁人数：官方 `favorite_cnt` / `collect_count` 等。
-     * 返回纯数字文案（如 `1.2万` / `198.9万`）；≤0 返回空。
-     * 按钮最终文案用资源 `%1$s收藏` 拼成「198.9万收藏」，勿再前置「收藏」。
+     * 详情「收藏」按钮旁人数。详情 preload 实测字段为 `video_data.followed_cnt`；
+     * 文档旧名 `favorite_cnt` / `collect_count` 作兼容。
+     * 返回纯数字文案（如 `1.2万` / `199万`）；≤0 返回空。
+     * 按钮：未收藏 `%1$s收藏`；已收藏 `已收藏·%1$s`。
      */
     fun formatCollectCount(count: Long): String {
         if (count <= 0L) return ""

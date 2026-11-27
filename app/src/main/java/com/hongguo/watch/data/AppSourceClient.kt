@@ -401,8 +401,9 @@ class AppSourceClient(
         if (episodes.isEmpty()) throw IllegalStateException("分集列表为空")
         episodes.sortBy { it.number }
 
+        // 详情社交收藏数：实测字段 video_data.followed_cnt（非 favorite_cnt）
         val collectCount = listOf(videoData, seriesNode)
-            .map { parseCollectCount(it) }
+            .map { CollectCountParser.parse(it) }
             .firstOrNull { it > 0L }
             ?: 0L
 
@@ -418,97 +419,6 @@ class AppSourceClient(
             ),
             episodes = episodes,
         )
-    }
-
-    /**
-     * 官方详情社交收藏数。候选：`favorite_cnt` / `collect_cnt` / `collect_count` /
-     * `all_bookshelf_count`（含 camelCase）；再试 `video_cover_stat_infos`、
-     * `secondary_info_list`「X万收藏」。
-     */
-    private fun parseCollectCount(node: JSONObject): Long {
-        val directKeys = listOf(
-            "favorite_cnt",
-            "favoriteCnt",
-            "collect_cnt",
-            "collectCnt",
-            "collect_count",
-            "collectCount",
-            "all_bookshelf_count",
-            "allBookshelfCount",
-            "bookshelf_count",
-            "bookshelfCount",
-            "collectors_count",
-            "collectorsCount",
-        )
-        for (key in directKeys) {
-            val n = positiveLongField(node, key)
-            if (n > 0L) return n
-        }
-        val nested = listOfNotNull(
-            node.optJSONObject("series_data"),
-            node.optJSONObject("book_data"),
-            node.optJSONObject("video_detail"),
-            node.optJSONObject("key_metrics"),
-            node.optJSONObject("stat_info"),
-        )
-        for (parent in nested) {
-            for (key in directKeys) {
-                val n = positiveLongField(parent, key)
-                if (n > 0L) return n
-            }
-        }
-        val stats = node.optJSONArray("video_cover_stat_infos")
-        if (stats != null) {
-            for (i in 0 until stats.length()) {
-                val row = stats.optJSONObject(i) ?: continue
-                val type = row.str("video_cover_stat_type").ifBlank { row.str("stat_type") }
-                val valueText = row.str("video_cover_stat_value").ifBlank { row.str("stat_value") }
-                val typeNum = row.optInt("video_cover_stat_type", row.optInt("stat_type", -1))
-                val looksCollect = type.contains("collect", ignoreCase = true) ||
-                    type.contains("favorite", ignoreCase = true) ||
-                    type.contains("bookshelf", ignoreCase = true) ||
-                    type.contains("收藏") ||
-                    typeNum == 1 || typeNum == 2
-                if (!looksCollect && valueText.isBlank()) continue
-                val fromValue = ChaseUpdatePolicy.parseCollectCountLabel(valueText)
-                    .takeIf { it > 0L }
-                    ?: ChaseUpdatePolicy.parseCountText(valueText)
-                if (fromValue > 0L) return fromValue
-                val raw = positiveLongField(row, "video_cover_stat_value")
-                    .takeIf { it > 0L }
-                    ?: positiveLongField(row, "stat_value")
-                if (raw > 0L && looksCollect) return raw
-            }
-        }
-        val secondary = node.optJSONArray("secondary_info_list")
-        if (secondary != null) {
-            for (i in 0 until secondary.length()) {
-                val content = secondary.optJSONObject(i)?.str("content").orEmpty()
-                val n = ChaseUpdatePolicy.parseCollectCountLabel(content)
-                if (n > 0L) return n
-            }
-        }
-        return 0L
-    }
-
-    /** 兼容 Number / 数字字符串 /「198.9万」文案。 */
-    private fun positiveLongField(obj: JSONObject, key: String): Long {
-        if (!obj.has(key) || obj.isNull(key)) return -1L
-        when (val raw = obj.opt(key)) {
-            is Number -> {
-                val n = raw.toLong()
-                return if (n > 0L) n else -1L
-            }
-            is String -> {
-                val text = raw.trim()
-                if (text.isEmpty()) return -1L
-                text.toLongOrNull()?.takeIf { it > 0L }?.let { return it }
-                ChaseUpdatePolicy.parseCollectCountLabel(text).takeIf { it > 0L }?.let { return it }
-                ChaseUpdatePolicy.parseCountText(text).takeIf { it > 0L }?.let { return it }
-            }
-        }
-        val fallback = obj.optLong(key, -1L)
-        return if (fallback > 0L) fallback else -1L
     }
 
     /**
@@ -1076,7 +986,7 @@ class AppSourceClient(
             if (!heat.isNullOrBlank()) add(heat)
             addAll(genres)
         }.distinct().take(3)
-        val collectCount = parseCollectCount(row)
+        val collectCount = CollectCountParser.parse(row)
             .takeIf { it > 0L }
             ?: collectTag?.let { ChaseUpdatePolicy.parseCollectCountLabel(it) }?.takeIf { it > 0L }
             ?: 0L

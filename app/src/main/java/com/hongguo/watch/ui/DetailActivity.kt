@@ -743,9 +743,11 @@ class DetailActivity : WatchDisplayActivity() {
         binding.favoriteButton.setImageResource(
             if (favorited) R.drawable.ic_favorite else R.drawable.ic_favorite_border,
         )
-        // 唯一文案：有数 →「198.9万收藏」；无数 →「收藏」/「已收藏」。绝不叠两层「收藏」。
+        // 有数必显：未收藏「199万收藏」/ 已收藏「已收藏·199万」；无数才退回「收藏」/「已收藏」。
         val countLabel = ChaseUpdatePolicy.formatCollectCount(collectCount)
         binding.favoriteAction.text = when {
+            countLabel.isNotEmpty() && favorited ->
+                getString(R.string.favorite_added_with_count, countLabel)
             countLabel.isNotEmpty() -> getString(R.string.favorite_with_count, countLabel)
             favorited -> getString(R.string.favorite_added)
             else -> getString(R.string.favorite)

@@ -10,11 +10,27 @@ class LibrarySegmentPolicyTest {
     @Test
     fun flingMovesOnlyToAdjacentSegment() {
         assertEquals(
-            LibrarySegmentPolicy.Segment.CHASE,
+            LibrarySegmentPolicy.Segment.LIKES,
             LibrarySegmentPolicy.targetAfterFling(
                 LibrarySegmentPolicy.Segment.FAVORITES,
                 velocityX = -1200f,
                 velocityY = 100f,
+            ),
+        )
+        assertEquals(
+            LibrarySegmentPolicy.Segment.RESERVATIONS,
+            LibrarySegmentPolicy.targetAfterFling(
+                LibrarySegmentPolicy.Segment.LIKES,
+                velocityX = -1200f,
+                velocityY = 0f,
+            ),
+        )
+        assertEquals(
+            LibrarySegmentPolicy.Segment.CHASE,
+            LibrarySegmentPolicy.targetAfterFling(
+                LibrarySegmentPolicy.Segment.RESERVATIONS,
+                velocityX = -1200f,
+                velocityY = 0f,
             ),
         )
         assertEquals(
@@ -36,7 +52,7 @@ class LibrarySegmentPolicyTest {
         assertEquals(
             LibrarySegmentPolicy.Segment.FAVORITES,
             LibrarySegmentPolicy.targetAfterFling(
-                LibrarySegmentPolicy.Segment.CHASE,
+                LibrarySegmentPolicy.Segment.LIKES,
                 velocityX = 1200f,
                 velocityY = 50f,
             ),
@@ -87,10 +103,10 @@ class LibrarySegmentPolicyTest {
     }
 
     @Test
-    fun posterGridOnlyForFavoritesAndChase() {
-        assertTrue(LibrarySegmentPolicy.usesPosterGrid(LibrarySegmentPolicy.Segment.FAVORITES))
-        assertTrue(LibrarySegmentPolicy.usesPosterGrid(LibrarySegmentPolicy.Segment.CHASE))
-        assertFalse(LibrarySegmentPolicy.usesPosterGrid(LibrarySegmentPolicy.Segment.HISTORY))
-        assertFalse(LibrarySegmentPolicy.usesPosterGrid(LibrarySegmentPolicy.Segment.OFFLINE))
+    fun posterGridFollowsListModeForAllSegments() {
+        for (segment in LibrarySegmentPolicy.ORDER) {
+            assertTrue(LibrarySegmentPolicy.usesPosterGrid(segment, listMode = false))
+            assertFalse(LibrarySegmentPolicy.usesPosterGrid(segment, listMode = true))
+        }
     }
 }

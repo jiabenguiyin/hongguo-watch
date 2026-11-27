@@ -64,13 +64,17 @@ sealed class HomeRow {
         val items: List<Series>,
     ) : HomeRow()
 
-    /** 库收藏/追更三列海报；进度为官方「已看集/总集」，非社交收藏数。 */
+    /**
+     * 库收藏/点赞/预约/追更三列海报。
+     * 默认 meta 为进度「已看集/总集」；[metaLabel] 非空时覆盖（如预约「N万热度」）。
+     */
     data class Poster(
         val series: Series,
         val watchedEpisode: Int? = null,
         val totalEpisodes: Int? = null,
         val hasUpdate: Boolean = false,
         val selected: Boolean = false,
+        val metaLabel: String? = null,
     ) : HomeRow()
 }
 
@@ -366,7 +370,8 @@ class SeriesListAdapter(
             val series = row.series
             binding.posterTitle.text = series.title
             val total = row.totalEpisodes?.takeIf { it > 0 } ?: series.episodeCount
-            val meta = ChaseUpdatePolicy.progressLabel(row.watchedEpisode, total)
+            val meta = row.metaLabel?.takeIf { it.isNotBlank() }
+                ?: ChaseUpdatePolicy.progressLabel(row.watchedEpisode, total)
             if (meta.isBlank()) {
                 binding.posterMeta.visibility = View.GONE
                 binding.posterMeta.text = ""

@@ -104,10 +104,10 @@
                         android:src="@drawable/ic_settings_offline" />
 
                     <androidx.appcompat.widget.SwitchCompat
-                        android:id="@+id/libraryLayoutClassicSwitch"
+                        android:id="@+id/libraryLayoutListSwitch"
                         style="@style/Widget.HongguoWatch.SettingsSwitch"
                         android:enabled="false"
-                        android:text="@string/library_layout_classic" />
+                        android:text="@string/library_layout_list" />
                 </LinearLayout>
             </LinearLayout>
 

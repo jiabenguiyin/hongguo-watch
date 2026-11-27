@@ -32,15 +32,16 @@ class SettingsStore(private val context: Context) {
     private val screenOffContinueKey = booleanPreferencesKey("screen_off_continue")
     private val episodeWheelEnabledKey = booleanPreferencesKey("episode_wheel_enabled")
     /**
-     * 库页排版：false=官方新样式（三列海报，默认）；true=旧列表排版。
-     * 旧代码路径保留，仅由此开关启用。
+     * 库页布局模式（收藏/点赞/预约/追更/历史/离线共用）：
+     * false=三列海报（默认）；true=列表（原列表 UI）。
+     * 偏好键沿用 library_layout_classic，避免已有设置丢失。
      */
-    private val libraryLayoutClassicKey = booleanPreferencesKey("library_layout_classic")
+    private val libraryLayoutListKey = booleanPreferencesKey("library_layout_classic")
 
     val wifiOnly: Flow<Boolean> = context.dataStore.data.map { it[wifiOnlyKey] ?: false }
-    /** true = 旧列表；false = 官方新三列（默认）。 */
-    val libraryLayoutClassic: Flow<Boolean> = context.dataStore.data.map {
-        it[libraryLayoutClassicKey] ?: false
+    /** true = 列表模式；false = 三列模式（默认）。 */
+    val libraryLayoutList: Flow<Boolean> = context.dataStore.data.map {
+        it[libraryLayoutListKey] ?: false
     }
     /** 熄屏续听：关=熄屏暂停（默认）；开=熄屏继续出声。 */
     val screenOffContinue: Flow<Boolean> = context.dataStore.data.map {
@@ -92,8 +93,8 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[episodeWheelEnabledKey] = enabled }
     }
 
-    suspend fun setLibraryLayoutClassic(classic: Boolean) {
-        context.dataStore.edit { it[libraryLayoutClassicKey] = classic }
+    suspend fun setLibraryLayoutList(listMode: Boolean) {
+        context.dataStore.edit { it[libraryLayoutListKey] = listMode }
     }
 
     suspend fun setMaxQuality(height: Int) {
@@ -135,7 +136,7 @@ class SettingsStore(private val context: Context) {
 
     suspend fun wifiOnlyNow(): Boolean = wifiOnly.first()
     suspend fun screenOffContinueNow(): Boolean = screenOffContinue.first()
-    suspend fun libraryLayoutClassicNow(): Boolean = libraryLayoutClassic.first()
+    suspend fun libraryLayoutListNow(): Boolean = libraryLayoutList.first()
     suspend fun maxQualityNow(): Int = maxQuality.first()
     suspend fun playbackSpeedNow(): Float = playbackSpeed.first()
     suspend fun roundAdaptModeNow(): Int = roundAdaptMode.first()

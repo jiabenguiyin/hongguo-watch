@@ -52,8 +52,8 @@
     <string name="library_delete_confirm_title">删除选中收藏？</string>
     <string name="library_delete_confirm_body">将移除 %1$d 部收藏，可稍后再加回。</string>
     <string name="library_deleted_count">已删除 %1$d 部</string>
-    <string name="library_layout_classic">旧排版</string>
-    <string name="library_layout_classic_summary">关=官方三列（默认）；开=旧列表</string>
+    <string name="library_layout_list">列表模式</string>
+    <string name="library_layout_list_summary">关=三列海报（默认）；开=列表（原列表 UI）</string>
     <string name="chase_subtitle_local">本地集数游标（官方追更不可用）</string>
     <string name="chase_subtitle_cloud">官方追更</string>
     <string name="library_search">库内搜索</string>
@@ -175,8 +175,20 @@
     <string name="time_lock_app_locked">今日观看时长已用完，请输入密码解锁</string>
     <string name="favorites_subtitle">已收藏的短剧</string>
     <string name="segment_favorites">收藏</string>
+    <string name="segment_likes">点赞</string>
+    <string name="segment_reservations">预约</string>
     <string name="segment_chase">追更</string>
     <string name="segment_history">历史</string>
+    <string name="empty_likes">暂无点赞\n登录后同步云端点赞</string>
+    <string name="empty_likes_need_login">登录后可查看点赞</string>
+    <string name="empty_reservations">暂无预约\n登录后同步云端预约</string>
+    <string name="empty_reservations_need_login">登录后可查看预约</string>
+    <string name="likes_load_failed">点赞加载失败，下拉重试</string>
+    <string name="reservations_load_failed">预约加载失败，下拉重试</string>
+    <string name="reservation_online">已上线</string>
+    <string name="reservation_pending">待上线</string>
+    <string name="likes_count">%1$d 个点赞</string>
+    <string name="reservations_count">%1$d 部预约</string>
     <string name="progress_watched">已看 %1$d/%2$d 集（%3$d%%）</string>
     <string name="progress_watched_ep">已看第 %1$d 集</string>
     <string name="setting_kernel_status_auto">自动（推荐）</string>

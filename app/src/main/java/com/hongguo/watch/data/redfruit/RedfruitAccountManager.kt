@@ -126,6 +126,28 @@ internal class RedfruitAccountManager(
         }.getOrNull()
     }
 
+    /**
+     * 官方点赞列表。未登录返回 null；已登录失败抛错由 UI 展示。
+     * 空列表表示账号下暂无点赞。
+     */
+    suspend fun libraryLikedSeries(): List<RedfruitLikedSeries>? {
+        val credentials = session ?: return null
+        if (mutableStatus.value.needsInitialMergeChoice) return null
+        return withContext(Dispatchers.IO) { cloud.likedSeries(credentials) }
+    }
+
+    /**
+     * 官方预约列表。未登录返回 null；已登录失败抛错由 UI 展示。
+     */
+    suspend fun libraryReservations(): List<RedfruitReservation>? {
+        val credentials = session ?: return null
+        if (mutableStatus.value.needsInitialMergeChoice) return null
+        return withContext(Dispatchers.IO) { cloud.reservations(credentials) }
+    }
+
+    /** 是否已有红果账号会话（点赞/预约云端分段需要）。 */
+    fun hasCloudSession(): Boolean = session != null && !mutableStatus.value.needsInitialMergeChoice
+
     private fun libraryForAccount(accountId: String): LocalLibrary {
         val key = MessageDigest.getInstance("SHA-256")
             .digest(accountId.encodeToByteArray())

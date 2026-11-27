@@ -50,6 +50,19 @@ object ChaseUpdatePolicy {
         }
     }
 
+    /**
+     * 预约卡热度文案。优先官方 `hot_score_text`；否则用数值拼 `N万热度`。
+     * 无真实字段返回空（勿造假火焰）。
+     */
+    fun formatHeatLabel(hotValue: Long, hotText: String = ""): String {
+        val text = hotText.trim()
+        if (text.isNotEmpty()) {
+            return if (text.contains("热度")) text else "${text}热度"
+        }
+        val n = formatCollectCount(hotValue)
+        return if (n.isEmpty()) "" else "${n}热度"
+    }
+
     /** 从「98.8万收藏」类标签抽出人数；解析失败返回 0。 */
     fun parseCollectCountLabel(raw: String): Long {
         val text = raw.trim()

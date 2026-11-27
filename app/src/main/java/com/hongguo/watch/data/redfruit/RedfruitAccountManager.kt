@@ -115,6 +115,17 @@ internal class RedfruitAccountManager(
         )
     }
 
+    /**
+     * 官方追更列表。未登录或请求失败返回 null，由 UI 降级到本地 `last_serial_count` 游标。
+     */
+    suspend fun libraryChaseBooks(): List<RedfruitChaseBook>? {
+        val credentials = session ?: return null
+        if (mutableStatus.value.needsInitialMergeChoice) return null
+        return runCatching {
+            withContext(Dispatchers.IO) { cloud.chaseBooks(credentials) }
+        }.getOrNull()
+    }
+
     private fun libraryForAccount(accountId: String): LocalLibrary {
         val key = MessageDigest.getInstance("SHA-256")
             .digest(accountId.encodeToByteArray())

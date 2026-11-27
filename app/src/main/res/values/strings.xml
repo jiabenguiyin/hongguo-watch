@@ -19,6 +19,13 @@
     <string name="nav_search">搜索</string>
     <string name="section_for_you">为你推荐</string>
     <string name="section_more">更多 &gt;</string>
+    <string name="favorites_count">共 %1$d 部</string>
+    <string name="chase_count">%1$d 部有更新</string>
+    <string name="chase_badge">更新</string>
+    <string name="chase_subtitle">官方追更优先 · 失败则用本地集数游标</string>
+    <string name="empty_chase">暂无更新\n收藏剧有新集时会出现在这里</string>
+    <string name="favorite_progress">%1$d集/%2$d集</string>
+    <string name="favorite_progress_total">全%1$d集</string>
     <string name="search_hint">搜索短剧、漫剧、演员</string>
     <string name="search">搜索</string>
     <string name="search_discovery_title">搜索发现</string>
@@ -149,8 +156,9 @@
     <string name="time_lock_unlocked_toast">已解锁，今日可继续使用</string>
     <string name="time_lock_app_locked">今日观看时长已用完，请输入密码解锁</string>
     <string name="favorites_subtitle">已收藏的短剧</string>
-    <string name="segment_favorites">我的收藏</string>
-    <string name="segment_history">观看历史</string>
+    <string name="segment_favorites">收藏</string>
+    <string name="segment_chase">追更</string>
+    <string name="segment_history">历史</string>
     <string name="progress_watched">已看 %1$d/%2$d 集（%3$d%%）</string>
     <string name="progress_watched_ep">已看第 %1$d 集</string>
     <string name="setting_kernel_status_auto">自动（推荐）</string>

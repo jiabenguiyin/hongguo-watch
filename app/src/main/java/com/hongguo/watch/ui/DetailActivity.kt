@@ -739,13 +739,16 @@ class DetailActivity : WatchDisplayActivity() {
 
     private fun toggleFavorite() {
         lifecycleScope.launch {
+            val total = ContentRepository.episodeTotal(episodeCount, episodes.size)
             favorited = repo.toggleFavorite(
                 seriesId = seriesId,
                 seriesTitle = seriesTitle,
                 cover = cover,
                 source = source,
-                episodeCount = ContentRepository.episodeTotal(episodeCount, episodes.size),
+                episodeCount = total,
             )
+            if (favorited) container.chaseUpdates.seedIfAbsent(seriesId, total)
+            else container.chaseUpdates.clear(seriesId)
             refreshFavoriteUi()
             Toast.makeText(
                 this@DetailActivity,

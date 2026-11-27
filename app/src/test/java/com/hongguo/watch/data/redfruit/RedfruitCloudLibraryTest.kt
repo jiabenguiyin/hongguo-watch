@@ -114,6 +114,28 @@ class RedfruitCloudLibraryTest {
     }
 
     @Test
+    fun chaseBooksUsesOfficialChaseListPath() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val cloud = cloud(
+            requests,
+            responseBody = """{"code":0,"data":{"chase_book_data_list":[
+                {"series_id_str":"12345","series_title":"追更剧","episode_cnt":90,
+                 "last_serial_count":80,"is_chased_updates":true,
+                 "series_cover_url":"https://example.com/a.jpg"}
+            ]}}""",
+        )
+
+        val rows = cloud.chaseBooks(credentials)
+
+        assertEquals(1, requests.size)
+        assertEquals("/reading/bookapi/chase_book/list/v1/", requests.single().url.encodedPath)
+        assertEquals("12345", rows.single().seriesId)
+        assertEquals(90, rows.single().episodeCount)
+        assertEquals(80, rows.single().lastSerialCount)
+        assertTrue(rows.single().isChasedUpdates)
+    }
+
+    @Test
     fun setFavoriteUsesOfficialVideoShelfPayloadForAddAndRemove() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val cloud = cloud(requests)

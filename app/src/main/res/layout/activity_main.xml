@@ -72,6 +72,17 @@
             android:textStyle="bold" />
 
         <TextView
+            android:id="@+id/segmentChase"
+            android:layout_width="0dp"
+            android:layout_height="32dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_top_tab_idle"
+            android:gravity="center"
+            android:text="@string/segment_chase"
+            android:textColor="@color/text_secondary"
+            android:textSize="@dimen/watch_meta" />
+
+        <TextView
             android:id="@+id/segmentHistory"
             android:layout_width="0dp"
             android:layout_height="32dp"

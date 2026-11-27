@@ -10,11 +10,19 @@ class LibrarySegmentPolicyTest {
     @Test
     fun flingMovesOnlyToAdjacentSegment() {
         assertEquals(
-            LibrarySegmentPolicy.Segment.HISTORY,
+            LibrarySegmentPolicy.Segment.CHASE,
             LibrarySegmentPolicy.targetAfterFling(
                 LibrarySegmentPolicy.Segment.FAVORITES,
                 velocityX = -1200f,
                 velocityY = 100f,
+            ),
+        )
+        assertEquals(
+            LibrarySegmentPolicy.Segment.HISTORY,
+            LibrarySegmentPolicy.targetAfterFling(
+                LibrarySegmentPolicy.Segment.CHASE,
+                velocityX = -1200f,
+                velocityY = 0f,
             ),
         )
         assertEquals(
@@ -28,7 +36,7 @@ class LibrarySegmentPolicyTest {
         assertEquals(
             LibrarySegmentPolicy.Segment.FAVORITES,
             LibrarySegmentPolicy.targetAfterFling(
-                LibrarySegmentPolicy.Segment.HISTORY,
+                LibrarySegmentPolicy.Segment.CHASE,
                 velocityX = 1200f,
                 velocityY = 50f,
             ),
@@ -76,5 +84,13 @@ class LibrarySegmentPolicyTest {
         assertTrue(LibrarySegmentPolicy.shouldClaimHorizontal(40f, 10f, touchSlopPx = 16f))
         assertFalse(LibrarySegmentPolicy.shouldClaimHorizontal(10f, 40f, touchSlopPx = 16f))
         assertFalse(LibrarySegmentPolicy.shouldClaimHorizontal(8f, 2f, touchSlopPx = 16f))
+    }
+
+    @Test
+    fun posterGridOnlyForFavoritesAndChase() {
+        assertTrue(LibrarySegmentPolicy.usesPosterGrid(LibrarySegmentPolicy.Segment.FAVORITES))
+        assertTrue(LibrarySegmentPolicy.usesPosterGrid(LibrarySegmentPolicy.Segment.CHASE))
+        assertFalse(LibrarySegmentPolicy.usesPosterGrid(LibrarySegmentPolicy.Segment.HISTORY))
+        assertFalse(LibrarySegmentPolicy.usesPosterGrid(LibrarySegmentPolicy.Segment.OFFLINE))
     }
 }

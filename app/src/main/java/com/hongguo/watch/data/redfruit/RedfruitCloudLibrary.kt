@@ -34,6 +34,19 @@ internal data class RedfruitCloudProfile(
     internal val shelfUserId: String?,
 )
 
+/**
+ * 官方追更条目（`chase_book/list` / `bookshelf/chase_book`）。
+ * [episodeCount] 为当前总集；[lastSerialCount] 对齐官方本地 `last_serial_count`。
+ */
+internal data class RedfruitChaseBook(
+    val seriesId: String,
+    val seriesTitle: String,
+    val cover: String,
+    val episodeCount: Int,
+    val lastSerialCount: Int,
+    val isChasedUpdates: Boolean,
+)
+
 internal class RedfruitCloudException(
     message: String,
     val authenticationRejected: Boolean = false,
@@ -158,6 +171,45 @@ internal class RedfruitCloudLibrary(
                 episodeCount = row.episodeCount.takeIf { it > 0 } ?: detail?.episodeCount ?: 0,
             )
         }
+    }
+
+    /**
+     * 官方追更列表。优先 `chase_book/list`，404/405 再试 `bookshelf/chase_book`。
+     * Schema 仅有 DEX 字段名证据，解析保持宽松；结构无效时抛错由调用方降级本地游标。
+     */
+    suspend fun chaseBooks(credentials: RedfruitCredentials): List<RedfruitChaseBook> {
+        val payload = try {
+            requestVariants(
+                credentials,
+                listOf(
+                    "/reading/bookapi/chase_book/list/v1/",
+                    "/reading/bookapi/chase_book/list/v",
+                ),
+            )
+        } catch (error: RedfruitCloudException) {
+            if (error.httpStatus != 404 && error.httpStatus != 405) throw error
+            requestVariants(
+                credentials,
+                listOf(
+                    "/reading/bookapi/bookshelf/chase_book/v1/",
+                    "/reading/bookapi/bookshelf/chase_book/v",
+                ),
+            )
+        }
+        val data = payload.requireCloudData()
+        val rows = firstPresentArray(
+            data,
+            "chase_book_data_list",
+            "chase_book_info_list",
+            "chase_book_data",
+            "chase_books",
+            "data_list",
+            "video_shelf_info",
+        ) ?: JSONArray()
+        if (rows.length() > MAX_CHASE_ROWS) {
+            throw RedfruitCloudException("云端追更超出本次读取范围")
+        }
+        return parseChaseBooks(rows)
     }
 
     /**
@@ -430,6 +482,7 @@ internal class RedfruitCloudLibrary(
         const val PAGE_ROWS_LIMIT = 1000
         const val MAX_FAVORITE_ROWS = 12_000
         const val MAX_FAVORITE_DETAILS = 200
+        const val MAX_CHASE_ROWS = 2_000
         const val RECENT_PROGRESS_LIMIT = 50
         val JSON_MEDIA_TYPE = "application/json; charset=UTF-8".toMediaType()
         val SIGNING_DEVICE_KEYS = setOf("device_id", "iid", "cdid", "openudid")
@@ -486,6 +539,61 @@ internal fun parseFavorites(rows: JSONArray): List<FavoriteEntity> {
         if (previous == null || previous.updatedAt < favorite.updatedAt) result[seriesId] = favorite
     }
     return result.values.sortedByDescending { it.updatedAt }
+}
+
+internal fun parseChaseBooks(rows: JSONArray): List<RedfruitChaseBook> {
+    val result = linkedMapOf<String, RedfruitChaseBook>()
+    for (index in 0 until rows.length()) {
+        val row = rows.optJSONObject(index) ?: continue
+        val nested = row.optJSONObject("video_data")
+            ?: row.optJSONObject("book_data")
+            ?: row.optJSONObject("chase_book_data")
+            ?: row
+        val seriesId = row.validSeriesId("series_id_str", "book_id_str", "series_id", "book_id")
+            ?: nested.validSeriesId("series_id_str", "book_id_str", "series_id", "book_id")
+            ?: continue
+        val episodeCount = maxOf(row.episodeCount(), nested.episodeCount())
+        val lastSerial = row.boundedNumber("last_serial_count", "last_episode_cnt", max = 100_000).toInt()
+            .takeIf { it > 0 }
+            ?: nested.boundedNumber("last_serial_count", "last_episode_cnt", max = 100_000).toInt()
+        val chased = row.booleanValue("is_chased_updates") ||
+            nested.booleanValue("is_chased_updates") ||
+            row.booleanValue("is_chase_book") ||
+            nested.booleanValue("is_chase_book") ||
+            (episodeCount > 0 && lastSerial > 0 && episodeCount > lastSerial)
+        val item = RedfruitChaseBook(
+            seriesId = seriesId,
+            seriesTitle = row.firstText("series_title", "book_name", "title")
+                .ifBlank { nested.firstText("title", "book_name", "series_title") }
+                .ifBlank { "剧集 $seriesId" },
+            cover = safeCover(
+                row.firstText("series_cover_url", "thumb_url", "cover_url", "cover")
+                    .ifBlank { nested.firstText("cover", "cover_url", "thumb_url") },
+            ),
+            episodeCount = episodeCount,
+            lastSerialCount = lastSerial,
+            isChasedUpdates = chased,
+        )
+        result[seriesId] = item
+    }
+    return result.values.toList()
+}
+
+private fun firstPresentArray(data: JSONObject, vararg keys: String): JSONArray? {
+    for (key in keys) {
+        if (!data.has(key) || data.isNull(key)) continue
+        val value = data.opt(key)
+        when (value) {
+            is JSONArray -> return value
+            is JSONObject -> {
+                // 单对象包一层，便于宽松兼容
+                val wrapped = JSONArray()
+                wrapped.put(value)
+                return wrapped
+            }
+        }
+    }
+    return null
 }
 
 private fun JSONObject.requireCloudData(): JSONObject =

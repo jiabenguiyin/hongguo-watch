@@ -15,9 +15,11 @@ import coil.transform.RoundedCornersTransformation
 import com.hongguo.watch.R
 import com.hongguo.watch.data.CoverUrls
 import com.hongguo.watch.data.model.Series
+import com.hongguo.watch.data.ChaseUpdatePolicy
 import com.hongguo.watch.databinding.ItemBannerBinding
 import com.hongguo.watch.databinding.ItemDiscoveryStripBinding
 import com.hongguo.watch.databinding.ItemHotSearchBinding
+import com.hongguo.watch.databinding.ItemLibraryPosterBinding
 import com.hongguo.watch.databinding.ItemSectionHeaderBinding
 import com.hongguo.watch.databinding.ItemSeriesBinding
 import kotlin.math.abs
@@ -60,6 +62,14 @@ sealed class HomeRow {
 
     data class SearchDiscoveryStrip(
         val items: List<Series>,
+    ) : HomeRow()
+
+    /** 库收藏/追更三列海报；进度为官方「已看集/总集」，非社交收藏数。 */
+    data class Poster(
+        val series: Series,
+        val watchedEpisode: Int? = null,
+        val totalEpisodes: Int? = null,
+        val hasUpdate: Boolean = false,
     ) : HomeRow()
 }
 
@@ -116,6 +126,13 @@ class SeriesListAdapter(
         is HomeRow.Item -> 2
         is HomeRow.SearchHotWord -> 3
         is HomeRow.SearchDiscoveryStrip -> 4
+        is HomeRow.Poster -> 5
+    }
+
+    /** GridLayoutManager：海报占 1 列，其它行通栏。 */
+    fun spanSizeFor(position: Int, spanCount: Int): Int {
+        if (position !in rows.indices) return spanCount
+        return if (rows[position] is HomeRow.Poster) 1 else spanCount
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
@@ -125,6 +142,7 @@ class SeriesListAdapter(
             1 -> HeaderHolder(ItemSectionHeaderBinding.inflate(inflater, parent, false))
             3 -> HotWordHolder(ItemHotSearchBinding.inflate(inflater, parent, false))
             4 -> DiscoveryStripHolder(ItemDiscoveryStripBinding.inflate(inflater, parent, false))
+            5 -> PosterHolder(ItemLibraryPosterBinding.inflate(inflater, parent, false))
             else -> ItemHolder(ItemSeriesBinding.inflate(inflater, parent, false))
         }
     }
@@ -138,6 +156,7 @@ class SeriesListAdapter(
             is HomeRow.Item -> (holder as ItemHolder).bind(row)
             is HomeRow.SearchHotWord -> (holder as HotWordHolder).bind(row)
             is HomeRow.SearchDiscoveryStrip -> (holder as DiscoveryStripHolder).bind(row)
+            is HomeRow.Poster -> (holder as PosterHolder).bind(row)
         }
     }
 
@@ -326,6 +345,38 @@ class SeriesListAdapter(
                     (onDiscoveryClick ?: onClick).invoke(series)
                 }
                 container.addView(poster)
+            }
+        }
+    }
+
+    private inner class PosterHolder(
+        private val binding: ItemLibraryPosterBinding,
+    ) : RecyclerView.ViewHolder(binding.root) {
+        fun bind(row: HomeRow.Poster) {
+            val series = row.series
+            binding.posterTitle.text = series.title
+            val total = row.totalEpisodes?.takeIf { it > 0 } ?: series.episodeCount
+            val meta = ChaseUpdatePolicy.progressLabel(row.watchedEpisode, total)
+            if (meta.isBlank()) {
+                binding.posterMeta.visibility = View.GONE
+                binding.posterMeta.text = ""
+            } else {
+                binding.posterMeta.visibility = View.VISIBLE
+                binding.posterMeta.text = meta
+            }
+            binding.updateBadge.visibility = if (row.hasUpdate) View.VISIBLE else View.GONE
+            val radius = binding.root.resources.displayMetrics.density * 6f
+            val coverUrl = CoverUrls.normalize(series.cover).ifBlank { series.cover }
+            binding.posterCover.load(coverUrl.ifBlank { null }) {
+                size(240, 320)
+                crossfade(false)
+                transformations(RoundedCornersTransformation(radius))
+                placeholder(R.drawable.bg_cover)
+                error(R.drawable.bg_cover)
+            }
+            binding.root.setOnClickListener { onClick(series) }
+            binding.root.setOnLongClickListener {
+                onItemLongClick?.invoke(series) == true
             }
         }
     }

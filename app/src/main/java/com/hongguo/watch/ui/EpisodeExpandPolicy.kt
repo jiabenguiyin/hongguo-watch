@@ -40,4 +40,28 @@ object EpisodeExpandPolicy {
 
     fun sliceForRange(episodes: List<com.hongguo.watch.data.model.Episode>, range: IntRange): List<com.hongguo.watch.data.model.Episode> =
         episodes.filter { it.number in range }
+
+    /** 当前分段内的分集 id（顺序与 [episodes] 一致）。 */
+    fun idsInRange(
+        episodes: List<com.hongguo.watch.data.model.Episode>,
+        range: IntRange,
+    ): List<String> = sliceForRange(episodes, range).map { it.id }
+
+    /**
+     * 分段多选：若该段已全部勾选则整段取消，否则整段勾选。
+     * 返回是否变为「全选」状态。
+     */
+    fun toggleRangeSelection(
+        selected: MutableSet<String>,
+        rangeIds: Collection<String>,
+    ): Boolean {
+        if (rangeIds.isEmpty()) return false
+        val allSelected = rangeIds.all { it in selected }
+        if (allSelected) {
+            selected.removeAll(rangeIds.toSet())
+            return false
+        }
+        selected.addAll(rangeIds)
+        return true
+    }
 }

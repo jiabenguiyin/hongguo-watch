@@ -23,6 +23,7 @@ import com.hongguo.watch.R
 import com.hongguo.watch.data.DiagUploader
 import com.hongguo.watch.data.PlaybackRoutePreference
 import com.hongguo.watch.data.SettingsStore
+import com.hongguo.watch.data.UpdateMirrorPolicy
 import com.hongguo.watch.databinding.ActivitySettingsBinding
 import com.hongguo.watch.player.DecodePath
 import com.hongguo.watch.player.PlayerDiagLog
@@ -43,6 +44,8 @@ class SettingsActivity : WatchDisplayActivity() {
     private var currentRoute = PlaybackRoutePreference.AUTO
     private var currentProxyUrl = ""
     private var currentProxyToken = ""
+    private var currentMirrorMode = UpdateMirrorPolicy.Mode.AUTO
+    private var currentMirrorBase = UpdateMirrorPolicy.DEFAULT_MIRROR_BASE
     private var updateChecking = false
     private val updateDialogs by lazy { UpdateDialogs(this) { showWatchDialog(it) } }
 
@@ -95,19 +98,24 @@ class SettingsActivity : WatchDisplayActivity() {
             currentRoute = container.settings.playbackRouteNow()
             currentProxyUrl = container.settings.playbackProxyUrlNow()
             currentProxyToken = container.settings.playbackProxyTokenNow()
+            currentMirrorMode = container.settings.updateMirrorModeNow()
+            currentMirrorBase = container.settings.updateMirrorBaseNow()
             refreshPlaybackLabels()
             refreshPlaybackRouteLabel()
             refreshPlaybackProxyLabel()
+            refreshUpdateMirrorLabel()
             binding.qualityButton.setOnClickListener { showQualityDialog() }
             binding.kernelButton.setOnClickListener { showKernelDialog() }
             binding.decodeButton.setOnClickListener { showDecodeDialog() }
             binding.playbackRouteButton.setOnClickListener { showPlaybackRouteDialog() }
             binding.playbackProxyButton.setOnClickListener { showPlaybackProxyDialog() }
+            binding.updateMirrorButton.setOnClickListener { showUpdateMirrorDialog() }
             binding.qualityButton.isEnabled = true
             binding.kernelButton.isEnabled = true
             binding.decodeButton.isEnabled = true
             binding.playbackRouteButton.isEnabled = true
             binding.playbackProxyButton.isEnabled = true
+            binding.updateMirrorButton.isEnabled = true
         }
 
         binding.manageOfflineButton.setOnClickListener {
@@ -416,6 +424,71 @@ class SettingsActivity : WatchDisplayActivity() {
         } else {
             runCatching { URI(currentProxyUrl).host }.getOrNull()?.takeIf { it.isNotBlank() }
                 ?: currentProxyUrl.take(18)
+        }
+    }
+
+    private fun refreshUpdateMirrorLabel() {
+        binding.updateMirrorStatus.text = UpdateMirrorPolicy.displayLabel(
+            UpdateMirrorPolicy.Preference(currentMirrorMode, currentMirrorBase),
+        )
+    }
+
+    private fun showUpdateMirrorDialog() {
+        val textColor = getColor(R.color.text_primary)
+        val secondary = getColor(R.color.text_secondary)
+        fun optionLabel(title: String, url: String): CharSequence = buildSpannedString {
+            color(textColor) { append(title) }
+            append('\n')
+            color(secondary) { append(url) }
+        }
+        val selectedBase = UpdateMirrorPolicy.normalizeMirrorBase(currentMirrorBase)
+        val labels = arrayOf(
+            optionLabel(
+                getString(R.string.update_mirror_official),
+                getString(R.string.update_mirror_official_url),
+            ),
+            optionLabel(
+                getString(R.string.update_mirror_auto),
+                selectedBase,
+            ),
+        )
+        val checked = if (currentMirrorMode == UpdateMirrorPolicy.Mode.OFFICIAL) 0 else 1
+        val dialog = watchDialogBuilder()
+            .setTitle(R.string.update_mirror_title)
+            .setSingleChoiceItems(labels, checked) { chooser, index ->
+                chooser.dismiss()
+                lifecycleScope.launch {
+                    currentMirrorMode = if (index == 0) {
+                        UpdateMirrorPolicy.Mode.OFFICIAL
+                    } else {
+                        UpdateMirrorPolicy.Mode.AUTO
+                    }
+                    container.settings.setUpdateMirrorMode(currentMirrorMode)
+                    refreshUpdateMirrorLabel()
+                }
+            }
+            .setNeutralButton(R.string.update_mirror_adjust) { _, _ ->
+                showUpdateMirrorNodePicker()
+            }
+            .setNegativeButton(R.string.update_cancel, null)
+            .create()
+        showWatchDialog(dialog)
+    }
+
+    private fun showUpdateMirrorNodePicker() {
+        val nodes = UpdateMirrorPolicy.BUILT_IN_NODES
+        val labels = nodes.map { it.key }
+        val current = UpdateMirrorPolicy.nodeForBase(currentMirrorBase).key
+        val checked = nodes.indexOfFirst { it.key.equals(current, ignoreCase = true) }
+            .coerceAtLeast(0)
+        showChoiceDialog(R.string.update_mirror_pick_title, labels, checked) { index ->
+            lifecycleScope.launch {
+                currentMirrorMode = UpdateMirrorPolicy.Mode.AUTO
+                currentMirrorBase = nodes[index].base
+                container.settings.setUpdateMirrorMode(UpdateMirrorPolicy.Mode.AUTO)
+                container.settings.setUpdateMirrorBase(currentMirrorBase)
+                refreshUpdateMirrorLabel()
+            }
         }
     }
 

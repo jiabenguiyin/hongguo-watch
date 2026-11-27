@@ -386,6 +386,30 @@
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/updateMirrorButton"
+                    style="@style/Widget.HongguoWatch.SettingsAction">
+
+                    <ImageView
+                        style="@style/Widget.HongguoWatch.SettingsIcon"
+                        android:src="@drawable/ic_settings_mirror" />
+
+                    <TextView
+                        style="@style/Widget.HongguoWatch.SettingsRowTitle"
+                        android:text="@string/update_mirror_label" />
+
+                    <TextView
+                        android:id="@+id/updateMirrorStatus"
+                        style="@style/Widget.HongguoWatch.SettingsValue" />
+
+                    <TextView
+                        style="@style/Widget.HongguoWatch.SettingsArrow" />
+                </LinearLayout>
+
+                <TextView
+                    style="@style/Widget.HongguoWatch.SettingsHint"
+                    android:text="@string/update_mirror_hint" />
+
+                <LinearLayout
                     android:id="@+id/uploadDiagButton"
                     style="@style/Widget.HongguoWatch.SettingsAction">
 

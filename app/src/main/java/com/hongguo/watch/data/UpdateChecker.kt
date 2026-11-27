@@ -35,9 +35,25 @@ object UpdateChecker {
         .followRedirects(true)
         .build()
 
-    fun check(preferredAbi: String = preferredAbi()): Result {
+    fun check(
+        preferredAbi: String = preferredAbi(),
+        apiUrls: List<String> = listOf(LATEST_API),
+    ): Result {
+        val urls = apiUrls.map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf(LATEST_API) }
+        var lastError: Exception? = null
+        for (apiUrl in urls) {
+            try {
+                return checkOnce(apiUrl, preferredAbi)
+            } catch (error: Exception) {
+                lastError = error
+            }
+        }
+        throw lastError ?: IllegalStateException("检查更新失败")
+    }
+
+    private fun checkOnce(apiUrl: String, preferredAbi: String): Result {
         val request = Request.Builder()
-            .url(LATEST_API)
+            .url(apiUrl)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "HongguoWatch/${BuildConfig.VERSION_NAME}")
             .get()
@@ -74,6 +90,8 @@ object UpdateChecker {
             )
         }
     }
+
+    fun latestApiUrl(): String = LATEST_API
 
     fun releasesPageUrl(): String = RELEASES_PAGE
 

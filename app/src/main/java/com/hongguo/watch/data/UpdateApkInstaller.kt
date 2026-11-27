@@ -179,6 +179,7 @@ object UpdateApkInstaller {
     /**
      * 同步下载。返回目标文件；[cancel] 为 true 时中止并删除半成品。
      * [onProgress] 进度 0–100；未知总长时按已下字节估算上限 99。
+     * [urls] 可含镜像与官方候选；按序尝试，取消时立即停止。
      */
     fun download(
         context: Context,
@@ -186,6 +187,7 @@ object UpdateApkInstaller {
         apkName: String?,
         versionName: String,
         cancel: AtomicBoolean = AtomicBoolean(false),
+        urls: List<String> = listOf(url),
         onProgress: (percent: Int) -> Unit = {},
     ): File {
         val target = resolveLocalFile(context, apkName, versionName)
@@ -193,8 +195,39 @@ object UpdateApkInstaller {
             onProgress(100)
             return target
         }
+        val candidates = urls.map { it.trim() }.filter { it.isNotEmpty() }
+            .ifEmpty { listOf(url).map { it.trim() }.filter { it.isNotEmpty() } }
+        if (candidates.isEmpty()) throw IllegalStateException("空下载地址")
+
+        var lastError: Exception? = null
+        for (candidate in candidates) {
+            if (cancel.get()) throw InterruptedException("cancelled")
+            try {
+                return downloadOnce(
+                    target = target,
+                    url = candidate,
+                    cancel = cancel,
+                    onProgress = onProgress,
+                )
+            } catch (cancelled: InterruptedException) {
+                throw cancelled
+            } catch (error: Exception) {
+                lastError = error
+                Log.w(TAG, "download candidate failed: ${error.message}")
+            }
+        }
+        throw lastError ?: IllegalStateException("下载失败")
+    }
+
+    private fun downloadOnce(
+        target: File,
+        url: String,
+        cancel: AtomicBoolean,
+        onProgress: (percent: Int) -> Unit,
+    ): File {
         val partial = File(target.parentFile, "${target.name}.part")
         if (partial.exists()) partial.delete()
+        onProgress(0)
 
         val request = Request.Builder()
             .url(url)
@@ -203,37 +236,42 @@ object UpdateApkInstaller {
             .get()
             .build()
 
-        http.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw IllegalStateException("HTTP ${response.code}")
-            }
-            val body = response.body ?: throw IllegalStateException("空响应")
-            val total = body.contentLength()
-            body.byteStream().use { input ->
-                FileOutputStream(partial).use { output ->
-                    val buf = ByteArray(16 * 1024)
-                    var complete = 0L
-                    var lastPercent = -1
-                    while (true) {
-                        if (cancel.get()) {
-                            throw InterruptedException("cancelled")
+        try {
+            http.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("HTTP ${response.code}")
+                }
+                val body = response.body ?: throw IllegalStateException("空响应")
+                val total = body.contentLength()
+                body.byteStream().use { input ->
+                    FileOutputStream(partial).use { output ->
+                        val buf = ByteArray(16 * 1024)
+                        var complete = 0L
+                        var lastPercent = -1
+                        while (true) {
+                            if (cancel.get()) {
+                                throw InterruptedException("cancelled")
+                            }
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            output.write(buf, 0, n)
+                            complete += n
+                            val percent = when {
+                                total > 0L -> ((complete * 100L) / total).toInt().coerceIn(0, 100)
+                                else -> (complete / (256L * 1024L)).toInt().coerceIn(0, 99)
+                            }
+                            if (percent != lastPercent) {
+                                lastPercent = percent
+                                onProgress(percent)
+                            }
                         }
-                        val n = input.read(buf)
-                        if (n < 0) break
-                        output.write(buf, 0, n)
-                        complete += n
-                        val percent = when {
-                            total > 0L -> ((complete * 100L) / total).toInt().coerceIn(0, 100)
-                            else -> (complete / (256L * 1024L)).toInt().coerceIn(0, 99)
-                        }
-                        if (percent != lastPercent) {
-                            lastPercent = percent
-                            onProgress(percent)
-                        }
+                        output.flush()
                     }
-                    output.flush()
                 }
             }
+        } catch (error: Exception) {
+            partial.delete()
+            throw error
         }
 
         if (cancel.get()) {

@@ -10,9 +10,11 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.withResumed
 import com.hongguo.watch.BuildConfig
+import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
 import com.hongguo.watch.data.UpdateApkInstaller
 import com.hongguo.watch.data.UpdateChecker
+import com.hongguo.watch.data.UpdateMirrorPolicy
 import com.hongguo.watch.databinding.DialogUpdateAvailableBinding
 import com.hongguo.watch.databinding.DialogUpdateProgressBinding
 import kotlinx.coroutines.CancellationException
@@ -124,6 +126,9 @@ internal class UpdateDialogs(
 
         downloadJob = activity.lifecycleScope.launch {
             try {
+                val preference = (activity.application as HongguoWatchApp)
+                    .container.settings.updateMirrorPreferenceNow()
+                val candidates = UpdateMirrorPolicy.downloadCandidateUrls(preference, url)
                 val file = withContext(Dispatchers.IO) {
                     UpdateApkInstaller.download(
                         context = activity.applicationContext,
@@ -131,6 +136,7 @@ internal class UpdateDialogs(
                         apkName = result.apkName,
                         versionName = result.versionName,
                         cancel = cancel,
+                        urls = candidates,
                     ) { percent ->
                         activity.runOnUiThread {
                             if (!activity.isDestroyed && dialog.isShowing) {

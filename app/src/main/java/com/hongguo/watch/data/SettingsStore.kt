@@ -31,6 +31,10 @@ class SettingsStore(private val context: Context) {
     /** 息屏/退后台续听；默认关（省电）。 */
     private val screenOffContinueKey = booleanPreferencesKey("screen_off_continue")
     private val episodeWheelEnabledKey = booleanPreferencesKey("episode_wheel_enabled")
+    /** 更新检查 / APK 下载：OFFICIAL 或 AUTO（默认 AUTO）。 */
+    private val updateMirrorModeKey = stringPreferencesKey("update_mirror_mode")
+    /** 自动镜像前缀，默认 https://ghproxy.imciel.com/ */
+    private val updateMirrorBaseKey = stringPreferencesKey("update_mirror_base")
 
     val wifiOnly: Flow<Boolean> = context.dataStore.data.map { it[wifiOnlyKey] ?: false }
     /** 熄屏续听：关=熄屏暂停（默认）；开=熄屏继续出声。 */
@@ -69,6 +73,13 @@ class SettingsStore(private val context: Context) {
     }
     val playbackProxyToken: Flow<String> = context.dataStore.data.map {
         it[playbackProxyTokenKey].orEmpty().trim()
+    }
+    /** 更新镜像模式；缺省自动镜像（国内默认可达）。 */
+    val updateMirrorMode: Flow<UpdateMirrorPolicy.Mode> = context.dataStore.data.map {
+        UpdateMirrorPolicy.parseMode(it[updateMirrorModeKey])
+    }
+    val updateMirrorBase: Flow<String> = context.dataStore.data.map {
+        UpdateMirrorPolicy.normalizeMirrorBase(it[updateMirrorBaseKey])
     }
 
     suspend fun setWifiOnly(enabled: Boolean) {
@@ -120,6 +131,16 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[playbackProxyTokenKey] = token.trim() }
     }
 
+    suspend fun setUpdateMirrorMode(mode: UpdateMirrorPolicy.Mode) {
+        context.dataStore.edit { it[updateMirrorModeKey] = mode.name }
+    }
+
+    suspend fun setUpdateMirrorBase(base: String) {
+        context.dataStore.edit {
+            it[updateMirrorBaseKey] = UpdateMirrorPolicy.normalizeMirrorBase(base)
+        }
+    }
+
     suspend fun wifiOnlyNow(): Boolean = wifiOnly.first()
     suspend fun screenOffContinueNow(): Boolean = screenOffContinue.first()
     suspend fun maxQualityNow(): Int = maxQuality.first()
@@ -130,6 +151,13 @@ class SettingsStore(private val context: Context) {
     suspend fun playbackRouteNow(): PlaybackRoutePreference = playbackRoute.first()
     suspend fun playbackProxyUrlNow(): String = playbackProxyUrl.first()
     suspend fun playbackProxyTokenNow(): String = playbackProxyToken.first()
+    suspend fun updateMirrorModeNow(): UpdateMirrorPolicy.Mode = updateMirrorMode.first()
+    suspend fun updateMirrorBaseNow(): String = updateMirrorBase.first()
+    suspend fun updateMirrorPreferenceNow(): UpdateMirrorPolicy.Preference =
+        UpdateMirrorPolicy.Preference(
+            mode = updateMirrorModeNow(),
+            mirrorBase = updateMirrorBaseNow(),
+        )
 
     /** 供 WatchUi 缓存：AUTO→null，ON→true，OFF→false。 */
     suspend fun roundAdaptOverrideNow(): Boolean? = when (roundAdaptModeNow()) {

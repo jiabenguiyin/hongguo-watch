@@ -281,6 +281,15 @@
     <string name="round_adapt">圆屏适配</string>
     <string name="round_adapt_hint">加大安全边距，锁/倍速内收避开裁切。默认跟随圆屏检测，也可强制开启。普通方屏大圆角也会自动内收，避免顶栏/底栏被裁。</string>
     <string name="check_update">检查更新</string>
+    <string name="update_mirror_label">内置镜像源</string>
+    <string name="update_mirror_hint">切换镜像源；自动镜像默认 ghproxy.imciel.com，失败回落官方</string>
+    <string name="update_mirror_title">切换镜像源</string>
+    <string name="update_mirror_official">GitHub 官方</string>
+    <string name="update_mirror_official_url">https://github.com/</string>
+    <string name="update_mirror_auto">自动镜像</string>
+    <string name="update_mirror_adjust">调整镜像</string>
+    <string name="update_mirror_pick_title">选择镜像节点</string>
+    <string name="update_mirror_catalog">节点来自 git.hiwiki.org 镜像目录</string>
     <string name="checking_update">正在检查更新…</string>
     <string name="update_latest_title">已是最新</string>
     <string name="update_latest">当前已是最新版本（%1$s）</string>

@@ -10,12 +10,15 @@ import coil.request.CachePolicy
 import com.hongguo.watch.data.AppContainer
 import com.hongguo.watch.data.AppUpdateSession
 import com.hongguo.watch.data.UpdateApkInstaller
+import com.hongguo.watch.data.UpdateChecker
+import com.hongguo.watch.data.UpdateMirrorPolicy
 import com.hongguo.watch.ui.WatchDisplaySettings
 import com.hongguo.watch.upstream.VendorConstants
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -23,7 +26,16 @@ class HongguoWatchApp : Application(), ImageLoaderFactory {
     lateinit var container: AppContainer
         private set
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    internal val appUpdates = AppUpdateSession(appScope)
+    internal val appUpdates = AppUpdateSession(appScope) {
+        withContext(Dispatchers.IO) {
+            val preference = container.settings.updateMirrorPreferenceNow()
+            val apiUrls = UpdateMirrorPolicy.apiCandidateUrls(
+                preference = preference,
+                officialApi = UpdateChecker.latestApiUrl(),
+            )
+            UpdateChecker.check(apiUrls = apiUrls)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()

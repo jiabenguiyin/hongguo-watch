@@ -10,27 +10,11 @@ class LibrarySegmentPolicyTest {
     @Test
     fun flingMovesOnlyToAdjacentSegment() {
         assertEquals(
-            LibrarySegmentPolicy.Segment.LIKES,
+            LibrarySegmentPolicy.Segment.CHASE,
             LibrarySegmentPolicy.targetAfterFling(
                 LibrarySegmentPolicy.Segment.FAVORITES,
                 velocityX = -1200f,
                 velocityY = 100f,
-            ),
-        )
-        assertEquals(
-            LibrarySegmentPolicy.Segment.RESERVATIONS,
-            LibrarySegmentPolicy.targetAfterFling(
-                LibrarySegmentPolicy.Segment.LIKES,
-                velocityX = -1200f,
-                velocityY = 0f,
-            ),
-        )
-        assertEquals(
-            LibrarySegmentPolicy.Segment.CHASE,
-            LibrarySegmentPolicy.targetAfterFling(
-                LibrarySegmentPolicy.Segment.RESERVATIONS,
-                velocityX = -1200f,
-                velocityY = 0f,
             ),
         )
         assertEquals(
@@ -52,7 +36,7 @@ class LibrarySegmentPolicyTest {
         assertEquals(
             LibrarySegmentPolicy.Segment.FAVORITES,
             LibrarySegmentPolicy.targetAfterFling(
-                LibrarySegmentPolicy.Segment.LIKES,
+                LibrarySegmentPolicy.Segment.CHASE,
                 velocityX = 1200f,
                 velocityY = 50f,
             ),
@@ -103,10 +87,19 @@ class LibrarySegmentPolicyTest {
     }
 
     @Test
-    fun posterGridFollowsListModeForAllSegments() {
+    fun posterGridFollowsListModeForUsableSegments() {
         for (segment in LibrarySegmentPolicy.ORDER) {
             assertTrue(LibrarySegmentPolicy.usesPosterGrid(segment, listMode = false))
             assertFalse(LibrarySegmentPolicy.usesPosterGrid(segment, listMode = true))
         }
+        assertEquals(
+            listOf(
+                LibrarySegmentPolicy.Segment.FAVORITES,
+                LibrarySegmentPolicy.Segment.CHASE,
+                LibrarySegmentPolicy.Segment.HISTORY,
+                LibrarySegmentPolicy.Segment.OFFLINE,
+            ),
+            LibrarySegmentPolicy.ORDER,
+        )
     }
 }

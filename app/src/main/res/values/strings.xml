@@ -22,7 +22,7 @@
     <string name="favorites_count">共 %1$d 部</string>
     <string name="chase_count">%1$d 部有更新</string>
     <string name="chase_badge">更新</string>
-    <string name="chase_subtitle">官方追更优先 · 失败则用本地集数游标</string>
+    <string name="chase_subtitle">有更新的收藏</string>
     <string name="empty_chase">暂无更新\n收藏剧有新集时会出现在这里</string>
     <string name="favorite_progress">%1$d集/%2$d集</string>
     <string name="favorite_progress_total">全%1$d集</string>

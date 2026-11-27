@@ -60,105 +60,61 @@
             android:textStyle="bold" />
     </LinearLayout>
 
+    <!-- 可用面：收藏 / 追更 / 历史 / 离线。点赞·预约云端未打通前不进分段。 -->
     <LinearLayout
         android:id="@+id/librarySegmentRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
         android:background="@drawable/bg_panel"
-        android:gravity="center_vertical"
         android:orientation="horizontal"
         android:padding="2dp"
         android:visibility="gone">
 
-        <!-- 六段横滑：收藏/点赞/预约/追更/历史/离线，避免手表挤扁 -->
-        <HorizontalScrollView
+        <TextView
+            android:id="@+id/segmentFavorites"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="32dp"
             android:layout_weight="1"
-            android:fadingEdgeLength="12dp"
-            android:requiresFadingEdge="horizontal"
-            android:scrollbars="none">
+            android:background="@drawable/bg_top_tab_active"
+            android:gravity="center"
+            android:text="@string/segment_favorites"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta"
+            android:textStyle="bold" />
 
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
+        <TextView
+            android:id="@+id/segmentChase"
+            android:layout_width="0dp"
+            android:layout_height="32dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_top_tab_idle"
+            android:gravity="center"
+            android:text="@string/segment_chase"
+            android:textColor="@color/text_secondary"
+            android:textSize="@dimen/watch_meta" />
 
-                <TextView
-                    android:id="@+id/segmentFavorites"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:background="@drawable/bg_top_tab_active"
-                    android:gravity="center"
-                    android:minWidth="40dp"
-                    android:paddingHorizontal="8dp"
-                    android:text="@string/segment_favorites"
-                    android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_meta"
-                    android:textStyle="bold" />
+        <TextView
+            android:id="@+id/segmentHistory"
+            android:layout_width="0dp"
+            android:layout_height="32dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_top_tab_idle"
+            android:gravity="center"
+            android:text="@string/segment_history"
+            android:textColor="@color/text_secondary"
+            android:textSize="@dimen/watch_meta" />
 
-                <TextView
-                    android:id="@+id/segmentLikes"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:background="@drawable/bg_top_tab_idle"
-                    android:gravity="center"
-                    android:minWidth="40dp"
-                    android:paddingHorizontal="8dp"
-                    android:text="@string/segment_likes"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="@dimen/watch_meta" />
-
-                <TextView
-                    android:id="@+id/segmentReservations"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:background="@drawable/bg_top_tab_idle"
-                    android:gravity="center"
-                    android:minWidth="40dp"
-                    android:paddingHorizontal="8dp"
-                    android:text="@string/segment_reservations"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="@dimen/watch_meta" />
-
-                <TextView
-                    android:id="@+id/segmentChase"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:background="@drawable/bg_top_tab_idle"
-                    android:gravity="center"
-                    android:minWidth="40dp"
-                    android:paddingHorizontal="8dp"
-                    android:text="@string/segment_chase"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="@dimen/watch_meta" />
-
-                <TextView
-                    android:id="@+id/segmentHistory"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:background="@drawable/bg_top_tab_idle"
-                    android:gravity="center"
-                    android:minWidth="40dp"
-                    android:paddingHorizontal="8dp"
-                    android:text="@string/segment_history"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="@dimen/watch_meta" />
-
-                <TextView
-                    android:id="@+id/segmentOffline"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:background="@drawable/bg_top_tab_idle"
-                    android:gravity="center"
-                    android:minWidth="40dp"
-                    android:paddingHorizontal="8dp"
-                    android:text="@string/segment_offline"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="@dimen/watch_meta" />
-            </LinearLayout>
-        </HorizontalScrollView>
+        <TextView
+            android:id="@+id/segmentOffline"
+            android:layout_width="0dp"
+            android:layout_height="32dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_top_tab_idle"
+            android:gravity="center"
+            android:text="@string/segment_offline"
+            android:textColor="@color/text_secondary"
+            android:textSize="@dimen/watch_meta" />
     </LinearLayout>
 
     <LinearLayout

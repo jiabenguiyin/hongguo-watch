@@ -40,6 +40,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
@@ -208,12 +209,6 @@ class MainActivity : WatchDisplayActivity() {
         binding.tabSettings.setOnClickListener { showMine() }
         binding.segmentFavorites.setOnClickListener {
             showLibrary(segment = LibrarySegmentPolicy.Segment.FAVORITES)
-        }
-        binding.segmentLikes.setOnClickListener {
-            showLibrary(segment = LibrarySegmentPolicy.Segment.LIKES)
-        }
-        binding.segmentReservations.setOnClickListener {
-            showLibrary(segment = LibrarySegmentPolicy.Segment.RESERVATIONS)
         }
         binding.segmentChase.setOnClickListener {
             showLibrary(segment = LibrarySegmentPolicy.Segment.CHASE)
@@ -1284,24 +1279,9 @@ class MainActivity : WatchDisplayActivity() {
                     useSeriesAdapter(posterGrid = poster)
                     loadFavoritesList(fromSwipe)
                 }
-                LibrarySegmentPolicy.Segment.LIKES -> {
-                    binding.libraryCacheHook.visibility = View.GONE
-                    binding.pageSubtitle.visibility = View.VISIBLE
-                    binding.pageSubtitle.text = getString(R.string.segment_likes)
-                    useSeriesAdapter(posterGrid = poster)
-                    loadLikesList(fromSwipe)
-                }
-                LibrarySegmentPolicy.Segment.RESERVATIONS -> {
-                    binding.libraryCacheHook.visibility = View.GONE
-                    binding.pageSubtitle.visibility = View.VISIBLE
-                    binding.pageSubtitle.text = getString(R.string.segment_reservations)
-                    useSeriesAdapter(posterGrid = poster)
-                    loadReservationsList(fromSwipe)
-                }
                 LibrarySegmentPolicy.Segment.CHASE -> {
                     binding.libraryCacheHook.visibility = View.GONE
-                    binding.pageSubtitle.visibility = View.VISIBLE
-                    binding.pageSubtitle.text = getString(R.string.chase_subtitle)
+                    binding.pageSubtitle.visibility = View.GONE
                     useSeriesAdapter(posterGrid = poster)
                     loadChaseList(fromSwipe)
                 }
@@ -1795,239 +1775,14 @@ class MainActivity : WatchDisplayActivity() {
         }
     }
 
-    /** 点赞：官方 `ugc/action/user/get`（需登录）；支持库内标题搜索。 */
-    private fun loadLikesList(fromSwipe: Boolean) {
-        binding.emptyView.visibility = View.GONE
-        applyListLoading(
-            ListLoadingPolicy.choose(
-                swipeRefreshing = fromSwipe || binding.swipeRefresh.isRefreshing,
-                clearingList = true,
-                hasVisibleContent = false,
-            ),
-        )
-        val token = beginListLoad(clearAdapter = true)
-        adapter.showResumeHint = false
-        adapter.selectionMode = false
-        binding.seriesList.scrollToPosition(0)
-        listJob = lifecycleScope.launch {
-            try {
-                if (!container.redfruitAccount.hasCloudSession()) {
-                    if (token != listGeneration || mode != Mode.LIBRARY ||
-                        librarySegment != LibrarySegmentPolicy.Segment.LIKES
-                    ) {
-                        return@launch
-                    }
-                    binding.pageSubtitle.text = getString(R.string.segment_likes)
-                    adapter.submit(
-                        listOf(
-                            HomeRow.Header(
-                                title = getString(R.string.segment_likes),
-                                subtitle = getString(R.string.empty_likes_need_login),
-                            ),
-                        ),
-                    )
-                    binding.emptyView.visibility = View.VISIBLE
-                    binding.emptyView.text = getString(R.string.empty_likes_need_login)
-                    return@launch
-                }
-                val remote = runCatching { container.redfruitAccount.libraryLikedSeries() }
-                if (token != listGeneration || mode != Mode.LIBRARY ||
-                    librarySegment != LibrarySegmentPolicy.Segment.LIKES
-                ) {
-                    return@launch
-                }
-                if (remote.isFailure) {
-                    binding.pageSubtitle.text = getString(R.string.likes_load_failed)
-                    adapter.submit(
-                        listOf(
-                            HomeRow.Header(
-                                title = getString(R.string.segment_likes),
-                                subtitle = getString(R.string.likes_load_failed),
-                            ),
-                        ),
-                    )
-                    binding.emptyView.visibility = View.VISIBLE
-                    binding.emptyView.text = getString(R.string.likes_load_failed)
-                    return@launch
-                }
-                val likes = remote.getOrNull().orEmpty()
-                    .filter { matchesLibrarySearch(it.seriesTitle.ifBlank { "剧集 ${it.seriesId}" }) }
-                val subtitle = if (likes.isEmpty()) {
-                    getString(R.string.segment_likes)
-                } else {
-                    getString(R.string.likes_count, likes.size)
-                }
-                binding.pageSubtitle.text = subtitle
-                val rows = if (libraryLayoutList) {
-                    likes.map { like ->
-                        HomeRow.Item(
-                            series = Series(
-                                id = like.seriesId,
-                                title = like.seriesTitle.ifBlank { "剧集 ${like.seriesId}" },
-                                cover = com.hongguo.watch.data.CoverUrls.normalize(like.cover),
-                                episodeCount = like.episodeCount,
-                                source = SeriesSource.APP,
-                            ),
-                            totalEpisodes = like.episodeCount.takeIf { it > 0 },
-                        )
-                    }
-                } else {
-                    likes.map { like ->
-                        HomeRow.Poster(
-                            series = Series(
-                                id = like.seriesId,
-                                title = like.seriesTitle.ifBlank { "剧集 ${like.seriesId}" },
-                                cover = com.hongguo.watch.data.CoverUrls.normalize(like.cover),
-                                episodeCount = like.episodeCount,
-                                source = SeriesSource.APP,
-                            ),
-                            totalEpisodes = like.episodeCount.takeIf { it > 0 },
-                        )
-                    }
-                }
-                adapter.submit(
-                    listOf(
-                        HomeRow.Header(
-                            title = getString(R.string.segment_likes),
-                            subtitle = subtitle,
-                        ),
-                    ) + rows,
-                )
-                binding.seriesList.scrollToPosition(0)
-                binding.emptyView.visibility = if (likes.isEmpty()) View.VISIBLE else View.GONE
-                binding.emptyView.text = libraryEmptyText(R.string.empty_likes)
-            } finally {
-                if (token == listGeneration) {
-                    applyListLoading(ListLoadingPolicy.Indicator.NONE)
-                }
-            }
-        }
-    }
-
-    /** 预约：官方 `user/subscribe/list`（需登录）；有热度字段才画热度。 */
-    private fun loadReservationsList(fromSwipe: Boolean) {
-        binding.emptyView.visibility = View.GONE
-        applyListLoading(
-            ListLoadingPolicy.choose(
-                swipeRefreshing = fromSwipe || binding.swipeRefresh.isRefreshing,
-                clearingList = true,
-                hasVisibleContent = false,
-            ),
-        )
-        val token = beginListLoad(clearAdapter = true)
-        adapter.showResumeHint = false
-        adapter.selectionMode = false
-        binding.seriesList.scrollToPosition(0)
-        listJob = lifecycleScope.launch {
-            try {
-                if (!container.redfruitAccount.hasCloudSession()) {
-                    if (token != listGeneration || mode != Mode.LIBRARY ||
-                        librarySegment != LibrarySegmentPolicy.Segment.RESERVATIONS
-                    ) {
-                        return@launch
-                    }
-                    binding.pageSubtitle.text = getString(R.string.segment_reservations)
-                    adapter.submit(
-                        listOf(
-                            HomeRow.Header(
-                                title = getString(R.string.segment_reservations),
-                                subtitle = getString(R.string.empty_reservations_need_login),
-                            ),
-                        ),
-                    )
-                    binding.emptyView.visibility = View.VISIBLE
-                    binding.emptyView.text = getString(R.string.empty_reservations_need_login)
-                    return@launch
-                }
-                val remote = runCatching { container.redfruitAccount.libraryReservations() }
-                if (token != listGeneration || mode != Mode.LIBRARY ||
-                    librarySegment != LibrarySegmentPolicy.Segment.RESERVATIONS
-                ) {
-                    return@launch
-                }
-                if (remote.isFailure) {
-                    binding.pageSubtitle.text = getString(R.string.reservations_load_failed)
-                    adapter.submit(
-                        listOf(
-                            HomeRow.Header(
-                                title = getString(R.string.segment_reservations),
-                                subtitle = getString(R.string.reservations_load_failed),
-                            ),
-                        ),
-                    )
-                    binding.emptyView.visibility = View.VISIBLE
-                    binding.emptyView.text = getString(R.string.reservations_load_failed)
-                    return@launch
-                }
-                val items = remote.getOrNull().orEmpty()
-                    .filter { matchesLibrarySearch(it.seriesTitle.ifBlank { "剧集 ${it.seriesId}" }) }
-                val online = items.count { it.online == true }
-                val pending = items.count { it.online == false }
-                val subtitle = when {
-                    items.isEmpty() -> getString(R.string.segment_reservations)
-                    online > 0 || pending > 0 ->
-                        getString(R.string.reservations_count, items.size) +
-                            " · ${getString(R.string.reservation_online)} $online" +
-                            " · ${getString(R.string.reservation_pending)} $pending"
-                    else -> getString(R.string.reservations_count, items.size)
-                }
-                binding.pageSubtitle.text = subtitle
-                val rows = if (libraryLayoutList) {
-                    items.map { item ->
-                        val heat = ChaseUpdatePolicy.formatHeatLabel(item.hotValue, item.hotText)
-                        HomeRow.Item(
-                            series = Series(
-                                id = item.seriesId,
-                                title = item.seriesTitle.ifBlank { "剧集 ${item.seriesId}" },
-                                cover = com.hongguo.watch.data.CoverUrls.normalize(item.cover),
-                                description = heat,
-                                episodeCount = item.episodeCount,
-                                source = SeriesSource.APP,
-                            ),
-                            totalEpisodes = item.episodeCount.takeIf { it > 0 },
-                        )
-                    }
-                } else {
-                    items.map { item ->
-                        val heat = ChaseUpdatePolicy.formatHeatLabel(item.hotValue, item.hotText)
-                        HomeRow.Poster(
-                            series = Series(
-                                id = item.seriesId,
-                                title = item.seriesTitle.ifBlank { "剧集 ${item.seriesId}" },
-                                cover = com.hongguo.watch.data.CoverUrls.normalize(item.cover),
-                                episodeCount = item.episodeCount,
-                                source = SeriesSource.APP,
-                            ),
-                            totalEpisodes = item.episodeCount.takeIf { it > 0 },
-                            metaLabel = heat.ifBlank { null },
-                        )
-                    }
-                }
-                adapter.submit(
-                    listOf(
-                        HomeRow.Header(
-                            title = getString(R.string.segment_reservations),
-                            subtitle = subtitle,
-                        ),
-                    ) + rows,
-                )
-                binding.seriesList.scrollToPosition(0)
-                binding.emptyView.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
-                binding.emptyView.text = libraryEmptyText(R.string.empty_reservations)
-            } finally {
-                if (token == listGeneration) {
-                    applyListLoading(ListLoadingPolicy.Indicator.NONE)
-                }
-            }
-        }
-    }
-
     /**
-     * 追更：官方 `chase_book/list` 有条目则用云；null/空则本地 last_serial_count。
-     * 并用详情校正总集数，避免种子后永远无更新。
+     * 追更：本地 last_serial_count 可用面优先。
+     * 云端 chase_book 短超时试一次；失败/空/超时一律本地，绝不卡转圈。
+     * 不在此处分集解析全部收藏详情（会拖死手表网络）。
      */
     private fun loadChaseList(fromSwipe: Boolean) {
         binding.emptyView.visibility = View.GONE
+        binding.pageSubtitle.visibility = View.GONE
         applyListLoading(
             ListLoadingPolicy.choose(
                 swipeRefreshing = fromSwipe || binding.swipeRefresh.isRefreshing,
@@ -2041,13 +1796,12 @@ class MainActivity : WatchDisplayActivity() {
         binding.seriesList.scrollToPosition(0)
         listJob = lifecycleScope.launch {
             try {
-                var favorites = container.redfruitAccount.libraryFavorites()
-                // 校正总集数后再比 last_serial，否则本地追更永远空。
-                favorites = runCatching { repo.favoritesWithResolvedEpisodeTotals() }
-                    .getOrDefault(favorites)
-                    .ifEmpty { favorites }
+                val favorites = container.redfruitAccount.libraryFavorites()
                 val historyMap = repo.recentHistory().associateBy { it.seriesId }
-                val remote = container.redfruitAccount.libraryChaseBooks()
+                // 云端未稳定：最多等 2.5s，超时当本地
+                val remote = withTimeoutOrNull(2_500) {
+                    container.redfruitAccount.libraryChaseBooks()
+                }
                 if (token != listGeneration || mode != Mode.LIBRARY ||
                     librarySegment != LibrarySegmentPolicy.Segment.CHASE
                 ) {
@@ -2058,8 +1812,13 @@ class MainActivity : WatchDisplayActivity() {
                     val favById = favorites.associateBy { it.seriesId }
                     remote.orEmpty()
                         .filter { it.isChasedUpdates || it.episodeCount > it.lastSerialCount }
-                        .filter { matchesLibrarySearch(it.seriesTitle.ifBlank { favById[it.seriesId]?.seriesTitle.orEmpty() }) }
-                        .map { chase ->
+                        .filter {
+                            matchesLibrarySearch(
+                                it.seriesTitle.ifBlank { favById[it.seriesId]?.seriesTitle.orEmpty() },
+                            )
+                        }
+                        .mapNotNull { chase ->
+                            if (libraryLayoutList) return@mapNotNull null
                             val fav = favById[chase.seriesId]
                             val series = Series(
                                 id = chase.seriesId,
@@ -2072,22 +1831,16 @@ class MainActivity : WatchDisplayActivity() {
                                     ?: fav?.episodeCount ?: 0,
                                 source = SeriesSource.APP,
                             )
-                            if (libraryLayoutList) {
-                                null
-                            } else {
-                                HomeRow.Poster(
-                                    series = series,
-                                    watchedEpisode = historyMap[chase.seriesId]?.episodeNumber,
-                                    totalEpisodes = series.episodeCount.takeIf { it > 0 },
-                                    hasUpdate = true,
-                                )
-                            }
+                            HomeRow.Poster(
+                                series = series,
+                                watchedEpisode = historyMap[chase.seriesId]?.episodeNumber,
+                                totalEpisodes = series.episodeCount.takeIf { it > 0 },
+                                hasUpdate = true,
+                            )
                         }
-                        .filterNotNull()
                 } else {
                     favorites.mapNotNull { fav ->
                         if (!matchesLibrarySearch(fav.seriesTitle)) return@mapNotNull null
-                        // 已有种子才比；首次 seed 用校正后的总集数，避免 0→N 全员「有更新」。
                         if (!container.chaseUpdates.hasSeed(fav.seriesId)) {
                             container.chaseUpdates.seedIfAbsent(fav.seriesId, fav.episodeCount)
                             return@mapNotNull null
@@ -2096,79 +1849,62 @@ class MainActivity : WatchDisplayActivity() {
                         if (!ChaseUpdatePolicy.hasUpdate(fav.episodeCount, last, seeded = true)) {
                             return@mapNotNull null
                         }
-                        favoritePosterRow(fav, historyMap[fav.seriesId]?.episodeNumber, setOf(fav.seriesId))
+                        if (libraryLayoutList) null
+                        else favoritePosterRow(fav, historyMap[fav.seriesId]?.episodeNumber, setOf(fav.seriesId))
                     }
                 }
-                val classicRows = if (libraryLayoutList) {
-                    if (usingCloud) {
-                        val favById = favorites.associateBy { it.seriesId }
-                        remote.orEmpty()
-                            .filter { it.isChasedUpdates || it.episodeCount > it.lastSerialCount }
-                            .filter {
-                                matchesLibrarySearch(
-                                    it.seriesTitle.ifBlank { favById[it.seriesId]?.seriesTitle.orEmpty() },
-                                )
-                            }
-                            .map { chase ->
-                                val fav = favById[chase.seriesId]
-                                val history = historyMap[chase.seriesId]
-                                HomeRow.Item(
-                                    series = Series(
-                                        id = chase.seriesId,
-                                        title = chase.seriesTitle.ifBlank { fav?.seriesTitle.orEmpty() }
-                                            .ifBlank { "剧集 ${chase.seriesId}" },
-                                        cover = com.hongguo.watch.data.CoverUrls.normalize(
-                                            chase.cover.ifBlank { fav?.cover.orEmpty() },
-                                        ),
-                                        episodeCount = chase.episodeCount.takeIf { it > 0 }
-                                            ?: fav?.episodeCount ?: 0,
-                                        source = SeriesSource.APP,
-                                    ),
-                                    watchedEpisode = history?.episodeNumber,
-                                    totalEpisodes = (chase.episodeCount.takeIf { it > 0 }
-                                        ?: fav?.episodeCount)?.takeIf { it > 0 },
-                                    progressPercent = null,
-                                )
-                            }
-                    } else {
-                        favorites.mapNotNull { fav ->
-                            if (!matchesLibrarySearch(fav.seriesTitle)) return@mapNotNull null
-                            if (!container.chaseUpdates.hasSeed(fav.seriesId)) {
-                                container.chaseUpdates.seedIfAbsent(fav.seriesId, fav.episodeCount)
-                                return@mapNotNull null
-                            }
-                            val last = container.chaseUpdates.lastSerialCount(fav.seriesId)
-                            if (!ChaseUpdatePolicy.hasUpdate(fav.episodeCount, last, seeded = true)) {
-                                return@mapNotNull null
-                            }
-                            favoriteClassicRow(fav, historyMap[fav.seriesId])
-                        }
-                    }
-                } else {
+                val classicRows = if (!libraryLayoutList) {
                     emptyList()
+                } else if (usingCloud) {
+                    val favById = favorites.associateBy { it.seriesId }
+                    remote.orEmpty()
+                        .filter { it.isChasedUpdates || it.episodeCount > it.lastSerialCount }
+                        .filter {
+                            matchesLibrarySearch(
+                                it.seriesTitle.ifBlank { favById[it.seriesId]?.seriesTitle.orEmpty() },
+                            )
+                        }
+                        .map { chase ->
+                            val fav = favById[chase.seriesId]
+                            val history = historyMap[chase.seriesId]
+                            HomeRow.Item(
+                                series = Series(
+                                    id = chase.seriesId,
+                                    title = chase.seriesTitle.ifBlank { fav?.seriesTitle.orEmpty() }
+                                        .ifBlank { "剧集 ${chase.seriesId}" },
+                                    cover = com.hongguo.watch.data.CoverUrls.normalize(
+                                        chase.cover.ifBlank { fav?.cover.orEmpty() },
+                                    ),
+                                    episodeCount = chase.episodeCount.takeIf { it > 0 }
+                                        ?: fav?.episodeCount ?: 0,
+                                    source = SeriesSource.APP,
+                                ),
+                                watchedEpisode = history?.episodeNumber,
+                                totalEpisodes = (chase.episodeCount.takeIf { it > 0 }
+                                    ?: fav?.episodeCount)?.takeIf { it > 0 },
+                                progressPercent = null,
+                            )
+                        }
+                } else {
+                    favorites.mapNotNull { fav ->
+                        if (!matchesLibrarySearch(fav.seriesTitle)) return@mapNotNull null
+                        if (!container.chaseUpdates.hasSeed(fav.seriesId)) {
+                            container.chaseUpdates.seedIfAbsent(fav.seriesId, fav.episodeCount)
+                            return@mapNotNull null
+                        }
+                        val last = container.chaseUpdates.lastSerialCount(fav.seriesId)
+                        if (!ChaseUpdatePolicy.hasUpdate(fav.episodeCount, last, seeded = true)) {
+                            return@mapNotNull null
+                        }
+                        favoriteClassicRow(fav, historyMap[fav.seriesId])
+                    }
                 }
                 val count = if (libraryLayoutList) classicRows.size else posters.size
-                val subtitle = when {
-                    count == 0 && usingCloud -> getString(R.string.chase_subtitle_cloud)
-                    count == 0 -> getString(R.string.chase_subtitle_local)
-                    usingCloud -> getString(R.string.chase_count, count)
-                    else -> getString(R.string.chase_subtitle_local) + " · " +
-                        getString(R.string.chase_count, count)
-                }
-                binding.pageSubtitle.text = subtitle
-                val header = HomeRow.Header(
-                    title = getString(R.string.segment_chase),
-                    subtitle = subtitle,
-                )
+                val rows = if (libraryLayoutList) classicRows else posters
                 if (token != listGeneration || mode != Mode.LIBRARY ||
                     librarySegment != LibrarySegmentPolicy.Segment.CHASE
                 ) {
                     return@launch
-                }
-                val rows = if (libraryLayoutList) {
-                    listOf(header) + classicRows
-                } else {
-                    listOf(header) + posters
                 }
                 adapter.submit(rows)
                 binding.seriesList.scrollToPosition(0)
@@ -2249,8 +1985,6 @@ class MainActivity : WatchDisplayActivity() {
             view.paint.isFakeBoldText = selected
         }
         style(binding.segmentFavorites, segment == LibrarySegmentPolicy.Segment.FAVORITES)
-        style(binding.segmentLikes, segment == LibrarySegmentPolicy.Segment.LIKES)
-        style(binding.segmentReservations, segment == LibrarySegmentPolicy.Segment.RESERVATIONS)
         style(binding.segmentChase, segment == LibrarySegmentPolicy.Segment.CHASE)
         style(binding.segmentHistory, segment == LibrarySegmentPolicy.Segment.HISTORY)
         style(binding.segmentOffline, segment == LibrarySegmentPolicy.Segment.OFFLINE)

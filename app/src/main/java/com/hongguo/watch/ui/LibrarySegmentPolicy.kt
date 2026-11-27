@@ -3,19 +3,17 @@ package com.hongguo.watch.ui
 import kotlin.math.abs
 
 /**
- * 库页内「收藏 / 点赞 / 预约 / 追更 / 历史 / 离线」分段切换策略。
+ * 库页内「收藏 / 追更 / 历史 / 离线」分段切换策略。
  *
- * 左右滑只在库内相邻分段之间移动；到边即停，不循环，
- * 更不会映射到底栏「首页 / 我的」或任何父级 pager。
+ * 点赞 / 预约云端未打通前不进分段（避免失败空页）。
+ * 左右滑只在库内相邻分段之间移动；到边即停，不循环。
  *
- * 三列 / 列表是全局布局模式（设置开关），对上述分段一视同仁；
+ * 三列 / 列表是全局布局模式（设置开关），对各分段共用；
  * 离线钻入分集时仍用列表。
  */
 object LibrarySegmentPolicy {
     enum class Segment {
         FAVORITES,
-        LIKES,
-        RESERVATIONS,
         CHASE,
         HISTORY,
         OFFLINE,
@@ -23,8 +21,6 @@ object LibrarySegmentPolicy {
 
     val ORDER: List<Segment> = listOf(
         Segment.FAVORITES,
-        Segment.LIKES,
-        Segment.RESERVATIONS,
         Segment.CHASE,
         Segment.HISTORY,
         Segment.OFFLINE,

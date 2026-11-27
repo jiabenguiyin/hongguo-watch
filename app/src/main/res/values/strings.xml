@@ -42,7 +42,8 @@
     <string name="detail_title">内容详情</string>
     <string name="play_now">立即播放</string>
     <string name="favorite">收藏</string>
-    <string name="favorite_with_count">收藏 %1$s</string>
+    <!-- 官方 CollectBtnText 资源：`%1$s收藏` →「198.9万收藏」；勿写成「收藏 %1$s」以免叠字。 -->
+    <string name="favorite_with_count">%1$s收藏</string>
     <string name="library_edit">编辑</string>
     <string name="library_edit_done">完成</string>
     <string name="library_select_all">全选</string>

@@ -373,7 +373,8 @@ class AppSourceClient(
         }
         val data = root.optJSONObject("data") ?: throw IllegalStateException("分集数据为空")
         if (!data.has(id)) throw IllegalStateException("返回剧集与请求不一致")
-        val videoData = data.optJSONObject(id)?.optJSONObject("video_data")
+        val seriesNode = data.optJSONObject(id) ?: throw IllegalStateException("返回剧集与请求不一致")
+        val videoData = seriesNode.optJSONObject("video_data")
             ?: throw IllegalStateException("无 video_data")
         val list = videoData.optJSONArray("video_list") ?: JSONArray()
         if (list.length() == 0) throw IllegalStateException("分集列表为空")
@@ -400,6 +401,11 @@ class AppSourceClient(
         if (episodes.isEmpty()) throw IllegalStateException("分集列表为空")
         episodes.sortBy { it.number }
 
+        val collectCount = listOf(videoData, seriesNode)
+            .map { parseCollectCount(it) }
+            .firstOrNull { it > 0L }
+            ?: 0L
+
         return SeriesDetail(
             series = Series(
                 id = id,
@@ -408,7 +414,7 @@ class AppSourceClient(
                 description = videoData.str("series_intro").ifEmpty { videoData.str("video_desc") },
                 episodeCount = episodes.size,
                 source = SeriesSource.APP,
-                collectCount = parseCollectCount(videoData),
+                collectCount = collectCount,
             ),
             episodes = episodes,
         )
@@ -416,32 +422,42 @@ class AppSourceClient(
 
     /**
      * 官方详情社交收藏数。候选：`favorite_cnt` / `collect_cnt` / `collect_count` /
-     * `all_bookshelf_count`；再试 `video_cover_stat_infos`。
+     * `all_bookshelf_count`（含 camelCase）；再试 `video_cover_stat_infos`、
+     * `secondary_info_list`「X万收藏」。
      */
-    private fun parseCollectCount(videoData: JSONObject): Long {
+    private fun parseCollectCount(node: JSONObject): Long {
         val directKeys = listOf(
             "favorite_cnt",
+            "favoriteCnt",
             "collect_cnt",
+            "collectCnt",
             "collect_count",
+            "collectCount",
             "all_bookshelf_count",
+            "allBookshelfCount",
             "bookshelf_count",
+            "bookshelfCount",
             "collectors_count",
+            "collectorsCount",
         )
         for (key in directKeys) {
-            val value = videoData.optLong(key, -1L)
-            if (value > 0L) return value
-            val asText = videoData.str(key)
-            val parsed = asText.toLongOrNull()
-            if (parsed != null && parsed > 0L) return parsed
+            val n = positiveLongField(node, key)
+            if (n > 0L) return n
         }
-        val parent = videoData.optJSONObject("series_data") ?: videoData.optJSONObject("book_data")
-        if (parent != null) {
+        val nested = listOfNotNull(
+            node.optJSONObject("series_data"),
+            node.optJSONObject("book_data"),
+            node.optJSONObject("video_detail"),
+            node.optJSONObject("key_metrics"),
+            node.optJSONObject("stat_info"),
+        )
+        for (parent in nested) {
             for (key in directKeys) {
-                val value = parent.optLong(key, -1L)
-                if (value > 0L) return value
+                val n = positiveLongField(parent, key)
+                if (n > 0L) return n
             }
         }
-        val stats = videoData.optJSONArray("video_cover_stat_infos")
+        val stats = node.optJSONArray("video_cover_stat_infos")
         if (stats != null) {
             for (i in 0 until stats.length()) {
                 val row = stats.optJSONObject(i) ?: continue
@@ -454,14 +470,45 @@ class AppSourceClient(
                     type.contains("收藏") ||
                     typeNum == 1 || typeNum == 2
                 if (!looksCollect && valueText.isBlank()) continue
-                val fromValue = valueText.toLongOrNull()
-                    ?: com.hongguo.watch.data.ChaseUpdatePolicy.parseCollectCountLabel(valueText)
+                val fromValue = ChaseUpdatePolicy.parseCollectCountLabel(valueText)
+                    .takeIf { it > 0L }
+                    ?: ChaseUpdatePolicy.parseCountText(valueText)
                 if (fromValue > 0L) return fromValue
-                val raw = row.optLong("video_cover_stat_value", row.optLong("stat_value", -1L))
+                val raw = positiveLongField(row, "video_cover_stat_value")
+                    .takeIf { it > 0L }
+                    ?: positiveLongField(row, "stat_value")
                 if (raw > 0L && looksCollect) return raw
             }
         }
+        val secondary = node.optJSONArray("secondary_info_list")
+        if (secondary != null) {
+            for (i in 0 until secondary.length()) {
+                val content = secondary.optJSONObject(i)?.str("content").orEmpty()
+                val n = ChaseUpdatePolicy.parseCollectCountLabel(content)
+                if (n > 0L) return n
+            }
+        }
         return 0L
+    }
+
+    /** 兼容 Number / 数字字符串 /「198.9万」文案。 */
+    private fun positiveLongField(obj: JSONObject, key: String): Long {
+        if (!obj.has(key) || obj.isNull(key)) return -1L
+        when (val raw = obj.opt(key)) {
+            is Number -> {
+                val n = raw.toLong()
+                return if (n > 0L) n else -1L
+            }
+            is String -> {
+                val text = raw.trim()
+                if (text.isEmpty()) return -1L
+                text.toLongOrNull()?.takeIf { it > 0L }?.let { return it }
+                ChaseUpdatePolicy.parseCollectCountLabel(text).takeIf { it > 0L }?.let { return it }
+                ChaseUpdatePolicy.parseCountText(text).takeIf { it > 0L }?.let { return it }
+            }
+        }
+        val fallback = obj.optLong(key, -1L)
+        return if (fallback > 0L) fallback else -1L
     }
 
     /**
@@ -1009,26 +1056,34 @@ class AppSourceClient(
             if (type != 3 && type != 32) return@mapNotNull null
             item.str("content").takeIf { it.isNotBlank() && it.length <= 12 }
         }.distinct().take(2)
-        val heat = row.optJSONArray("secondary_info_list")?.objects().orEmpty()
+        val secondary = row.optJSONArray("secondary_info_list")?.objects().orEmpty()
             .map { it.str("content") }
-            .firstOrNull { content ->
-                content.isNotBlank() && (
-                    content.contains("收藏") ||
-                        content.contains("点赞") ||
-                        content.contains("热") ||
-                        content.contains("评分") ||
-                        content.contains("播放")
-                    )
-            }
-            ?.takeIf { it.length <= 16 }
+            .filter { it.isNotBlank() }
+        val collectTag = secondary.firstOrNull {
+            it.contains("收藏") && it.length <= 16
+        }
+        val heat = secondary.firstOrNull { content ->
+            !content.contains("收藏") && (
+                content.contains("点赞") ||
+                    content.contains("热") ||
+                    content.contains("评分") ||
+                    content.contains("播放")
+                )
+        }?.takeIf { it.length <= 16 }
             ?: formatPlayCount(row.optLong("play_cnt", 0L))
         val tags = buildList {
+            if (!collectTag.isNullOrBlank()) add(collectTag)
             if (!heat.isNullOrBlank()) add(heat)
             addAll(genres)
         }.distinct().take(3)
+        val collectCount = parseCollectCount(row)
+            .takeIf { it > 0L }
+            ?: collectTag?.let { ChaseUpdatePolicy.parseCollectCountLabel(it) }?.takeIf { it > 0L }
+            ?: 0L
         return base.copy(
             tags = tags.ifEmpty { base.tags },
             description = base.description.ifBlank { row.str("sub_title") },
+            collectCount = collectCount.takeIf { it > 0L } ?: base.collectCount,
         )
     }
 

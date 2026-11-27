@@ -36,18 +36,45 @@ object ChaseUpdatePolicy {
 
     /**
      * 详情「收藏」按钮旁人数：官方 `favorite_cnt` / `collect_count` 等。
-     * 返回纯数字文案（如 `1.2万`）；≤0 返回空。
+     * 返回纯数字文案（如 `1.2万` / `198.9万`）；≤0 返回空。
+     * 按钮最终文案用资源 `%1$s收藏` 拼成「198.9万收藏」，勿再前置「收藏」。
      */
     fun formatCollectCount(count: Long): String {
         if (count <= 0L) return ""
         return when {
-            count >= 100_000_000L -> String.format("%.1f亿", count / 100_000_000.0)
-            count >= 10_000L -> {
-                val wan = count / 10_000.0
-                if (wan >= 100) String.format("%.0f万", wan) else String.format("%.1f万", wan)
-            }
+            count >= 100_000_000L -> formatScaledCount(count / 100_000_000.0, "亿")
+            count >= 10_000L -> formatScaledCount(count / 10_000.0, "万")
             else -> count.toString()
         }
+    }
+
+    /** 官方风格：`198.9万` 保留一位；整万去掉 `.0`（`12万`）。用 US locale 固定小数点。 */
+    private fun formatScaledCount(value: Double, suffix: String): String {
+        val one = String.format(java.util.Locale.US, "%.1f", value)
+        val body = if (one.endsWith(".0")) one.dropLast(2) else one
+        return body + suffix
+    }
+
+    /**
+     * 解析「198.9万」「1.2亿」「1989000」等纯数量文案（可不含「收藏」）。
+     */
+    fun parseCountText(raw: String): Long {
+        val text = raw.trim().replace(",", "").replace("人", "")
+        if (text.isEmpty()) return 0L
+        text.toLongOrNull()?.takeIf { it > 0L }?.let { return it }
+        return runCatching {
+            when {
+                text.endsWith("亿") -> {
+                    val n = text.dropLast(1).toDoubleOrNull() ?: return@runCatching 0L
+                    (n * 100_000_000.0).toLong()
+                }
+                text.endsWith("万") -> {
+                    val n = text.dropLast(1).toDoubleOrNull() ?: return@runCatching 0L
+                    (n * 10_000.0).toLong()
+                }
+                else -> 0L
+            }
+        }.getOrDefault(0L).coerceAtLeast(0L)
     }
 
     /**
@@ -69,18 +96,6 @@ object ChaseUpdatePolicy {
         if (text.isEmpty() || !text.contains("收藏")) return 0L
         val body = text.replace("收藏", "").replace("人", "").trim()
         if (body.isEmpty()) return 0L
-        return runCatching {
-            when {
-                body.endsWith("亿") -> {
-                    val n = body.dropLast(1).toDoubleOrNull() ?: return@runCatching 0L
-                    (n * 100_000_000.0).toLong()
-                }
-                body.endsWith("万") -> {
-                    val n = body.dropLast(1).toDoubleOrNull() ?: return@runCatching 0L
-                    (n * 10_000.0).toLong()
-                }
-                else -> body.toLongOrNull() ?: 0L
-            }
-        }.getOrDefault(0L)
+        return parseCountText(body)
     }
 }

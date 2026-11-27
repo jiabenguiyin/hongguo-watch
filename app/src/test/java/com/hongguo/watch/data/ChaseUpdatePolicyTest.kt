@@ -35,11 +35,20 @@ class ChaseUpdatePolicyTest {
         assertEquals("999", ChaseUpdatePolicy.formatCollectCount(999))
         assertEquals("1.2万", ChaseUpdatePolicy.formatCollectCount(12_000))
         assertEquals("98.8万", ChaseUpdatePolicy.formatCollectCount(988_000))
+        assertEquals("198.9万", ChaseUpdatePolicy.formatCollectCount(1_989_000))
     }
 
     @Test
     fun parseCollectCountLabelFromRankTag() {
         assertEquals(988_000L, ChaseUpdatePolicy.parseCollectCountLabel("98.8万收藏"))
+        assertEquals(1_989_000L, ChaseUpdatePolicy.parseCollectCountLabel("198.9万收藏"))
         assertEquals(0L, ChaseUpdatePolicy.parseCollectCountLabel("都市"))
+    }
+
+    @Test
+    fun parseCountTextBareWan() {
+        assertEquals(1_989_000L, ChaseUpdatePolicy.parseCountText("198.9万"))
+        assertEquals(12_000L, ChaseUpdatePolicy.parseCountText("1.2万"))
+        assertEquals(0L, ChaseUpdatePolicy.parseCountText(""))
     }
 }

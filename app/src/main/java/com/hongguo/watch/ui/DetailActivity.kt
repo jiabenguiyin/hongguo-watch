@@ -693,8 +693,13 @@ class DetailActivity : WatchDisplayActivity() {
     private fun bindHeatAndRating(tags: List<String>) {
         val rating = tags.firstOrNull { it.contains("评分") || (it.contains("分") && it.any(Char::isDigit)) }
             ?.replace("评分", "")?.trim()
+        // 「X万收藏」留给收藏按钮，不当热度再画一遍。
         val heat = tags.firstOrNull {
-            it.contains("万") || it.contains("热度") || it.contains("收藏") || it.contains("点赞")
+            !it.contains("收藏") && (
+                it.contains("热度") ||
+                    it.contains("点赞") ||
+                    (it.contains("万") && (it.contains("热") || it.contains("播")))
+                )
         }
         if (!rating.isNullOrBlank()) {
             val score = rating.removeSuffix("分")
@@ -738,11 +743,12 @@ class DetailActivity : WatchDisplayActivity() {
         binding.favoriteButton.setImageResource(
             if (favorited) R.drawable.ic_favorite else R.drawable.ic_favorite_border,
         )
+        // 唯一文案：有数 →「198.9万收藏」；无数 →「收藏」/「已收藏」。绝不叠两层「收藏」。
         val countLabel = ChaseUpdatePolicy.formatCollectCount(collectCount)
-        binding.favoriteAction.text = if (countLabel.isNotEmpty()) {
-            getString(R.string.favorite_with_count, countLabel)
-        } else {
-            getString(R.string.favorite)
+        binding.favoriteAction.text = when {
+            countLabel.isNotEmpty() -> getString(R.string.favorite_with_count, countLabel)
+            favorited -> getString(R.string.favorite_added)
+            else -> getString(R.string.favorite)
         }
         binding.favoriteAction.setTextColor(
             ContextCompat.getColor(
@@ -750,6 +756,7 @@ class DetailActivity : WatchDisplayActivity() {
                 if (favorited) R.color.accent else R.color.text_primary,
             ),
         )
+        binding.favoriteAction.contentDescription = binding.favoriteAction.text
     }
 
     private fun collectCountFromTags(tags: List<String>): Long {

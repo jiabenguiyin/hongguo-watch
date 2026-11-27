@@ -92,6 +92,27 @@
 
             <TextView
                 style="@style/Widget.HongguoWatch.SettingsHeading"
+                android:text="@string/settings_section_library" />
+
+            <LinearLayout
+                style="@style/Widget.HongguoWatch.SettingsGroup">
+
+                <LinearLayout style="@style/Widget.HongguoWatch.SettingsRow">
+
+                    <ImageView
+                        style="@style/Widget.HongguoWatch.SettingsIcon"
+                        android:src="@drawable/ic_settings_offline" />
+
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/libraryLayoutListSwitch"
+                        style="@style/Widget.HongguoWatch.SettingsSwitch"
+                        android:enabled="false"
+                        android:text="@string/library_layout_list" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                style="@style/Widget.HongguoWatch.SettingsHeading"
                 android:text="@string/settings_section_playback" />
 
             <LinearLayout

@@ -114,6 +114,73 @@ class RedfruitCloudLibraryTest {
     }
 
     @Test
+    fun chaseBooksUsesOfficialChaseListPath() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val cloud = cloud(
+            requests,
+            responseBody = """{"code":0,"data":{"chase_book_data_list":[
+                {"series_id_str":"12345","series_title":"追更剧","episode_cnt":90,
+                 "last_serial_count":80,"is_chased_updates":true,
+                 "series_cover_url":"https://example.com/a.jpg"}
+            ]}}""",
+        )
+
+        val rows = cloud.chaseBooks(credentials)
+
+        assertEquals(1, requests.size)
+        assertEquals("/reading/bookapi/chase_book/list/v1/", requests.single().url.encodedPath)
+        assertEquals("12345", rows.single().seriesId)
+        assertEquals(90, rows.single().episodeCount)
+        assertEquals(80, rows.single().lastSerialCount)
+        assertTrue(rows.single().isChasedUpdates)
+    }
+
+    @Test
+    fun likedSeriesPostsUgcActionUserGetWithDiggType() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val cloud = cloud(
+            requests,
+            responseBody = """{"code":0,"data":{"user_action_list":[
+                {"book_id_str":"12345","book_name":"点赞剧","thumb_url":"https://example.com/a.jpg",
+                 "episode_cnt":40,"action_time":1792500000000}
+            ]}}""",
+        )
+
+        val rows = cloud.likedSeries(credentials)
+
+        assertEquals(1, requests.size)
+        assertEquals("POST", requests.single().method)
+        assertEquals("/reading/ugc/action/user/get/v1/", requests.single().url.encodedPath)
+        val body = JSONObject(requests.single().bodyText())
+        assertEquals(3, body.getInt("action_type"))
+        assertEquals("12345", rows.single().seriesId)
+        assertEquals("点赞剧", rows.single().seriesTitle)
+        assertEquals(40, rows.single().episodeCount)
+    }
+
+    @Test
+    fun reservationsUsesOfficialSubscribeListPathAndHeat() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val cloud = cloud(
+            requests,
+            responseBody = """{"code":0,"data":{"subscribe_items":[
+                {"series_id_str":"12345","series_title":"预约剧",
+                 "series_cover_url":"https://example.com/a.jpg",
+                 "hot_score_text":"5350万热度","is_online":true,
+                 "subscribe_time":1792500000000}
+            ]}}""",
+        )
+
+        val rows = cloud.reservations(credentials)
+
+        assertEquals(1, requests.size)
+        assertEquals("/reading/user/subscribe/list/v1/", requests.single().url.encodedPath)
+        assertEquals("12345", rows.single().seriesId)
+        assertEquals("5350万热度", rows.single().hotText)
+        assertEquals(true, rows.single().online)
+    }
+
+    @Test
     fun setFavoriteUsesOfficialVideoShelfPayloadForAddAndRemove() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val cloud = cloud(requests)

@@ -21,6 +21,7 @@ import coil.load
 import coil.transform.RoundedCornersTransformation
 import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
+import com.hongguo.watch.data.ChaseUpdatePolicy
 import com.hongguo.watch.data.ContentRepository
 import com.hongguo.watch.data.CoverUrls
 import com.hongguo.watch.data.cache.VideoCacheManager
@@ -57,6 +58,8 @@ class DetailActivity : WatchDisplayActivity() {
     private var resumeEpisodeId: String? = null
     private var resumePositionMs: Long = 0L
     private var favorited = false
+    /** 官方社交收藏人数；0=未知，按钮只显示「收藏」。 */
+    private var collectCount: Long = 0L
     private var ascending = true
     private var episodesExpanded = false
     private var selectedRangeIndex = 0
@@ -91,6 +94,7 @@ class DetailActivity : WatchDisplayActivity() {
         bindCover(cover)
         bindTags(incomingTags)
         bindHeatAndRating(incomingTags)
+        collectCount = collectCountFromTags(incomingTags)
         binding.cover.contentDescription = getString(R.string.cover_preview_action)
         binding.cover.setOnClickListener { showCoverPreview() }
         binding.synopsisExpandToggle.setOnClickListener { toggleSynopsisExpansion() }
@@ -197,11 +201,17 @@ class DetailActivity : WatchDisplayActivity() {
                 seriesTitle = detail.series.title
                 cover = detail.series.cover
                 episodeCount = detail.series.episodeCount
+                if (detail.series.collectCount > 0L) {
+                    collectCount = detail.series.collectCount
+                }
                 binding.seriesTitle.text = detail.series.title
                 bindCover(cover)
                 val intro = detail.series.description.ifBlank { synopsisText }
                 renderSynopsis(intro)
                 val tags = (incomingTags + detail.series.tags).distinct().filter { it.isNotBlank() }
+                if (collectCount <= 0L) {
+                    collectCount = collectCountFromTags(tags)
+                }
                 bindTags(tags)
                 bindHeatAndRating(tags)
                 episodes = detail.episodes
@@ -683,8 +693,13 @@ class DetailActivity : WatchDisplayActivity() {
     private fun bindHeatAndRating(tags: List<String>) {
         val rating = tags.firstOrNull { it.contains("评分") || (it.contains("分") && it.any(Char::isDigit)) }
             ?.replace("评分", "")?.trim()
+        // 「X万收藏」留给收藏按钮，不当热度再画一遍。
         val heat = tags.firstOrNull {
-            it.contains("万") || it.contains("热度") || it.contains("收藏") || it.contains("点赞")
+            !it.contains("收藏") && (
+                it.contains("热度") ||
+                    it.contains("点赞") ||
+                    (it.contains("万") && (it.contains("热") || it.contains("播")))
+                )
         }
         if (!rating.isNullOrBlank()) {
             val score = rating.removeSuffix("分")
@@ -728,24 +743,44 @@ class DetailActivity : WatchDisplayActivity() {
         binding.favoriteButton.setImageResource(
             if (favorited) R.drawable.ic_favorite else R.drawable.ic_favorite_border,
         )
-        binding.favoriteAction.text = getString(R.string.favorite)
+        // 有数必显：未收藏「199万收藏」/ 已收藏「已收藏·199万」；无数才退回「收藏」/「已收藏」。
+        val countLabel = ChaseUpdatePolicy.formatCollectCount(collectCount)
+        binding.favoriteAction.text = when {
+            countLabel.isNotEmpty() && favorited ->
+                getString(R.string.favorite_added_with_count, countLabel)
+            countLabel.isNotEmpty() -> getString(R.string.favorite_with_count, countLabel)
+            favorited -> getString(R.string.favorite_added)
+            else -> getString(R.string.favorite)
+        }
         binding.favoriteAction.setTextColor(
             ContextCompat.getColor(
                 this,
                 if (favorited) R.color.accent else R.color.text_primary,
             ),
         )
+        binding.favoriteAction.contentDescription = binding.favoriteAction.text
+    }
+
+    private fun collectCountFromTags(tags: List<String>): Long {
+        for (tag in tags) {
+            val n = ChaseUpdatePolicy.parseCollectCountLabel(tag)
+            if (n > 0L) return n
+        }
+        return 0L
     }
 
     private fun toggleFavorite() {
         lifecycleScope.launch {
+            val total = ContentRepository.episodeTotal(episodeCount, episodes.size)
             favorited = repo.toggleFavorite(
                 seriesId = seriesId,
                 seriesTitle = seriesTitle,
                 cover = cover,
                 source = source,
-                episodeCount = ContentRepository.episodeTotal(episodeCount, episodes.size),
+                episodeCount = total,
             )
+            if (favorited) container.chaseUpdates.seedIfAbsent(seriesId, total)
+            else container.chaseUpdates.clear(seriesId)
             refreshFavoriteUi()
             Toast.makeText(
                 this@DetailActivity,

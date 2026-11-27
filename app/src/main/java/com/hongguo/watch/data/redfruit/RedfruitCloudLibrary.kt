@@ -34,6 +34,43 @@ internal data class RedfruitCloudProfile(
     internal val shelfUserId: String?,
 )
 
+/**
+ * 官方追更条目（`chase_book/list` / `bookshelf/chase_book`）。
+ * [episodeCount] 为当前总集；[lastSerialCount] 对齐官方本地 `last_serial_count`。
+ */
+internal data class RedfruitChaseBook(
+    val seriesId: String,
+    val seriesTitle: String,
+    val cover: String,
+    val episodeCount: Int,
+    val lastSerialCount: Int,
+    val isChasedUpdates: Boolean,
+)
+
+/** 官方「我的点赞」条目（`ugc/action/user/get`，action_type=Digg≈3）。 */
+internal data class RedfruitLikedSeries(
+    val seriesId: String,
+    val seriesTitle: String,
+    val cover: String,
+    val episodeCount: Int,
+    val likedAt: Long,
+)
+
+/**
+ * 官方「预约」条目（`user/subscribe/list`）。
+ * [hotValue] / [hotText] 有真实字段才显示热度；[online] null 表示未知。
+ */
+internal data class RedfruitReservation(
+    val seriesId: String,
+    val seriesTitle: String,
+    val cover: String,
+    val episodeCount: Int,
+    val hotValue: Long,
+    val hotText: String,
+    val online: Boolean?,
+    val subscribedAt: Long,
+)
+
 internal class RedfruitCloudException(
     message: String,
     val authenticationRejected: Boolean = false,
@@ -156,6 +193,149 @@ internal class RedfruitCloudLibrary(
                 seriesTitle = row.seriesTitle.ifBlank { detail?.title.orEmpty().ifBlank { "剧集 ${row.seriesId}" } },
                 cover = row.cover.ifBlank { detail?.cover.orEmpty() },
                 episodeCount = row.episodeCount.takeIf { it > 0 } ?: detail?.episodeCount ?: 0,
+            )
+        }
+    }
+
+    /**
+     * 官方追更列表。优先 `chase_book/list`，404/405 再试 `bookshelf/chase_book`。
+     * Schema 仅有 DEX 字段名证据，解析保持宽松；结构无效时抛错由调用方降级本地游标。
+     */
+    suspend fun chaseBooks(credentials: RedfruitCredentials): List<RedfruitChaseBook> {
+        val payload = try {
+            requestVariants(
+                credentials,
+                listOf(
+                    "/reading/bookapi/chase_book/list/v1/",
+                    "/reading/bookapi/chase_book/list/v",
+                ),
+            )
+        } catch (error: RedfruitCloudException) {
+            if (error.httpStatus != 404 && error.httpStatus != 405) throw error
+            requestVariants(
+                credentials,
+                listOf(
+                    "/reading/bookapi/bookshelf/chase_book/v1/",
+                    "/reading/bookapi/bookshelf/chase_book/v",
+                ),
+            )
+        }
+        val data = payload.requireCloudData()
+        val rows = firstPresentArray(
+            data,
+            "chase_book_data_list",
+            "chase_book_info_list",
+            "chase_book_data",
+            "chase_books",
+            "data_list",
+            "video_shelf_info",
+        ) ?: JSONArray()
+        if (rows.length() > MAX_CHASE_ROWS) {
+            throw RedfruitCloudException("云端追更超出本次读取范围")
+        }
+        return parseChaseBooks(rows)
+    }
+
+    /**
+     * 官方「我的点赞」列表。`POST …/ugc/action/user/get/v1/`（DEX `MGetUserActionListRequest`）。
+     * `action_type=3` 对齐 Digg / aston 对照；Schema 仅有字段名证据 → 宽松解析。
+     */
+    suspend fun likedSeries(credentials: RedfruitCredentials): List<RedfruitLikedSeries> {
+        val body = JSONObject()
+            .put("action_type", UGC_ACTION_TYPE_DIGG)
+            .put("count", LIKES_PAGE_SIZE)
+            .put("offset", 0)
+            .put("cursor", "0")
+            .toString()
+            .toByteArray(Charsets.UTF_8)
+        val payload = try {
+            request(
+                credentials,
+                "/reading/ugc/action/user/get/v1/",
+                params = emptyMap(),
+                body = body,
+            )
+        } catch (error: RedfruitCloudException) {
+            if (error.httpStatus != 404 && error.httpStatus != 405) throw error
+            request(
+                credentials,
+                "/reading/ugc/action/user/get/v/",
+                params = emptyMap(),
+                body = body,
+            )
+        }
+        val data = payload.requireCloudData()
+        val rows = firstPresentArray(
+            data,
+            "user_action_list",
+            "action_list",
+            "action_result_list",
+            "data_list",
+            "digg_list",
+            "my_digg",
+            "item_list",
+            "video_data",
+        ) ?: JSONArray()
+        if (rows.length() > MAX_LIKES_ROWS) {
+            throw RedfruitCloudException("云端点赞超出本次读取范围")
+        }
+        val likes = parseLikedSeries(rows)
+        val missing = likes.filter { it.seriesTitle.isBlank() || it.cover.isBlank() }
+            .take(MAX_FAVORITE_DETAILS)
+        if (missing.isEmpty()) return likes
+        val details = favoriteDetails(credentials, missing.map { it.seriesId })
+        return likes.map { row ->
+            val detail = details[row.seriesId] ?: return@map row
+            row.copy(
+                seriesTitle = row.seriesTitle.ifBlank { detail.title.ifBlank { "剧集 ${row.seriesId}" } },
+                cover = row.cover.ifBlank { detail.cover },
+                episodeCount = row.episodeCount.takeIf { it > 0 } ?: detail.episodeCount,
+            )
+        }
+    }
+
+    /**
+     * 官方预约列表。`GET …/user/subscribe/list/v1/`（DEX `GetUserSubscribeListRequest`）。
+     * 热度只取响应里的 `hot_*` / `secondary_info`，不造假。
+     */
+    suspend fun reservations(credentials: RedfruitCredentials): List<RedfruitReservation> {
+        val payload = requestVariants(
+            credentials,
+            listOf(
+                "/reading/user/subscribe/list/v1/",
+                "/reading/user/subscribe/list/v",
+            ),
+            mapOf(
+                "offset" to "0",
+                "limit" to RESERVATIONS_PAGE_SIZE.toString(),
+                "count" to RESERVATIONS_PAGE_SIZE.toString(),
+                "subscribe_offset" to "0",
+            ),
+        )
+        val data = payload.requireCloudData()
+        val rows = firstPresentArray(
+            data,
+            "subscribe_items",
+            "subscribe_item",
+            "subscribe_data",
+            "data_list",
+            "item_list",
+            "video_data",
+        ) ?: JSONArray()
+        if (rows.length() > MAX_RESERVATION_ROWS) {
+            throw RedfruitCloudException("云端预约超出本次读取范围")
+        }
+        val items = parseReservations(rows)
+        val missing = items.filter { it.seriesTitle.isBlank() || it.cover.isBlank() }
+            .take(MAX_FAVORITE_DETAILS)
+        if (missing.isEmpty()) return items
+        val details = favoriteDetails(credentials, missing.map { it.seriesId })
+        return items.map { row ->
+            val detail = details[row.seriesId] ?: return@map row
+            row.copy(
+                seriesTitle = row.seriesTitle.ifBlank { detail.title.ifBlank { "剧集 ${row.seriesId}" } },
+                cover = row.cover.ifBlank { detail.cover },
+                episodeCount = row.episodeCount.takeIf { it > 0 } ?: detail.episodeCount,
             )
         }
     }
@@ -430,6 +610,13 @@ internal class RedfruitCloudLibrary(
         const val PAGE_ROWS_LIMIT = 1000
         const val MAX_FAVORITE_ROWS = 12_000
         const val MAX_FAVORITE_DETAILS = 200
+        const val MAX_CHASE_ROWS = 2_000
+        const val MAX_LIKES_ROWS = 2_000
+        const val MAX_RESERVATION_ROWS = 2_000
+        const val LIKES_PAGE_SIZE = 100
+        const val RESERVATIONS_PAGE_SIZE = 100
+        /** DEX / aston：点赞 Digg ≈ 3（`UgcActionType` / DiggAction）。 */
+        const val UGC_ACTION_TYPE_DIGG = 3
         const val RECENT_PROGRESS_LIMIT = 50
         val JSON_MEDIA_TYPE = "application/json; charset=UTF-8".toMediaType()
         val SIGNING_DEVICE_KEYS = setOf("device_id", "iid", "cdid", "openudid")
@@ -486,6 +673,177 @@ internal fun parseFavorites(rows: JSONArray): List<FavoriteEntity> {
         if (previous == null || previous.updatedAt < favorite.updatedAt) result[seriesId] = favorite
     }
     return result.values.sortedByDescending { it.updatedAt }
+}
+
+internal fun parseChaseBooks(rows: JSONArray): List<RedfruitChaseBook> {
+    val result = linkedMapOf<String, RedfruitChaseBook>()
+    for (index in 0 until rows.length()) {
+        val row = rows.optJSONObject(index) ?: continue
+        val nested = row.optJSONObject("video_data")
+            ?: row.optJSONObject("book_data")
+            ?: row.optJSONObject("chase_book_data")
+            ?: row
+        val seriesId = row.validSeriesId("series_id_str", "book_id_str", "series_id", "book_id")
+            ?: nested.validSeriesId("series_id_str", "book_id_str", "series_id", "book_id")
+            ?: continue
+        val episodeCount = maxOf(row.episodeCount(), nested.episodeCount())
+        val lastSerial = row.boundedNumber("last_serial_count", "last_episode_cnt", max = 100_000).toInt()
+            .takeIf { it > 0 }
+            ?: nested.boundedNumber("last_serial_count", "last_episode_cnt", max = 100_000).toInt()
+        val chased = row.booleanValue("is_chased_updates") ||
+            nested.booleanValue("is_chased_updates") ||
+            row.booleanValue("is_chase_book") ||
+            nested.booleanValue("is_chase_book") ||
+            (episodeCount > 0 && lastSerial > 0 && episodeCount > lastSerial)
+        val item = RedfruitChaseBook(
+            seriesId = seriesId,
+            seriesTitle = row.firstText("series_title", "book_name", "title")
+                .ifBlank { nested.firstText("title", "book_name", "series_title") }
+                .ifBlank { "剧集 $seriesId" },
+            cover = safeCover(
+                row.firstText("series_cover_url", "thumb_url", "cover_url", "cover")
+                    .ifBlank { nested.firstText("cover", "cover_url", "thumb_url") },
+            ),
+            episodeCount = episodeCount,
+            lastSerialCount = lastSerial,
+            isChasedUpdates = chased,
+        )
+        result[seriesId] = item
+    }
+    return result.values.toList()
+}
+
+internal fun parseLikedSeries(rows: JSONArray): List<RedfruitLikedSeries> {
+    val result = linkedMapOf<String, RedfruitLikedSeries>()
+    for (index in 0 until rows.length()) {
+        val row = rows.optJSONObject(index) ?: continue
+        val nested = row.optJSONObject("video_data")
+            ?: row.optJSONObject("book_data")
+            ?: row.optJSONObject("object_data")
+            ?: row.optJSONObject("action_data")
+            ?: row.optJSONObject("item")
+            ?: row
+        val seriesId = row.validSeriesId(
+            "series_id_str", "book_id_str", "object_id_str", "object_id",
+            "series_id", "book_id", "item_id_str", "item_id",
+        ) ?: nested.validSeriesId(
+            "series_id_str", "book_id_str", "object_id_str", "object_id",
+            "series_id", "book_id", "item_id_str", "item_id",
+        ) ?: continue
+        val likedAt = row.epochMillis("action_time", "digg_time", "create_time", "modify_time")
+            .takeIf { it > 0 }
+            ?: nested.epochMillis("action_time", "digg_time", "create_time", "modify_time")
+        val item = RedfruitLikedSeries(
+            seriesId = seriesId,
+            seriesTitle = row.firstText("series_title", "book_name", "title", "object_name")
+                .ifBlank { nested.firstText("title", "book_name", "series_title", "object_name") },
+            cover = safeCover(
+                row.firstText("series_cover_url", "thumb_url", "cover_url", "cover")
+                    .ifBlank { nested.firstText("cover", "cover_url", "thumb_url") },
+            ),
+            episodeCount = maxOf(row.episodeCount(), nested.episodeCount()),
+            likedAt = likedAt,
+        )
+        val previous = result[seriesId]
+        if (previous == null || previous.likedAt < item.likedAt) result[seriesId] = item
+    }
+    return result.values.sortedByDescending { it.likedAt }
+}
+
+internal fun parseReservations(rows: JSONArray): List<RedfruitReservation> {
+    val result = linkedMapOf<String, RedfruitReservation>()
+    for (index in 0 until rows.length()) {
+        val row = rows.optJSONObject(index) ?: continue
+        val nested = row.optJSONObject("video_data")
+            ?: row.optJSONObject("book_data")
+            ?: row.optJSONObject("subscribe_item")
+            ?: row.optJSONObject("item")
+            ?: row
+        val seriesId = row.validSeriesId(
+            "series_id_str", "book_id_str", "subscribe_item_id", "object_id_str",
+            "series_id", "book_id", "object_id",
+        ) ?: nested.validSeriesId(
+            "series_id_str", "book_id_str", "subscribe_item_id", "object_id_str",
+            "series_id", "book_id", "object_id",
+        ) ?: continue
+        val hotText = reservationHotText(row, nested)
+        val hotValue = row.boundedNumber("hot_value", "hot_score", "hot_val", max = 9_999_999_999_999)
+            .takeIf { it > 0 }
+            ?: nested.boundedNumber("hot_value", "hot_score", "hot_val", max = 9_999_999_999_999)
+        val online = reservationOnline(row, nested)
+        val subscribedAt = row.epochMillis("subscribe_time", "create_time", "modify_time")
+            .takeIf { it > 0 }
+            ?: nested.epochMillis("subscribe_time", "create_time", "modify_time")
+        val item = RedfruitReservation(
+            seriesId = seriesId,
+            seriesTitle = row.firstText("series_title", "book_name", "title")
+                .ifBlank { nested.firstText("title", "book_name", "series_title") },
+            cover = safeCover(
+                row.firstText("series_cover_url", "thumb_url", "cover_url", "cover")
+                    .ifBlank { nested.firstText("cover", "cover_url", "thumb_url") },
+            ),
+            episodeCount = maxOf(row.episodeCount(), nested.episodeCount()),
+            hotValue = hotValue,
+            hotText = hotText,
+            online = online,
+            subscribedAt = subscribedAt,
+        )
+        val previous = result[seriesId]
+        if (previous == null || previous.subscribedAt < item.subscribedAt) result[seriesId] = item
+    }
+    return result.values.sortedByDescending { it.subscribedAt }
+}
+
+private fun reservationHotText(row: JSONObject, nested: JSONObject): String {
+    val direct = row.firstText("hot_score_text", "hot_text")
+        .ifBlank { nested.firstText("hot_score_text", "hot_text") }
+        .trim()
+    if (direct.isNotBlank()) return direct
+    val secondary = row.optJSONArray("secondary_info_list")
+        ?: nested.optJSONArray("secondary_info_list")
+        ?: return ""
+    for (i in 0 until secondary.length()) {
+        val content = secondary.optJSONObject(i)?.firstText("content", "text", "title")
+            ?.trim()
+            .orEmpty()
+        if (content.contains("热度")) return content
+    }
+    return ""
+}
+
+private fun reservationOnline(row: JSONObject, nested: JSONObject): Boolean? {
+    when {
+        row.booleanValue("is_online") || nested.booleanValue("is_online") -> return true
+        row.booleanValue("already_online") || nested.booleanValue("already_online") -> return true
+        row.booleanValue("to_be_online") || nested.booleanValue("to_be_online") -> return false
+        row.booleanValue("not_online") || nested.booleanValue("not_online") -> return false
+    }
+    val status = row.firstText("online_status", "subscribe_status", "status")
+        .ifBlank { nested.firstText("online_status", "subscribe_status", "status") }
+        .lowercase()
+    return when {
+        status.contains("online") && !status.contains("not") -> true
+        status.contains("offline") || status.contains("待上线") -> false
+        status.contains("已上线") -> true
+        else -> null
+    }
+}
+
+private fun firstPresentArray(data: JSONObject, vararg keys: String): JSONArray? {
+    for (key in keys) {
+        if (!data.has(key) || data.isNull(key)) continue
+        val value = data.opt(key)
+        when (value) {
+            is JSONArray -> return value
+            is JSONObject -> {
+                // 单对象包一层，便于宽松兼容
+                val wrapped = JSONArray()
+                wrapped.put(value)
+                return wrapped
+            }
+        }
+    }
+    return null
 }
 
 private fun JSONObject.requireCloudData(): JSONObject =

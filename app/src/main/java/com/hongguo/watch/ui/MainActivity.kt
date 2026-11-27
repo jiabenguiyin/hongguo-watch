@@ -19,14 +19,18 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.hongguo.watch.HongguoWatchApp
 import com.hongguo.watch.R
+import com.hongguo.watch.data.ChaseUpdatePolicy
 import com.hongguo.watch.data.UpdateApkInstaller
 import com.hongguo.watch.data.cache.VideoCacheEntry
 import com.hongguo.watch.data.cache.VideoCacheManager
 import com.hongguo.watch.data.cache.VideoCacheSeriesGroup
+import com.hongguo.watch.data.db.FavoriteEntity
+import com.hongguo.watch.data.db.WatchHistoryEntity
 import com.hongguo.watch.data.model.HomeCategory
 import com.hongguo.watch.data.model.Series
 import com.hongguo.watch.data.model.SeriesSource
@@ -83,6 +87,19 @@ class MainActivity : WatchDisplayActivity() {
     private var searchChipId: String = SEARCH_CHIP_ALL
     private var hotBatchOffset: Int = 0
     private lateinit var librarySegmentGesture: GestureDetector
+    /** 库布局：true=列表模式；false=三列模式（默认）。各分段共用。 */
+    private var libraryLayoutList = false
+
+    /** 离线三列模式下暂存分组，点海报钻入分集。 */
+    private var offlineGroupsSnapshot: List<VideoCacheSeriesGroup> = emptyList()
+    /** 收藏批量编辑（仅三列模式）。 */
+    /** 收藏/历史三列海报共用批量编辑；列表模式不启用。 */
+    private var libraryEditMode = false
+    private val librarySelectedIds = linkedSetOf<String>()
+    private var libraryPosterSnapshot: List<HomeRow.Poster> = emptyList()
+    /** 库内搜索（顶栏时钟左侧放大镜）。 */
+    private var librarySearchOpen = false
+    private var librarySearchQuery = ""
 
     private val container get() = (application as HongguoWatchApp).container
     private val repo get() = container.repository
@@ -103,17 +120,38 @@ class MainActivity : WatchDisplayActivity() {
             },
             onHotWordClick = { openSeries(it) },
             onDiscoveryClick = { openSeries(it) },
-            onHeaderAction = { refreshHotBatch() },
+            onHeaderAction = {
+                when {
+                    mode == Mode.HOME -> refreshHotBatch()
+                    mode == Mode.LIBRARY &&
+                        librarySegmentSupportsBatchEdit() &&
+                        !libraryLayoutList -> enterLibraryEditMode()
+                }
+            },
             onResumeClick = { resumeHistorySeries(it) },
             onItemLongClick = { series ->
-                if (mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.HISTORY) {
-                    confirmDeleteHistory(series)
+                if (mode == Mode.LIBRARY &&
+                    librarySegmentSupportsBatchEdit() &&
+                    !libraryLayoutList &&
+                    !libraryEditMode
+                ) {
+                    enterLibraryEditMode(preselect = series.id)
                     true
                 } else {
                     false
                 }
             },
-        ) { openSeries(it) }
+            onSelectionToggle = { series -> toggleLibrarySelection(series.id) },
+        ) { series ->
+            if (mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.OFFLINE) {
+                val group = offlineGroupsSnapshot.firstOrNull { it.seriesId == series.id }
+                if (group != null) {
+                    openOfflineSeries(group)
+                    return@SeriesListAdapter
+                }
+            }
+            openSeries(series)
+        }
         offlineAdapter = OfflineCacheAdapter(
             onOpenSeries = { openOfflineSeries(it) },
             onBackToSeries = { closeOfflineSeriesDrillIn() },
@@ -174,6 +212,24 @@ class MainActivity : WatchDisplayActivity() {
         binding.segmentOffline.setOnClickListener {
             showLibrary(segment = LibrarySegmentPolicy.Segment.OFFLINE)
         }
+        binding.librarySelectAll.setOnClickListener { toggleSelectAllLibrary() }
+        binding.libraryEditDone.setOnClickListener { exitLibraryEditMode(reload = true) }
+        binding.libraryDeleteBar.setOnClickListener { confirmDeleteSelectedLibrary() }
+        binding.librarySearchToggle.setOnClickListener { toggleLibrarySearch() }
+        binding.librarySearchClear.setOnClickListener {
+            binding.librarySearchInput.setText("")
+            applyLibrarySearchQuery("")
+            hideKeyboard()
+        }
+        binding.librarySearchInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                applyLibrarySearchQuery(binding.librarySearchInput.text?.toString().orEmpty())
+                hideKeyboard()
+                true
+            } else {
+                false
+            }
+        }
         binding.mineAccountCard.setOnClickListener {
             startActivity(Intent(this, AccountSyncActivity::class.java))
         }
@@ -186,9 +242,9 @@ class MainActivity : WatchDisplayActivity() {
                 container.redfruitAccount.status.collect { state ->
                     if (mode == Mode.MINE) renderMineAccount(state)
                     if (mode == Mode.LIBRARY &&
-                        librarySegment == LibrarySegmentPolicy.Segment.FAVORITES &&
                         !state.favoritesLoading &&
-                        state.favorites != null
+                        state.favorites != null &&
+                        librarySegment == LibrarySegmentPolicy.Segment.FAVORITES
                     ) {
                         val signature = state.favorites.hashCode().toString()
                         if (signature != lastCloudFavoritesSignature) {
@@ -407,6 +463,11 @@ class MainActivity : WatchDisplayActivity() {
     private fun showHome(forceReload: Boolean = false, fromSwipe: Boolean = false) {
         val switchingToHome = mode != Mode.HOME
         mode = Mode.HOME
+        exitLibraryEditMode(reload = false)
+        binding.librarySearchToggle.visibility = View.GONE
+        binding.librarySearchRow.visibility = View.GONE
+        binding.libraryEditBar.visibility = View.GONE
+        binding.libraryDeleteBar.visibility = View.GONE
         highlightBottomTabs(home = true)
         useSeriesAdapter()
         if (homeNav == HomeNav.SEARCH && !forceReload && !switchingToHome) {
@@ -550,6 +611,7 @@ class MainActivity : WatchDisplayActivity() {
 
     private fun showMine() {
         mode = Mode.MINE
+        exitLibraryEditMode(reload = false)
         beginListLoad(clearAdapter = false)
         highlightBottomTabs(mine = true)
         hideKeyboard()
@@ -558,6 +620,10 @@ class MainActivity : WatchDisplayActivity() {
         binding.searchRow.visibility = View.GONE
         binding.categoryScroll.visibility = View.GONE
         binding.librarySegmentRow.visibility = View.GONE
+        binding.librarySearchToggle.visibility = View.GONE
+        binding.librarySearchRow.visibility = View.GONE
+        binding.libraryEditBar.visibility = View.GONE
+        binding.libraryDeleteBar.visibility = View.GONE
         binding.libraryCacheHook.visibility = View.GONE
         binding.pageSubtitle.visibility = View.GONE
         binding.swipeRefresh.visibility = View.GONE
@@ -773,10 +839,8 @@ class MainActivity : WatchDisplayActivity() {
                 if (banners.isNotEmpty()) {
                     rows += HomeRow.Banner(banners, pageIndex = 0)
                 }
-                rows += HomeRow.Header(
-                    title = getString(R.string.section_for_you),
-                    showMore = true,
-                )
+                // 手表推荐流本身可下滑续页；「更多」曾误绑搜索换一批，已去掉。
+                rows += HomeRow.Header(title = getString(R.string.section_for_you))
                 rows += HomeNavPolicy.listSeriesAfterBanner(fresh, banners.size)
                     .map { HomeRow.Item(it) }
             } else {
@@ -1160,6 +1224,9 @@ class MainActivity : WatchDisplayActivity() {
         if (segment != LibrarySegmentPolicy.Segment.OFFLINE) {
             offlineAdapter.closeSeries()
         }
+        if (segment != librarySegment) {
+            exitLibraryEditMode(reload = false)
+        }
         librarySegment = segment
         if (segment != LibrarySegmentPolicy.Segment.FAVORITES) {
             lastCloudFavoritesSignature = null
@@ -1172,29 +1239,37 @@ class MainActivity : WatchDisplayActivity() {
         binding.searchRow.visibility = View.GONE
         binding.categoryScroll.visibility = View.GONE
         binding.librarySegmentRow.visibility = View.VISIBLE
+        binding.librarySearchToggle.visibility = View.VISIBLE
+        refreshLibrarySearchRowVisibility()
         highlightLibrarySegment(librarySegment)
         binding.brandTitle.text = getString(R.string.tab_library)
-        when (librarySegment) {
-            LibrarySegmentPolicy.Segment.HISTORY -> {
-                binding.pageSubtitle.visibility = View.GONE
-                binding.libraryCacheHook.visibility = View.VISIBLE
-                refreshLibraryCacheHook()
-                useSeriesAdapter()
-                loadHistoryList(fromSwipe)
-            }
-            LibrarySegmentPolicy.Segment.FAVORITES -> {
-                binding.pageSubtitle.visibility = View.GONE
-                binding.libraryCacheHook.visibility = View.VISIBLE
-                refreshLibraryCacheHook()
-                useSeriesAdapter()
-                loadFavoritesList(fromSwipe)
-            }
-            LibrarySegmentPolicy.Segment.OFFLINE -> {
-                binding.libraryCacheHook.visibility = View.GONE
-                binding.pageSubtitle.visibility = View.VISIBLE
-                binding.pageSubtitle.text = getString(R.string.offline_subtitle)
-                useOfflineAdapter()
-                loadOfflineCacheList(fromSwipe)
+        lifecycleScope.launch {
+            libraryLayoutList = container.settings.libraryLayoutListNow()
+            if (mode != Mode.LIBRARY) return@launch
+            val poster = LibrarySegmentPolicy.usesPosterGrid(librarySegment, libraryLayoutList)
+            when (librarySegment) {
+                LibrarySegmentPolicy.Segment.OFFLINE -> {
+                    binding.libraryCacheHook.visibility = View.GONE
+                    binding.pageSubtitle.visibility = View.VISIBLE
+                    binding.pageSubtitle.text = getString(R.string.offline_subtitle)
+                    loadOfflineCacheList(fromSwipe)
+                }
+                LibrarySegmentPolicy.Segment.HISTORY -> {
+                    binding.pageSubtitle.visibility = View.GONE
+                    binding.libraryCacheHook.visibility =
+                        if (libraryEditMode) View.GONE else View.VISIBLE
+                    if (!libraryEditMode) refreshLibraryCacheHook()
+                    useSeriesAdapter(posterGrid = poster)
+                    loadHistoryList(fromSwipe)
+                }
+                LibrarySegmentPolicy.Segment.FAVORITES -> {
+                    binding.pageSubtitle.visibility = View.GONE
+                    binding.libraryCacheHook.visibility =
+                        if (libraryEditMode) View.GONE else View.VISIBLE
+                    if (!libraryEditMode) refreshLibraryCacheHook()
+                    useSeriesAdapter(posterGrid = poster)
+                    loadFavoritesList(fromSwipe)
+                }
             }
         }
     }
@@ -1212,16 +1287,39 @@ class MainActivity : WatchDisplayActivity() {
         }
     }
 
-    private fun useSeriesAdapter() {
+    private fun useSeriesAdapter(posterGrid: Boolean = false) {
         if (binding.seriesList.adapter !== adapter) {
             binding.seriesList.adapter = adapter
         }
+        applyLibraryLayoutManager(posterGrid)
     }
 
     private fun useOfflineAdapter() {
         if (binding.seriesList.adapter !== offlineAdapter) {
             binding.seriesList.adapter = offlineAdapter
         }
+        applyLibraryLayoutManager(posterGrid = false)
+    }
+
+    private fun applyLibraryLayoutManager(posterGrid: Boolean) {
+        val current = binding.seriesList.layoutManager
+        if (posterGrid) {
+            val existing = current as? GridLayoutManager
+            if (existing != null && existing.spanCount == LIBRARY_POSTER_SPAN) {
+                existing.spanSizeLookup = libraryPosterSpanLookup
+                return
+            }
+            binding.seriesList.layoutManager = GridLayoutManager(this, LIBRARY_POSTER_SPAN).apply {
+                spanSizeLookup = libraryPosterSpanLookup
+            }
+        } else if (current !is LinearLayoutManager || current is GridLayoutManager) {
+            binding.seriesList.layoutManager = LinearLayoutManager(this)
+        }
+    }
+
+    private val libraryPosterSpanLookup = object : GridLayoutManager.SpanSizeLookup() {
+        override fun getSpanSize(position: Int): Int =
+            adapter.spanSizeFor(position, LIBRARY_POSTER_SPAN)
     }
 
     private fun loadOfflineCacheList(fromSwipe: Boolean) {
@@ -1230,7 +1328,7 @@ class MainActivity : WatchDisplayActivity() {
             ListLoadingPolicy.choose(
                 swipeRefreshing = fromSwipe || binding.swipeRefresh.isRefreshing,
                 clearingList = true,
-                hasVisibleContent = offlineAdapter.itemCount > 1,
+                hasVisibleContent = offlineAdapter.itemCount > 1 || adapter.itemCount > 0,
             ),
         )
         val token = beginListLoad(clearAdapter = false)
@@ -1241,15 +1339,58 @@ class MainActivity : WatchDisplayActivity() {
             try {
                 val summary = withContext(Dispatchers.IO) { container.videoCache.spaceSummary() }
                 val groups = withContext(Dispatchers.IO) { container.videoCache.listSeriesGroups() }
+                    .filter { matchesLibrarySearch(it.seriesTitle) }
                 if (token != listGeneration || mode != Mode.LIBRARY ||
                     librarySegment != LibrarySegmentPolicy.Segment.OFFLINE
                 ) {
                     return@launch
                 }
-                useOfflineAdapter()
-                offlineAdapter.submit(summary, groups)
-                // 空态写在列表头内，避免盖住占用进度
-                binding.emptyView.visibility = View.GONE
+                offlineGroupsSnapshot = groups
+                val drilled = offlineAdapter.isDrilledIn()
+                val usePoster = !libraryLayoutList && !drilled
+                if (usePoster) {
+                    val coverById = buildMap {
+                        repo.favorites().forEach { put(it.seriesId, it.cover) }
+                        repo.recentHistory().forEach {
+                            if (it.seriesId !in this) put(it.seriesId, it.cover)
+                        }
+                    }
+                    useSeriesAdapter(posterGrid = true)
+                    val posters = groups.map { group ->
+                        HomeRow.Poster(
+                            series = Series(
+                                id = group.seriesId,
+                                title = group.seriesTitle,
+                                cover = com.hongguo.watch.data.CoverUrls.normalize(
+                                    coverById[group.seriesId].orEmpty(),
+                                ),
+                                episodeCount = group.episodeCount,
+                                source = SeriesSource.APP,
+                            ),
+                            totalEpisodes = group.episodeCount.takeIf { it > 0 },
+                            metaLabel = group.sizeLabel,
+                        )
+                    }
+                    adapter.submit(
+                        listOf(
+                            HomeRow.Header(
+                                title = getString(R.string.segment_offline),
+                                subtitle = getString(
+                                    R.string.library_cache_hook,
+                                    "${summary.usedLabel}/${summary.budgetLabel}",
+                                ),
+                            ),
+                        ) + posters,
+                    )
+                    binding.emptyView.visibility =
+                        if (posters.isEmpty()) View.VISIBLE else View.GONE
+                    binding.emptyView.text = libraryEmptyText(R.string.offline_empty)
+                } else {
+                    useOfflineAdapter()
+                    offlineAdapter.submit(summary, groups)
+                    // 空态写在列表头内，避免盖住占用进度
+                    binding.emptyView.visibility = View.GONE
+                }
             } finally {
                 if (token == listGeneration) {
                     applyListLoading(ListLoadingPolicy.Indicator.NONE)
@@ -1260,14 +1401,22 @@ class MainActivity : WatchDisplayActivity() {
 
     private fun openOfflineSeries(group: VideoCacheSeriesGroup) {
         offlineAdapter.openSeries(group)
+        useOfflineAdapter()
+        val summary = container.videoCache.spaceSummary()
+        offlineAdapter.submit(summary, offlineGroupsSnapshot.ifEmpty {
+            container.videoCache.listSeriesGroups()
+        })
+        binding.pageSubtitle.visibility = View.VISIBLE
         binding.pageSubtitle.text = getString(R.string.offline_series_subtitle, group.seriesTitle)
         binding.seriesList.scrollToPosition(0)
+        binding.emptyView.visibility = View.GONE
     }
 
     private fun closeOfflineSeriesDrillIn() {
         offlineAdapter.closeSeries()
         binding.pageSubtitle.text = getString(R.string.offline_subtitle)
-        binding.seriesList.scrollToPosition(0)
+        // 退出钻入后按当前布局模式重载（三列回海报）
+        loadOfflineCacheList(fromSwipe = false)
     }
 
     private fun playOfflineEntry(entry: VideoCacheEntry) {
@@ -1431,54 +1580,120 @@ class MainActivity : WatchDisplayActivity() {
             ),
         )
         val token = beginListLoad(clearAdapter = true)
-        adapter.showResumeHint = true
+        // 与收藏同一套：列表无「续」/♡；三列可批量编辑；点按进详情
+        adapter.showResumeHint = false
+        adapter.selectionMode = libraryEditMode && !libraryLayoutList
         binding.seriesList.scrollToPosition(0)
         listJob = lifecycleScope.launch {
             try {
                 val history = repo.recentHistory()
+                    .filter { matchesLibrarySearch(it.seriesTitle) }
                 if (token != listGeneration || mode != Mode.LIBRARY ||
                     librarySegment != LibrarySegmentPolicy.Segment.HISTORY
                 ) {
                     return@launch
                 }
-                val favoritedIds = repo.favorites().map { it.seriesId }.toHashSet()
-                val rows = history.map {
-                    val percent = if (it.durationMs > 0) {
-                        ((it.positionMs * 100) / it.durationMs).toInt().coerceIn(0, 100)
-                    } else {
-                        0
+                val totalById = repo.favorites()
+                    .associate { it.seriesId to it.episodeCount }
+                if (libraryLayoutList) {
+                    val rows = history.map { item ->
+                        historyClassicRow(item, totalById[item.seriesId])
                     }
-                    HomeRow.Item(
-                        series = Series(
-                            id = it.seriesId,
-                            title = it.seriesTitle,
-                            cover = com.hongguo.watch.data.CoverUrls.normalize(it.cover),
-                            description = "",
-                            episodeCount = 0,
-                            source = runCatching { SeriesSource.valueOf(it.source) }
-                                .getOrDefault(SeriesSource.APP),
-                        ),
-                        favorited = it.seriesId in favoritedIds,
-                        progressPercent = percent,
-                        watchedEpisode = it.episodeNumber,
-                        totalEpisodes = null,
+                    if (token != listGeneration || mode != Mode.LIBRARY ||
+                        librarySegment != LibrarySegmentPolicy.Segment.HISTORY
+                    ) {
+                        return@launch
+                    }
+                    libraryPosterSnapshot = emptyList()
+                    adapter.submit(rows)
+                    binding.seriesList.scrollToPosition(0)
+                    binding.emptyView.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+                    binding.emptyView.text = libraryEmptyText(R.string.empty_history)
+                } else {
+                    val posters = history.map { item ->
+                        historyPosterRow(
+                            item = item,
+                            totalEpisodes = totalById[item.seriesId],
+                            selected = item.seriesId in librarySelectedIds,
+                        )
+                    }
+                    libraryPosterSnapshot = posters
+                    val header = HomeRow.Header(
+                        title = getString(R.string.segment_history),
+                        subtitle = getString(R.string.favorites_count, history.size),
+                        actionLabel = if (libraryEditMode || history.isEmpty()) {
+                            ""
+                        } else {
+                            getString(R.string.library_edit)
+                        },
                     )
+                    if (token != listGeneration || mode != Mode.LIBRARY ||
+                        librarySegment != LibrarySegmentPolicy.Segment.HISTORY
+                    ) {
+                        return@launch
+                    }
+                    adapter.submit(listOf(header) + posters)
+                    binding.seriesList.scrollToPosition(0)
+                    binding.emptyView.visibility = if (posters.isEmpty()) View.VISIBLE else View.GONE
+                    binding.emptyView.text = libraryEmptyText(R.string.empty_history)
+                    refreshLibraryEditChrome()
                 }
-                if (token != listGeneration || mode != Mode.LIBRARY ||
-                    librarySegment != LibrarySegmentPolicy.Segment.HISTORY
-                ) {
-                    return@launch
-                }
-                adapter.submit(rows)
-                binding.seriesList.scrollToPosition(0)
-                binding.emptyView.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
-                binding.emptyView.text = getString(R.string.empty_history)
             } finally {
                 if (token == listGeneration) {
                     applyListLoading(ListLoadingPolicy.Indicator.NONE)
                 }
             }
         }
+    }
+
+    private fun historyPosterRow(
+        item: WatchHistoryEntity,
+        totalEpisodes: Int?,
+        selected: Boolean = false,
+    ): HomeRow.Poster {
+        val total = totalEpisodes?.takeIf { it > 0 } ?: 0
+        return HomeRow.Poster(
+            series = Series(
+                id = item.seriesId,
+                title = item.seriesTitle,
+                cover = com.hongguo.watch.data.CoverUrls.normalize(item.cover),
+                description = "",
+                episodeCount = total,
+                source = runCatching { SeriesSource.valueOf(item.source) }
+                    .getOrDefault(SeriesSource.APP),
+            ),
+            watchedEpisode = item.episodeNumber.takeIf { it > 0 },
+            totalEpisodes = total.takeIf { it > 0 },
+            selected = selected,
+        )
+    }
+
+    private fun historyClassicRow(
+        item: WatchHistoryEntity,
+        totalEpisodes: Int?,
+    ): HomeRow.Item {
+        val total = totalEpisodes?.takeIf { it > 0 }
+        val percent = when {
+            item.durationMs > 0 ->
+                ((item.positionMs * 100) / item.durationMs).toInt().coerceIn(0, 100)
+            total != null && total > 0 ->
+                ((item.episodeNumber * 100) / total).coerceIn(0, 100)
+            else -> null
+        }
+        return HomeRow.Item(
+            series = Series(
+                id = item.seriesId,
+                title = item.seriesTitle,
+                cover = com.hongguo.watch.data.CoverUrls.normalize(item.cover),
+                description = "",
+                episodeCount = total ?: 0,
+                source = runCatching { SeriesSource.valueOf(item.source) }
+                    .getOrDefault(SeriesSource.APP),
+            ),
+            progressPercent = percent,
+            watchedEpisode = item.episodeNumber.takeIf { it > 0 },
+            totalEpisodes = total,
+        )
     }
 
     /** 历史行 ♡：一键收藏/取消，不打断续播入口。总集数走详情接口，不用进度集号。 */
@@ -1493,6 +1708,11 @@ class MainActivity : WatchDisplayActivity() {
                 source = series.source,
                 episodeCount = totalEpisodes,
             )
+            if (nowFavorited) {
+                container.chaseUpdates.seedIfAbsent(series.id, totalEpisodes)
+            } else {
+                container.chaseUpdates.clear(series.id)
+            }
             if (mode != Mode.LIBRARY || librarySegment != LibrarySegmentPolicy.Segment.HISTORY) return@launch
             adapter.setFavorited(series.id, nowFavorited)
             Toast.makeText(
@@ -1514,52 +1734,67 @@ class MainActivity : WatchDisplayActivity() {
         )
         val token = beginListLoad(clearAdapter = true)
         adapter.showResumeHint = false
+        adapter.selectionMode = libraryEditMode && !libraryLayoutList
         binding.seriesList.scrollToPosition(0)
         listJob = lifecycleScope.launch {
             try {
-                // Render the Room snapshot first. Resolving every favorite through
-                // the detail endpoint serially made the library look stuck.
-                // DetailActivity refreshes an individual total when it is opened.
                 val favorites = container.redfruitAccount.libraryFavorites()
+                    .filter { matchesLibrarySearch(it.seriesTitle) }
                 if (token != listGeneration || mode != Mode.LIBRARY ||
                     librarySegment != LibrarySegmentPolicy.Segment.FAVORITES
                 ) {
                     return@launch
+                }
+                favorites.forEach { fav ->
+                    container.chaseUpdates.seedIfAbsent(fav.seriesId, fav.episodeCount)
                 }
                 val historyMap = repo.recentHistory().associateBy { it.seriesId }
-                val rows = favorites.map { fav ->
-                    val history = historyMap[fav.seriesId]
-                    val percent = if (history != null && history.durationMs > 0) {
-                        ((history.positionMs * 100) / history.durationMs).toInt().coerceIn(0, 100)
-                    } else if (history != null && fav.episodeCount > 0) {
-                        ((history.episodeNumber * 100) / fav.episodeCount).coerceIn(0, 100)
-                    } else {
-                        null
+                // 追更分段已撤；收藏卡「更新」角标仅用本地游标，不打云端 chase_book
+                val chaseIds = emptySet<String>()
+                if (libraryLayoutList) {
+                    val rows = favorites.map { fav ->
+                        favoriteClassicRow(fav, historyMap[fav.seriesId])
                     }
-                    HomeRow.Item(
-                        series = Series(
-                            id = fav.seriesId,
-                            title = fav.seriesTitle,
-                            cover = com.hongguo.watch.data.CoverUrls.normalize(fav.cover),
-                            description = "",
-                            episodeCount = fav.episodeCount,
-                            source = runCatching { SeriesSource.valueOf(fav.source) }
-                                .getOrDefault(SeriesSource.APP),
-                        ),
-                        progressPercent = percent,
-                        watchedEpisode = history?.episodeNumber,
-                        totalEpisodes = fav.episodeCount.takeIf { it > 0 },
+                    if (token != listGeneration || mode != Mode.LIBRARY ||
+                        librarySegment != LibrarySegmentPolicy.Segment.FAVORITES
+                    ) {
+                        return@launch
+                    }
+                    libraryPosterSnapshot = emptyList()
+                    adapter.submit(rows)
+                    binding.seriesList.scrollToPosition(0)
+                    binding.emptyView.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+                    binding.emptyView.text = libraryEmptyText(R.string.empty_favorites)
+                } else {
+                    val posters = favorites.map { fav ->
+                        favoritePosterRow(
+                            fav = fav,
+                            watchedEpisode = historyMap[fav.seriesId]?.episodeNumber,
+                            chaseIds = chaseIds,
+                            selected = fav.seriesId in librarySelectedIds,
+                        )
+                    }
+                    libraryPosterSnapshot = posters
+                    val header = HomeRow.Header(
+                        title = getString(R.string.segment_favorites),
+                        subtitle = getString(R.string.favorites_count, favorites.size),
+                        actionLabel = if (libraryEditMode || favorites.isEmpty()) {
+                            ""
+                        } else {
+                            getString(R.string.library_edit)
+                        },
                     )
+                    if (token != listGeneration || mode != Mode.LIBRARY ||
+                        librarySegment != LibrarySegmentPolicy.Segment.FAVORITES
+                    ) {
+                        return@launch
+                    }
+                    adapter.submit(listOf(header) + posters)
+                    binding.seriesList.scrollToPosition(0)
+                    binding.emptyView.visibility = if (posters.isEmpty()) View.VISIBLE else View.GONE
+                    binding.emptyView.text = libraryEmptyText(R.string.empty_favorites)
+                    refreshLibraryEditChrome()
                 }
-                if (token != listGeneration || mode != Mode.LIBRARY ||
-                    librarySegment != LibrarySegmentPolicy.Segment.FAVORITES
-                ) {
-                    return@launch
-                }
-                adapter.submit(rows)
-                binding.seriesList.scrollToPosition(0)
-                binding.emptyView.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
-                binding.emptyView.text = getString(R.string.empty_favorites)
             } finally {
                 if (token == listGeneration) {
                     applyListLoading(ListLoadingPolicy.Indicator.NONE)
@@ -1568,10 +1803,63 @@ class MainActivity : WatchDisplayActivity() {
         }
     }
 
+    private fun favoritePosterRow(
+        fav: FavoriteEntity,
+        watchedEpisode: Int?,
+        chaseIds: Set<String>,
+        selected: Boolean = false,
+    ): HomeRow.Poster {
+        val localUpdate = ChaseUpdatePolicy.hasUpdate(
+            currentEpisodeCount = fav.episodeCount,
+            lastSerialCount = container.chaseUpdates.lastSerialCount(fav.seriesId),
+            seeded = container.chaseUpdates.hasSeed(fav.seriesId),
+        )
+        return HomeRow.Poster(
+            series = Series(
+                id = fav.seriesId,
+                title = fav.seriesTitle,
+                cover = com.hongguo.watch.data.CoverUrls.normalize(fav.cover),
+                description = "",
+                episodeCount = fav.episodeCount,
+                source = runCatching { SeriesSource.valueOf(fav.source) }
+                    .getOrDefault(SeriesSource.APP),
+            ),
+            watchedEpisode = watchedEpisode,
+            totalEpisodes = fav.episodeCount.takeIf { it > 0 },
+            hasUpdate = fav.seriesId in chaseIds || localUpdate,
+            selected = selected,
+        )
+    }
+
+    /** 列表模式：横向列表 + 进度条。 */
+    private fun favoriteClassicRow(
+        fav: FavoriteEntity,
+        history: WatchHistoryEntity?,
+    ): HomeRow.Item {
+        val percent = when {
+            history != null && history.durationMs > 0 ->
+                ((history.positionMs * 100) / history.durationMs).toInt().coerceIn(0, 100)
+            history != null && fav.episodeCount > 0 ->
+                ((history.episodeNumber * 100) / fav.episodeCount).coerceIn(0, 100)
+            else -> null
+        }
+        return HomeRow.Item(
+            series = Series(
+                id = fav.seriesId,
+                title = fav.seriesTitle,
+                cover = com.hongguo.watch.data.CoverUrls.normalize(fav.cover),
+                description = "",
+                episodeCount = fav.episodeCount,
+                source = runCatching { SeriesSource.valueOf(fav.source) }
+                    .getOrDefault(SeriesSource.APP),
+            ),
+            progressPercent = percent,
+            watchedEpisode = history?.episodeNumber,
+            totalEpisodes = fav.episodeCount.takeIf { it > 0 },
+        )
+    }
+
     private fun highlightLibrarySegment(segment: LibrarySegmentPolicy.Segment) {
-        val favorites = segment == LibrarySegmentPolicy.Segment.FAVORITES
-        val history = segment == LibrarySegmentPolicy.Segment.HISTORY
-        val offline = segment == LibrarySegmentPolicy.Segment.OFFLINE
         val active = ContextCompat.getColor(this, R.color.text_primary)
         val muted = ContextCompat.getColor(this, R.color.text_secondary)
         fun style(view: TextView, selected: Boolean) {
@@ -1581,9 +1869,193 @@ class MainActivity : WatchDisplayActivity() {
             )
             view.paint.isFakeBoldText = selected
         }
-        style(binding.segmentFavorites, favorites)
-        style(binding.segmentHistory, history)
-        style(binding.segmentOffline, offline)
+        style(binding.segmentFavorites, segment == LibrarySegmentPolicy.Segment.FAVORITES)
+        style(binding.segmentHistory, segment == LibrarySegmentPolicy.Segment.HISTORY)
+        style(binding.segmentOffline, segment == LibrarySegmentPolicy.Segment.OFFLINE)
+    }
+
+    private fun matchesLibrarySearch(title: String): Boolean {
+        val q = librarySearchQuery.trim()
+        if (q.isEmpty()) return true
+        return title.contains(q, ignoreCase = true)
+    }
+
+    private fun libraryEmptyText(defaultRes: Int): String =
+        if (librarySearchQuery.isNotBlank()) {
+            getString(R.string.library_search_empty)
+        } else {
+            getString(defaultRes)
+        }
+
+    private fun toggleLibrarySearch() {
+        if (mode != Mode.LIBRARY) return
+        if (librarySearchOpen) {
+            closeLibrarySearch(clearQuery = true)
+        } else {
+            librarySearchOpen = true
+            refreshLibrarySearchRowVisibility()
+            binding.librarySearchInput.requestFocus()
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(binding.librarySearchInput, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun closeLibrarySearch(clearQuery: Boolean) {
+        librarySearchOpen = false
+        if (clearQuery && librarySearchQuery.isNotEmpty()) {
+            librarySearchQuery = ""
+            binding.librarySearchInput.setText("")
+            if (mode == Mode.LIBRARY) {
+                showLibrary(segment = librarySegment)
+            }
+        }
+        refreshLibrarySearchRowVisibility()
+        hideKeyboard()
+    }
+
+    private fun refreshLibrarySearchRowVisibility() {
+        val show = mode == Mode.LIBRARY && librarySearchOpen
+        binding.librarySearchRow.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
+    private fun applyLibrarySearchQuery(raw: String) {
+        librarySearchQuery = raw.trim()
+        if (mode != Mode.LIBRARY) return
+        showLibrary(segment = librarySegment)
+    }
+
+    private fun librarySegmentSupportsBatchEdit(): Boolean =
+        librarySegment == LibrarySegmentPolicy.Segment.FAVORITES ||
+            librarySegment == LibrarySegmentPolicy.Segment.HISTORY
+
+    private fun enterLibraryEditMode(preselect: String? = null) {
+        if (libraryLayoutList) return
+        if (!librarySegmentSupportsBatchEdit()) return
+        libraryEditMode = true
+        librarySelectedIds.clear()
+        if (!preselect.isNullOrBlank()) librarySelectedIds += preselect
+        adapter.selectionMode = true
+        binding.libraryCacheHook.visibility = View.GONE
+        refreshLibraryEditChrome()
+        submitLibrarySelectionRows()
+    }
+
+    private fun exitLibraryEditMode(reload: Boolean) {
+        val wasEditing = libraryEditMode
+        val segment = librarySegment
+        libraryEditMode = false
+        librarySelectedIds.clear()
+        adapter.selectionMode = false
+        binding.libraryEditBar.visibility = View.GONE
+        binding.libraryDeleteBar.visibility = View.GONE
+        if (wasEditing && reload && mode == Mode.LIBRARY && librarySegmentSupportsBatchEdit()) {
+            binding.libraryCacheHook.visibility = View.VISIBLE
+            refreshLibraryCacheHook()
+            when (segment) {
+                LibrarySegmentPolicy.Segment.FAVORITES -> loadFavoritesList(fromSwipe = false)
+                LibrarySegmentPolicy.Segment.HISTORY -> loadHistoryList(fromSwipe = false)
+                else -> Unit
+            }
+        }
+    }
+
+    private fun refreshLibraryEditChrome() {
+        if (!libraryEditMode || libraryLayoutList || !librarySegmentSupportsBatchEdit()) {
+            binding.libraryEditBar.visibility = View.GONE
+            binding.libraryDeleteBar.visibility = View.GONE
+            return
+        }
+        binding.libraryEditBar.visibility = View.VISIBLE
+        binding.libraryDeleteBar.visibility = View.VISIBLE
+        val n = librarySelectedIds.size
+        binding.librarySelectedCount.text = getString(R.string.library_selected_count, n)
+        val allIds = libraryPosterSnapshot.map { it.series.id }.toSet()
+        val allSelected = allIds.isNotEmpty() && librarySelectedIds.containsAll(allIds)
+        binding.librarySelectAll.text = getString(
+            if (allSelected) R.string.library_deselect_all else R.string.library_select_all,
+        )
+        binding.libraryDeleteBar.isEnabled = n > 0
+        binding.libraryDeleteBar.alpha = if (n > 0) 1f else 0.4f
+    }
+
+    private fun toggleLibrarySelection(seriesId: String) {
+        if (!libraryEditMode) return
+        if (seriesId in librarySelectedIds) librarySelectedIds.remove(seriesId)
+        else librarySelectedIds += seriesId
+        submitLibrarySelectionRows()
+        refreshLibraryEditChrome()
+    }
+
+    private fun toggleSelectAllLibrary() {
+        if (!libraryEditMode) return
+        val allIds = libraryPosterSnapshot.map { it.series.id }
+        if (librarySelectedIds.containsAll(allIds) && allIds.isNotEmpty()) {
+            librarySelectedIds.clear()
+        } else {
+            librarySelectedIds.clear()
+            librarySelectedIds.addAll(allIds)
+        }
+        submitLibrarySelectionRows()
+        refreshLibraryEditChrome()
+    }
+
+    private fun submitLibrarySelectionRows() {
+        if (libraryPosterSnapshot.isEmpty()) return
+        val posters = libraryPosterSnapshot.map { row ->
+            row.copy(selected = row.series.id in librarySelectedIds)
+        }
+        libraryPosterSnapshot = posters
+        val titleRes = when (librarySegment) {
+            LibrarySegmentPolicy.Segment.HISTORY -> R.string.segment_history
+            else -> R.string.segment_favorites
+        }
+        val header = HomeRow.Header(
+            title = getString(titleRes),
+            subtitle = getString(R.string.library_selected_count, librarySelectedIds.size),
+        )
+        adapter.submit(listOf(header) + posters)
+    }
+
+    private fun confirmDeleteSelectedLibrary() {
+        val ids = librarySelectedIds.toList()
+        if (ids.isEmpty()) return
+        val isHistory = librarySegment == LibrarySegmentPolicy.Segment.HISTORY
+        val titleRes = if (isHistory) {
+            R.string.history_batch_delete_confirm_title
+        } else {
+            R.string.library_delete_confirm_title
+        }
+        val bodyRes = if (isHistory) {
+            R.string.history_batch_delete_confirm_body
+        } else {
+            R.string.library_delete_confirm_body
+        }
+        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
+            .setTitle(titleRes)
+            .setMessage(getString(bodyRes, ids.size))
+            .setPositiveButton(R.string.library_delete) { _, _ ->
+                lifecycleScope.launch {
+                    if (isHistory) {
+                        ids.forEach { id ->
+                            withContext(Dispatchers.IO) { repo.deleteHistory(id) }
+                        }
+                    } else {
+                        ids.forEach { id ->
+                            repo.removeFavorite(id)
+                            container.chaseUpdates.clear(id)
+                        }
+                    }
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.library_deleted_count, ids.size),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    exitLibraryEditMode(reload = true)
+                }
+            }
+            .setNegativeButton(R.string.update_cancel, null)
+            .create()
+        showWatchDialog(dialog)
     }
 
     /**
@@ -1667,6 +2139,11 @@ class MainActivity : WatchDisplayActivity() {
                 TimeLockGate.showLockDialog(this@MainActivity, container.timeLock)
                 return@launch
             }
+            // 打开即对齐本地 last_serial_count，清掉「更新」角标（官方打开追更项同理）。
+            val total = series.episodeCount.takeIf { it > 0 }
+                ?: repo.favorites().firstOrNull { it.seriesId == series.id }?.episodeCount
+                ?: 0
+            container.chaseUpdates.markSeen(series.id, total)
             // 历史：点封面/标题进详情；「续」走 resumeHistorySeries
             startActivity(
                 Intent(this@MainActivity, DetailActivity::class.java).apply {
@@ -1710,25 +2187,6 @@ class MainActivity : WatchDisplayActivity() {
         }
     }
 
-    private fun confirmDeleteHistory(series: Series) {
-        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
-            .setTitle(R.string.history_delete_confirm_title)
-            .setMessage(getString(R.string.history_delete_confirm_body, series.title))
-            .setPositiveButton(R.string.history_delete) { _, _ ->
-                lifecycleScope.launch {
-                    withContext(Dispatchers.IO) { repo.deleteHistory(series.id) }
-                    Toast.makeText(this@MainActivity, R.string.history_deleted, Toast.LENGTH_SHORT)
-                        .show()
-                    if (mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.HISTORY) {
-                        loadHistoryList(fromSwipe = false)
-                    }
-                }
-            }
-            .setNegativeButton(R.string.update_cancel, null)
-            .create()
-        showWatchDialog(dialog)
-    }
-
     private fun highlightBottomTabs(
         home: Boolean = false,
         library: Boolean = false,
@@ -1765,6 +2223,7 @@ class MainActivity : WatchDisplayActivity() {
     companion object {
         const val EXTRA_OPEN_LIBRARY_OFFLINE = "open_library_offline"
         const val EXTRA_OPEN_LIBRARY_SEGMENT = "open_library_segment"
+        private const val LIBRARY_POSTER_SPAN = 3
         private const val STATE_MODE = "mode"
         private const val STATE_HOME_NAV = "homeNav"
         private const val STATE_CATEGORY = "selectedCategory"

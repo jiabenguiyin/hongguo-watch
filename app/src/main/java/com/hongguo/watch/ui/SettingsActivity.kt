@@ -68,14 +68,20 @@ class SettingsActivity : WatchDisplayActivity() {
             binding.wifiOnlySwitch.isChecked = container.settings.wifiOnly.first()
             binding.screenOffContinueSwitch.isChecked =
                 container.settings.screenOffContinue.first()
+            binding.libraryLayoutListSwitch.isChecked =
+                container.settings.libraryLayoutList.first()
             binding.wifiOnlySwitch.setOnCheckedChangeListener { _, checked ->
                 lifecycleScope.launch { container.settings.setWifiOnly(checked) }
             }
             binding.screenOffContinueSwitch.setOnCheckedChangeListener { _, checked ->
                 lifecycleScope.launch { container.settings.setScreenOffContinue(checked) }
             }
+            binding.libraryLayoutListSwitch.setOnCheckedChangeListener { _, checked ->
+                lifecycleScope.launch { container.settings.setLibraryLayoutList(checked) }
+            }
             binding.wifiOnlySwitch.isEnabled = true
             binding.screenOffContinueSwitch.isEnabled = true
+            binding.libraryLayoutListSwitch.isEnabled = true
             if (EpisodeWheel.findSensor(this@SettingsActivity) != null) {
                 binding.episodeWheelSwitch.isChecked = container.settings.episodeWheelEnabled.first()
                 binding.episodeWheelSwitch.setOnCheckedChangeListener { _, checked ->

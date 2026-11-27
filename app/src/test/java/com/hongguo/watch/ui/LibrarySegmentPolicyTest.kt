@@ -77,4 +77,20 @@ class LibrarySegmentPolicyTest {
         assertFalse(LibrarySegmentPolicy.shouldClaimHorizontal(10f, 40f, touchSlopPx = 16f))
         assertFalse(LibrarySegmentPolicy.shouldClaimHorizontal(8f, 2f, touchSlopPx = 16f))
     }
+
+    @Test
+    fun usableSegmentsAreFavoritesHistoryOffline() {
+        assertEquals(
+            listOf(
+                LibrarySegmentPolicy.Segment.FAVORITES,
+                LibrarySegmentPolicy.Segment.HISTORY,
+                LibrarySegmentPolicy.Segment.OFFLINE,
+            ),
+            LibrarySegmentPolicy.ORDER,
+        )
+        for (segment in LibrarySegmentPolicy.ORDER) {
+            assertTrue(LibrarySegmentPolicy.usesPosterGrid(segment, listMode = false))
+            assertFalse(LibrarySegmentPolicy.usesPosterGrid(segment, listMode = true))
+        }
+    }
 }

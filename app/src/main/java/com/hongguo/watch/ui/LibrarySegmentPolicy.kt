@@ -3,10 +3,13 @@ package com.hongguo.watch.ui
 import kotlin.math.abs
 
 /**
- * 库页内「我的收藏 / 观看历史 / 离线」分段切换策略。
+ * 库页内「收藏 / 历史 / 离线」分段切换策略。
  *
- * 左右滑只在库内相邻分段之间移动；到边即停，不循环，
- * 更不会映射到底栏「首页 / 我的」或任何父级 pager。
+ * 点赞 / 预约 / 追更 云端未打通前不进分段（避免失败空页与转圈）。
+ * 左右滑只在库内相邻分段之间移动；到边即停，不循环。
+ *
+ * 三列 / 列表是全局布局模式（设置开关），对各分段共用；
+ * 离线钻入分集时仍用列表。
  */
 object LibrarySegmentPolicy {
     enum class Segment {
@@ -20,6 +23,16 @@ object LibrarySegmentPolicy {
         Segment.HISTORY,
         Segment.OFFLINE,
     )
+
+    /**
+     * 是否用三列海报格。
+     * [listMode] true=列表；false=三列（默认）。
+     * 离线钻入分集时调用方应强制列表。
+     */
+    fun usesPosterGrid(segment: Segment, listMode: Boolean): Boolean {
+        if (listMode) return false
+        return segment in ORDER
+    }
 
     /**
      * 根据水平 fling 给出下一段；垂直主导或速度不足返回 null。

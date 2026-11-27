@@ -373,7 +373,8 @@ class AppSourceClient(
         }
         val data = root.optJSONObject("data") ?: throw IllegalStateException("分集数据为空")
         if (!data.has(id)) throw IllegalStateException("返回剧集与请求不一致")
-        val videoData = data.optJSONObject(id)?.optJSONObject("video_data")
+        val seriesNode = data.optJSONObject(id) ?: throw IllegalStateException("返回剧集与请求不一致")
+        val videoData = seriesNode.optJSONObject("video_data")
             ?: throw IllegalStateException("无 video_data")
         val list = videoData.optJSONArray("video_list") ?: JSONArray()
         if (list.length() == 0) throw IllegalStateException("分集列表为空")
@@ -400,6 +401,12 @@ class AppSourceClient(
         if (episodes.isEmpty()) throw IllegalStateException("分集列表为空")
         episodes.sortBy { it.number }
 
+        // 详情社交收藏数：实测字段 video_data.followed_cnt（非 favorite_cnt）
+        val collectCount = listOf(videoData, seriesNode)
+            .map { CollectCountParser.parse(it) }
+            .firstOrNull { it > 0L }
+            ?: 0L
+
         return SeriesDetail(
             series = Series(
                 id = id,
@@ -408,6 +415,7 @@ class AppSourceClient(
                 description = videoData.str("series_intro").ifEmpty { videoData.str("video_desc") },
                 episodeCount = episodes.size,
                 source = SeriesSource.APP,
+                collectCount = collectCount,
             ),
             episodes = episodes,
         )
@@ -958,26 +966,34 @@ class AppSourceClient(
             if (type != 3 && type != 32) return@mapNotNull null
             item.str("content").takeIf { it.isNotBlank() && it.length <= 12 }
         }.distinct().take(2)
-        val heat = row.optJSONArray("secondary_info_list")?.objects().orEmpty()
+        val secondary = row.optJSONArray("secondary_info_list")?.objects().orEmpty()
             .map { it.str("content") }
-            .firstOrNull { content ->
-                content.isNotBlank() && (
-                    content.contains("收藏") ||
-                        content.contains("点赞") ||
-                        content.contains("热") ||
-                        content.contains("评分") ||
-                        content.contains("播放")
-                    )
-            }
-            ?.takeIf { it.length <= 16 }
+            .filter { it.isNotBlank() }
+        val collectTag = secondary.firstOrNull {
+            it.contains("收藏") && it.length <= 16
+        }
+        val heat = secondary.firstOrNull { content ->
+            !content.contains("收藏") && (
+                content.contains("点赞") ||
+                    content.contains("热") ||
+                    content.contains("评分") ||
+                    content.contains("播放")
+                )
+        }?.takeIf { it.length <= 16 }
             ?: formatPlayCount(row.optLong("play_cnt", 0L))
         val tags = buildList {
+            if (!collectTag.isNullOrBlank()) add(collectTag)
             if (!heat.isNullOrBlank()) add(heat)
             addAll(genres)
         }.distinct().take(3)
+        val collectCount = CollectCountParser.parse(row)
+            .takeIf { it > 0L }
+            ?: collectTag?.let { ChaseUpdatePolicy.parseCollectCountLabel(it) }?.takeIf { it > 0L }
+            ?: 0L
         return base.copy(
             tags = tags.ifEmpty { base.tags },
             description = base.description.ifBlank { row.str("sub_title") },
+            collectCount = collectCount.takeIf { it > 0L } ?: base.collectCount,
         )
     }
 

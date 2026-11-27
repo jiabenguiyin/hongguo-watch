@@ -204,12 +204,15 @@
                     android:layout_height="44dp"
                     android:layout_marginStart="6dp"
                     android:background="@drawable/bg_favorite_action"
+                    android:ellipsize="end"
                     android:gravity="center"
+                    android:maxLines="1"
                     android:minWidth="64dp"
-                    android:paddingHorizontal="10dp"
+                    android:paddingHorizontal="8dp"
+                    android:singleLine="true"
                     android:text="@string/favorite"
                     android:textColor="@color/text_primary"
-                    android:textSize="@dimen/watch_body" />
+                    android:textSize="@dimen/watch_meta" />
             </LinearLayout>
 
             <LinearLayout

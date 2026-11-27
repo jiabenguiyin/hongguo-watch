@@ -36,12 +36,23 @@
             android:textSize="@dimen/watch_title"
             android:textStyle="bold" />
 
+        <!-- 库内搜索：顶栏时钟左侧（官方截图位） -->
+        <ImageView
+            android:id="@+id/librarySearchToggle"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/library_search"
+            android:padding="5dp"
+            android:src="@drawable/ic_search"
+            android:visibility="gone" />
+
         <!-- 手表顶栏时钟：首页 / 库页共用 -->
         <TextView
             android:id="@+id/toolbarClock"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
+            android:layout_marginStart="4dp"
             android:contentDescription="@string/cd_toolbar_clock"
             android:fontFamily="sans-serif-medium"
             android:textColor="@color/text_primary"
@@ -49,6 +60,7 @@
             android:textStyle="bold" />
     </LinearLayout>
 
+    <!-- 可用面：收藏 / 历史 / 离线。点赞·预约·追更未打通前不进分段。 -->
     <LinearLayout
         android:id="@+id/librarySegmentRow"
         android:layout_width="match_parent"
@@ -91,6 +103,45 @@
             android:gravity="center"
             android:text="@string/segment_offline"
             android:textColor="@color/text_secondary"
+            android:textSize="@dimen/watch_meta" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/librarySearchRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <EditText
+            android:id="@+id/librarySearchInput"
+            android:layout_width="0dp"
+            android:layout_height="@dimen/watch_control_h"
+            android:layout_weight="1"
+            android:background="@drawable/bg_panel"
+            android:hint="@string/library_search_hint"
+            android:imeOptions="actionSearch"
+            android:importantForAutofill="no"
+            android:inputType="text"
+            android:maxLines="1"
+            android:paddingHorizontal="10dp"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_secondary"
+            android:textSize="@dimen/watch_meta" />
+
+        <TextView
+            android:id="@+id/librarySearchClear"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/watch_control_h"
+            android:layout_marginStart="4dp"
+            android:background="@drawable/bg_control_button"
+            android:gravity="center"
+            android:minWidth="44dp"
+            android:paddingHorizontal="8dp"
+            android:text="@string/library_search_clear"
+            android:textColor="@color/text_primary"
             android:textSize="@dimen/watch_meta" />
     </LinearLayout>
 
@@ -253,6 +304,49 @@
         android:textSize="@dimen/watch_meta"
         android:visibility="gone" />
 
+    <!-- 收藏批量编辑条：全选 | 已选 N | 完成 -->
+    <LinearLayout
+        android:id="@+id/libraryEditBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/bg_panel"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="4dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/librarySelectAll"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="6dp"
+            android:text="@string/library_select_all"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/librarySelectedCount"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:textColor="@color/text_secondary"
+            android:textSize="@dimen/watch_meta" />
+
+        <TextView
+            android:id="@+id/libraryEditDone"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="6dp"
+            android:text="@string/library_edit_done"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta"
+            android:textStyle="bold" />
+    </LinearLayout>
+
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -294,6 +388,20 @@
             android:layout_gravity="center"
             android:indeterminate="true"
             android:indeterminateTint="@color/accent"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/libraryDeleteBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:background="@color/bg_elevated"
+            android:gravity="center"
+            android:paddingVertical="10dp"
+            android:text="@string/library_delete"
+            android:textColor="@color/accent"
+            android:textSize="@dimen/watch_body"
+            android:textStyle="bold"
             android:visibility="gone" />
 
         <ScrollView

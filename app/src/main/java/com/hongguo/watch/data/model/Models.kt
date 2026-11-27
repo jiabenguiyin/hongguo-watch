@@ -8,6 +8,8 @@ data class Series(
     val episodeCount: Int = 0,
     val tags: List<String> = emptyList(),
     val source: SeriesSource = SeriesSource.APP,
+    /** 官方社交收藏人数（详情按钮）；0=未知。库卡进度勿用此字段。 */
+    val collectCount: Long = 0L,
 )
 
 enum class SeriesSource {

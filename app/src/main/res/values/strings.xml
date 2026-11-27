@@ -42,6 +42,24 @@
     <string name="detail_title">内容详情</string>
     <string name="play_now">立即播放</string>
     <string name="favorite">收藏</string>
+    <string name="favorite_with_count">收藏 %1$s</string>
+    <string name="library_edit">编辑</string>
+    <string name="library_edit_done">完成</string>
+    <string name="library_select_all">全选</string>
+    <string name="library_deselect_all">取消全选</string>
+    <string name="library_selected_count">已选择 %1$d 个</string>
+    <string name="library_delete">删除</string>
+    <string name="library_delete_confirm_title">删除选中收藏？</string>
+    <string name="library_delete_confirm_body">将移除 %1$d 部收藏，可稍后再加回。</string>
+    <string name="library_deleted_count">已删除 %1$d 部</string>
+    <string name="library_layout_classic">旧排版</string>
+    <string name="library_layout_classic_summary">关=官方三列（默认）；开=旧列表</string>
+    <string name="chase_subtitle_local">本地集数游标（官方追更不可用）</string>
+    <string name="chase_subtitle_cloud">官方追更</string>
+    <string name="library_search">库内搜索</string>
+    <string name="library_search_hint">搜索本页标题</string>
+    <string name="library_search_clear">清除</string>
+    <string name="library_search_empty">没有匹配的标题</string>
     <string name="synopsis_label">简介：%1$s</string>
     <string name="synopsis_expand">展开简介</string>
     <string name="synopsis_collapse">收起简介</string>

@@ -30,6 +30,7 @@ import com.hongguo.watch.data.cache.VideoCacheEntry
 import com.hongguo.watch.data.cache.VideoCacheManager
 import com.hongguo.watch.data.cache.VideoCacheSeriesGroup
 import com.hongguo.watch.data.db.FavoriteEntity
+import com.hongguo.watch.data.db.WatchHistoryEntity
 import com.hongguo.watch.data.model.HomeCategory
 import com.hongguo.watch.data.model.Series
 import com.hongguo.watch.data.model.SeriesSource
@@ -86,6 +87,15 @@ class MainActivity : WatchDisplayActivity() {
     private var searchChipId: String = SEARCH_CHIP_ALL
     private var hotBatchOffset: Int = 0
     private lateinit var librarySegmentGesture: GestureDetector
+    /** 设置「旧排版」：true=列表；false=官方三列（默认）。 */
+    private var libraryLayoutClassic = false
+    /** 收藏批量编辑（仅新三列排版）。 */
+    private var favoritesEditMode = false
+    private val favoritesSelectedIds = linkedSetOf<String>()
+    private var favoritesPosterSnapshot: List<HomeRow.Poster> = emptyList()
+    /** 库内搜索（官方内容 Tab 右侧放大镜）；离线段不启用。 */
+    private var librarySearchOpen = false
+    private var librarySearchQuery = ""
 
     private val container get() = (application as HongguoWatchApp).container
     private val repo get() = container.repository
@@ -106,16 +116,32 @@ class MainActivity : WatchDisplayActivity() {
             },
             onHotWordClick = { openSeries(it) },
             onDiscoveryClick = { openSeries(it) },
-            onHeaderAction = { refreshHotBatch() },
-            onResumeClick = { resumeHistorySeries(it) },
-            onItemLongClick = { series ->
-                if (mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.HISTORY) {
-                    confirmDeleteHistory(series)
-                    true
-                } else {
-                    false
+            onHeaderAction = {
+                when {
+                    mode == Mode.HOME -> refreshHotBatch()
+                    mode == Mode.LIBRARY &&
+                        librarySegment == LibrarySegmentPolicy.Segment.FAVORITES &&
+                        !libraryLayoutClassic -> enterFavoritesEditMode()
                 }
             },
+            onResumeClick = { resumeHistorySeries(it) },
+            onItemLongClick = { series ->
+                when {
+                    mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.HISTORY -> {
+                        confirmDeleteHistory(series)
+                        true
+                    }
+                    mode == Mode.LIBRARY &&
+                        librarySegment == LibrarySegmentPolicy.Segment.FAVORITES &&
+                        !libraryLayoutClassic &&
+                        !favoritesEditMode -> {
+                        enterFavoritesEditMode(preselect = series.id)
+                        true
+                    }
+                    else -> false
+                }
+            },
+            onSelectionToggle = { series -> toggleFavoriteSelection(series.id) },
         ) { openSeries(it) }
         offlineAdapter = OfflineCacheAdapter(
             onOpenSeries = { openOfflineSeries(it) },
@@ -179,6 +205,24 @@ class MainActivity : WatchDisplayActivity() {
         }
         binding.segmentOffline.setOnClickListener {
             showLibrary(segment = LibrarySegmentPolicy.Segment.OFFLINE)
+        }
+        binding.librarySelectAll.setOnClickListener { toggleSelectAllFavorites() }
+        binding.libraryEditDone.setOnClickListener { exitFavoritesEditMode(reload = true) }
+        binding.libraryDeleteBar.setOnClickListener { confirmDeleteSelectedFavorites() }
+        binding.librarySearchToggle.setOnClickListener { toggleLibrarySearch() }
+        binding.librarySearchClear.setOnClickListener {
+            binding.librarySearchInput.setText("")
+            applyLibrarySearchQuery("")
+            hideKeyboard()
+        }
+        binding.librarySearchInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                applyLibrarySearchQuery(binding.librarySearchInput.text?.toString().orEmpty())
+                hideKeyboard()
+                true
+            } else {
+                false
+            }
         }
         binding.mineAccountCard.setOnClickListener {
             startActivity(Intent(this, AccountSyncActivity::class.java))
@@ -418,6 +462,10 @@ class MainActivity : WatchDisplayActivity() {
     private fun showHome(forceReload: Boolean = false, fromSwipe: Boolean = false) {
         val switchingToHome = mode != Mode.HOME
         mode = Mode.HOME
+        exitFavoritesEditMode(reload = false)
+        binding.librarySearchRow.visibility = View.GONE
+        binding.libraryEditBar.visibility = View.GONE
+        binding.libraryDeleteBar.visibility = View.GONE
         highlightBottomTabs(home = true)
         useSeriesAdapter()
         if (homeNav == HomeNav.SEARCH && !forceReload && !switchingToHome) {
@@ -561,6 +609,7 @@ class MainActivity : WatchDisplayActivity() {
 
     private fun showMine() {
         mode = Mode.MINE
+        exitFavoritesEditMode(reload = false)
         beginListLoad(clearAdapter = false)
         highlightBottomTabs(mine = true)
         hideKeyboard()
@@ -569,6 +618,9 @@ class MainActivity : WatchDisplayActivity() {
         binding.searchRow.visibility = View.GONE
         binding.categoryScroll.visibility = View.GONE
         binding.librarySegmentRow.visibility = View.GONE
+        binding.librarySearchRow.visibility = View.GONE
+        binding.libraryEditBar.visibility = View.GONE
+        binding.libraryDeleteBar.visibility = View.GONE
         binding.libraryCacheHook.visibility = View.GONE
         binding.pageSubtitle.visibility = View.GONE
         binding.swipeRefresh.visibility = View.GONE
@@ -1172,6 +1224,10 @@ class MainActivity : WatchDisplayActivity() {
         librarySegment = segment
         if (segment != LibrarySegmentPolicy.Segment.FAVORITES) {
             lastCloudFavoritesSignature = null
+            exitFavoritesEditMode(reload = false)
+        }
+        if (segment == LibrarySegmentPolicy.Segment.OFFLINE) {
+            closeLibrarySearch(clearQuery = false)
         }
         highlightBottomTabs(library = true)
         hideKeyboard()
@@ -1181,36 +1237,51 @@ class MainActivity : WatchDisplayActivity() {
         binding.searchRow.visibility = View.GONE
         binding.categoryScroll.visibility = View.GONE
         binding.librarySegmentRow.visibility = View.VISIBLE
+        binding.librarySearchToggle.visibility =
+            if (segment == LibrarySegmentPolicy.Segment.OFFLINE) View.GONE else View.VISIBLE
+        refreshLibrarySearchRowVisibility()
         highlightLibrarySegment(librarySegment)
         binding.brandTitle.text = getString(R.string.tab_library)
         when (librarySegment) {
-            LibrarySegmentPolicy.Segment.HISTORY -> {
-                binding.pageSubtitle.visibility = View.GONE
-                binding.libraryCacheHook.visibility = View.VISIBLE
-                refreshLibraryCacheHook()
-                useSeriesAdapter(posterGrid = false)
-                loadHistoryList(fromSwipe)
-            }
-            LibrarySegmentPolicy.Segment.FAVORITES -> {
-                binding.pageSubtitle.visibility = View.GONE
-                binding.libraryCacheHook.visibility = View.VISIBLE
-                refreshLibraryCacheHook()
-                useSeriesAdapter(posterGrid = true)
-                loadFavoritesList(fromSwipe)
-            }
-            LibrarySegmentPolicy.Segment.CHASE -> {
-                binding.libraryCacheHook.visibility = View.GONE
-                binding.pageSubtitle.visibility = View.VISIBLE
-                binding.pageSubtitle.text = getString(R.string.chase_subtitle)
-                useSeriesAdapter(posterGrid = true)
-                loadChaseList(fromSwipe)
-            }
             LibrarySegmentPolicy.Segment.OFFLINE -> {
                 binding.libraryCacheHook.visibility = View.GONE
                 binding.pageSubtitle.visibility = View.VISIBLE
                 binding.pageSubtitle.text = getString(R.string.offline_subtitle)
                 useOfflineAdapter()
                 loadOfflineCacheList(fromSwipe)
+            }
+            else -> {
+                lifecycleScope.launch {
+                    libraryLayoutClassic = container.settings.libraryLayoutClassicNow()
+                    if (mode != Mode.LIBRARY || librarySegment == LibrarySegmentPolicy.Segment.OFFLINE) {
+                        return@launch
+                    }
+                    when (librarySegment) {
+                        LibrarySegmentPolicy.Segment.HISTORY -> {
+                            binding.pageSubtitle.visibility = View.GONE
+                            binding.libraryCacheHook.visibility = View.VISIBLE
+                            refreshLibraryCacheHook()
+                            useSeriesAdapter(posterGrid = false)
+                            loadHistoryList(fromSwipe)
+                        }
+                        LibrarySegmentPolicy.Segment.FAVORITES -> {
+                            binding.pageSubtitle.visibility = View.GONE
+                            binding.libraryCacheHook.visibility =
+                                if (favoritesEditMode) View.GONE else View.VISIBLE
+                            if (!favoritesEditMode) refreshLibraryCacheHook()
+                            useSeriesAdapter(posterGrid = !libraryLayoutClassic)
+                            loadFavoritesList(fromSwipe)
+                        }
+                        LibrarySegmentPolicy.Segment.CHASE -> {
+                            binding.libraryCacheHook.visibility = View.GONE
+                            binding.pageSubtitle.visibility = View.VISIBLE
+                            binding.pageSubtitle.text = getString(R.string.chase_subtitle)
+                            useSeriesAdapter(posterGrid = !libraryLayoutClassic)
+                            loadChaseList(fromSwipe)
+                        }
+                        LibrarySegmentPolicy.Segment.OFFLINE -> Unit
+                    }
+                }
             }
         }
     }
@@ -1475,6 +1546,7 @@ class MainActivity : WatchDisplayActivity() {
         listJob = lifecycleScope.launch {
             try {
                 val history = repo.recentHistory()
+                    .filter { matchesLibrarySearch(it.seriesTitle) }
                 if (token != listGeneration || mode != Mode.LIBRARY ||
                     librarySegment != LibrarySegmentPolicy.Segment.HISTORY
                 ) {
@@ -1511,7 +1583,7 @@ class MainActivity : WatchDisplayActivity() {
                 adapter.submit(rows)
                 binding.seriesList.scrollToPosition(0)
                 binding.emptyView.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
-                binding.emptyView.text = getString(R.string.empty_history)
+                binding.emptyView.text = libraryEmptyText(R.string.empty_history)
             } finally {
                 if (token == listGeneration) {
                     applyListLoading(ListLoadingPolicy.Indicator.NONE)
@@ -1558,11 +1630,12 @@ class MainActivity : WatchDisplayActivity() {
         )
         val token = beginListLoad(clearAdapter = true)
         adapter.showResumeHint = false
+        adapter.selectionMode = favoritesEditMode && !libraryLayoutClassic
         binding.seriesList.scrollToPosition(0)
         listJob = lifecycleScope.launch {
             try {
-                // 先渲染 Room 快照；总集数由详情打开时校正，避免串行拉详情卡死列表。
                 val favorites = container.redfruitAccount.libraryFavorites()
+                    .filter { matchesLibrarySearch(it.seriesTitle) }
                 if (token != listGeneration || mode != Mode.LIBRARY ||
                     librarySegment != LibrarySegmentPolicy.Segment.FAVORITES
                 ) {
@@ -1577,23 +1650,50 @@ class MainActivity : WatchDisplayActivity() {
                     ?.map { it.seriesId }
                     ?.toHashSet()
                     .orEmpty()
-                val header = HomeRow.Header(
-                    title = getString(R.string.segment_favorites),
-                    subtitle = getString(R.string.favorites_count, favorites.size),
-                )
-                val posters = favorites.map { fav ->
-                    favoritePosterRow(fav, historyMap[fav.seriesId]?.episodeNumber, chaseIds)
+                if (libraryLayoutClassic) {
+                    val rows = favorites.map { fav ->
+                        favoriteClassicRow(fav, historyMap[fav.seriesId])
+                    }
+                    if (token != listGeneration || mode != Mode.LIBRARY ||
+                        librarySegment != LibrarySegmentPolicy.Segment.FAVORITES
+                    ) {
+                        return@launch
+                    }
+                    favoritesPosterSnapshot = emptyList()
+                    adapter.submit(rows)
+                    binding.seriesList.scrollToPosition(0)
+                    binding.emptyView.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+                    binding.emptyView.text = libraryEmptyText(R.string.empty_favorites)
+                } else {
+                    val posters = favorites.map { fav ->
+                        favoritePosterRow(
+                            fav = fav,
+                            watchedEpisode = historyMap[fav.seriesId]?.episodeNumber,
+                            chaseIds = chaseIds,
+                            selected = fav.seriesId in favoritesSelectedIds,
+                        )
+                    }
+                    favoritesPosterSnapshot = posters
+                    val header = HomeRow.Header(
+                        title = getString(R.string.segment_favorites),
+                        subtitle = getString(R.string.favorites_count, favorites.size),
+                        actionLabel = if (favoritesEditMode || favorites.isEmpty()) {
+                            ""
+                        } else {
+                            getString(R.string.library_edit)
+                        },
+                    )
+                    if (token != listGeneration || mode != Mode.LIBRARY ||
+                        librarySegment != LibrarySegmentPolicy.Segment.FAVORITES
+                    ) {
+                        return@launch
+                    }
+                    adapter.submit(listOf(header) + posters)
+                    binding.seriesList.scrollToPosition(0)
+                    binding.emptyView.visibility = if (posters.isEmpty()) View.VISIBLE else View.GONE
+                    binding.emptyView.text = libraryEmptyText(R.string.empty_favorites)
+                    refreshFavoritesEditChrome()
                 }
-                val rows = listOf(header) + posters
-                if (token != listGeneration || mode != Mode.LIBRARY ||
-                    librarySegment != LibrarySegmentPolicy.Segment.FAVORITES
-                ) {
-                    return@launch
-                }
-                adapter.submit(rows)
-                binding.seriesList.scrollToPosition(0)
-                binding.emptyView.visibility = if (posters.isEmpty()) View.VISIBLE else View.GONE
-                binding.emptyView.text = getString(R.string.empty_favorites)
             } finally {
                 if (token == listGeneration) {
                     applyListLoading(ListLoadingPolicy.Indicator.NONE)
@@ -1603,7 +1703,8 @@ class MainActivity : WatchDisplayActivity() {
     }
 
     /**
-     * 追更：优先官方 `chase_book/list`；失败则用本地 last_serial_count 对比收藏总集数。
+     * 追更：官方 `chase_book/list` 有条目则用云；null/空则本地 last_serial_count。
+     * 并用详情校正总集数，避免种子后永远无更新。
      */
     private fun loadChaseList(fromSwipe: Boolean) {
         binding.emptyView.visibility = View.GONE
@@ -1616,10 +1717,15 @@ class MainActivity : WatchDisplayActivity() {
         )
         val token = beginListLoad(clearAdapter = true)
         adapter.showResumeHint = false
+        adapter.selectionMode = false
         binding.seriesList.scrollToPosition(0)
         listJob = lifecycleScope.launch {
             try {
-                val favorites = container.redfruitAccount.libraryFavorites()
+                var favorites = container.redfruitAccount.libraryFavorites()
+                // 校正总集数后再比 last_serial，否则本地追更永远空。
+                favorites = runCatching { repo.favoritesWithResolvedEpisodeTotals() }
+                    .getOrDefault(favorites)
+                    .ifEmpty { favorites }
                 val historyMap = repo.recentHistory().associateBy { it.seriesId }
                 val remote = container.redfruitAccount.libraryChaseBooks()
                 if (token != listGeneration || mode != Mode.LIBRARY ||
@@ -1627,10 +1733,12 @@ class MainActivity : WatchDisplayActivity() {
                 ) {
                     return@launch
                 }
-                val posters = if (remote != null) {
+                val usingCloud = !remote.isNullOrEmpty()
+                val posters = if (usingCloud) {
                     val favById = favorites.associateBy { it.seriesId }
-                    remote
+                    remote.orEmpty()
                         .filter { it.isChasedUpdates || it.episodeCount > it.lastSerialCount }
+                        .filter { matchesLibrarySearch(it.seriesTitle.ifBlank { favById[it.seriesId]?.seriesTitle.orEmpty() }) }
                         .map { chase ->
                             val fav = favById[chase.seriesId]
                             val series = Series(
@@ -1644,39 +1752,108 @@ class MainActivity : WatchDisplayActivity() {
                                     ?: fav?.episodeCount ?: 0,
                                 source = SeriesSource.APP,
                             )
-                            HomeRow.Poster(
-                                series = series,
-                                watchedEpisode = historyMap[chase.seriesId]?.episodeNumber,
-                                totalEpisodes = series.episodeCount.takeIf { it > 0 },
-                                hasUpdate = true,
-                            )
+                            if (libraryLayoutClassic) {
+                                null
+                            } else {
+                                HomeRow.Poster(
+                                    series = series,
+                                    watchedEpisode = historyMap[chase.seriesId]?.episodeNumber,
+                                    totalEpisodes = series.episodeCount.takeIf { it > 0 },
+                                    hasUpdate = true,
+                                )
+                            }
                         }
+                        .filterNotNull()
                 } else {
                     favorites.mapNotNull { fav ->
-                        container.chaseUpdates.seedIfAbsent(fav.seriesId, fav.episodeCount)
-                        val seeded = container.chaseUpdates.hasSeed(fav.seriesId)
+                        if (!matchesLibrarySearch(fav.seriesTitle)) return@mapNotNull null
+                        // 已有种子才比；首次 seed 用校正后的总集数，避免 0→N 全员「有更新」。
+                        if (!container.chaseUpdates.hasSeed(fav.seriesId)) {
+                            container.chaseUpdates.seedIfAbsent(fav.seriesId, fav.episodeCount)
+                            return@mapNotNull null
+                        }
                         val last = container.chaseUpdates.lastSerialCount(fav.seriesId)
-                        if (!ChaseUpdatePolicy.hasUpdate(fav.episodeCount, last, seeded)) return@mapNotNull null
+                        if (!ChaseUpdatePolicy.hasUpdate(fav.episodeCount, last, seeded = true)) {
+                            return@mapNotNull null
+                        }
                         favoritePosterRow(fav, historyMap[fav.seriesId]?.episodeNumber, setOf(fav.seriesId))
                     }
                 }
+                val classicRows = if (libraryLayoutClassic) {
+                    if (usingCloud) {
+                        val favById = favorites.associateBy { it.seriesId }
+                        remote.orEmpty()
+                            .filter { it.isChasedUpdates || it.episodeCount > it.lastSerialCount }
+                            .filter {
+                                matchesLibrarySearch(
+                                    it.seriesTitle.ifBlank { favById[it.seriesId]?.seriesTitle.orEmpty() },
+                                )
+                            }
+                            .map { chase ->
+                                val fav = favById[chase.seriesId]
+                                val history = historyMap[chase.seriesId]
+                                HomeRow.Item(
+                                    series = Series(
+                                        id = chase.seriesId,
+                                        title = chase.seriesTitle.ifBlank { fav?.seriesTitle.orEmpty() }
+                                            .ifBlank { "剧集 ${chase.seriesId}" },
+                                        cover = com.hongguo.watch.data.CoverUrls.normalize(
+                                            chase.cover.ifBlank { fav?.cover.orEmpty() },
+                                        ),
+                                        episodeCount = chase.episodeCount.takeIf { it > 0 }
+                                            ?: fav?.episodeCount ?: 0,
+                                        source = SeriesSource.APP,
+                                    ),
+                                    watchedEpisode = history?.episodeNumber,
+                                    totalEpisodes = (chase.episodeCount.takeIf { it > 0 }
+                                        ?: fav?.episodeCount)?.takeIf { it > 0 },
+                                    progressPercent = null,
+                                )
+                            }
+                    } else {
+                        favorites.mapNotNull { fav ->
+                            if (!matchesLibrarySearch(fav.seriesTitle)) return@mapNotNull null
+                            if (!container.chaseUpdates.hasSeed(fav.seriesId)) {
+                                container.chaseUpdates.seedIfAbsent(fav.seriesId, fav.episodeCount)
+                                return@mapNotNull null
+                            }
+                            val last = container.chaseUpdates.lastSerialCount(fav.seriesId)
+                            if (!ChaseUpdatePolicy.hasUpdate(fav.episodeCount, last, seeded = true)) {
+                                return@mapNotNull null
+                            }
+                            favoriteClassicRow(fav, historyMap[fav.seriesId])
+                        }
+                    }
+                } else {
+                    emptyList()
+                }
+                val count = if (libraryLayoutClassic) classicRows.size else posters.size
+                val subtitle = when {
+                    count == 0 && usingCloud -> getString(R.string.chase_subtitle_cloud)
+                    count == 0 -> getString(R.string.chase_subtitle_local)
+                    usingCloud -> getString(R.string.chase_count, count)
+                    else -> getString(R.string.chase_subtitle_local) + " · " +
+                        getString(R.string.chase_count, count)
+                }
+                binding.pageSubtitle.text = subtitle
                 val header = HomeRow.Header(
                     title = getString(R.string.segment_chase),
-                    subtitle = if (posters.isEmpty()) {
-                        getString(R.string.chase_subtitle)
-                    } else {
-                        getString(R.string.chase_count, posters.size)
-                    },
+                    subtitle = subtitle,
                 )
                 if (token != listGeneration || mode != Mode.LIBRARY ||
                     librarySegment != LibrarySegmentPolicy.Segment.CHASE
                 ) {
                     return@launch
                 }
-                adapter.submit(listOf(header) + posters)
+                val rows = if (libraryLayoutClassic) {
+                    listOf(header) + classicRows
+                } else {
+                    listOf(header) + posters
+                }
+                adapter.submit(rows)
                 binding.seriesList.scrollToPosition(0)
-                binding.emptyView.visibility = if (posters.isEmpty()) View.VISIBLE else View.GONE
-                binding.emptyView.text = getString(R.string.empty_chase)
+                binding.emptyView.visibility = if (count == 0) View.VISIBLE else View.GONE
+                binding.emptyView.text = libraryEmptyText(R.string.empty_chase)
             } finally {
                 if (token == listGeneration) {
                     applyListLoading(ListLoadingPolicy.Indicator.NONE)
@@ -1689,6 +1866,7 @@ class MainActivity : WatchDisplayActivity() {
         fav: FavoriteEntity,
         watchedEpisode: Int?,
         chaseIds: Set<String>,
+        selected: Boolean = false,
     ): HomeRow.Poster {
         val localUpdate = ChaseUpdatePolicy.hasUpdate(
             currentEpisodeCount = fav.episodeCount,
@@ -1708,6 +1886,35 @@ class MainActivity : WatchDisplayActivity() {
             watchedEpisode = watchedEpisode,
             totalEpisodes = fav.episodeCount.takeIf { it > 0 },
             hasUpdate = fav.seriesId in chaseIds || localUpdate,
+            selected = selected,
+        )
+    }
+
+    /** 旧排版：横向列表 + 进度条（#58 前样式，设置开关启用）。 */
+    private fun favoriteClassicRow(
+        fav: FavoriteEntity,
+        history: WatchHistoryEntity?,
+    ): HomeRow.Item {
+        val percent = when {
+            history != null && history.durationMs > 0 ->
+                ((history.positionMs * 100) / history.durationMs).toInt().coerceIn(0, 100)
+            history != null && fav.episodeCount > 0 ->
+                ((history.episodeNumber * 100) / fav.episodeCount).coerceIn(0, 100)
+            else -> null
+        }
+        return HomeRow.Item(
+            series = Series(
+                id = fav.seriesId,
+                title = fav.seriesTitle,
+                cover = com.hongguo.watch.data.CoverUrls.normalize(fav.cover),
+                description = "",
+                episodeCount = fav.episodeCount,
+                source = runCatching { SeriesSource.valueOf(fav.source) }
+                    .getOrDefault(SeriesSource.APP),
+            ),
+            progressPercent = percent,
+            watchedEpisode = history?.episodeNumber,
+            totalEpisodes = fav.episodeCount.takeIf { it > 0 },
         )
     }
 
@@ -1729,6 +1936,164 @@ class MainActivity : WatchDisplayActivity() {
         style(binding.segmentChase, chase)
         style(binding.segmentHistory, history)
         style(binding.segmentOffline, offline)
+    }
+
+    private fun matchesLibrarySearch(title: String): Boolean {
+        val q = librarySearchQuery.trim()
+        if (q.isEmpty()) return true
+        return title.contains(q, ignoreCase = true)
+    }
+
+    private fun libraryEmptyText(defaultRes: Int): String =
+        if (librarySearchQuery.isNotBlank()) {
+            getString(R.string.library_search_empty)
+        } else {
+            getString(defaultRes)
+        }
+
+    private fun toggleLibrarySearch() {
+        if (librarySegment == LibrarySegmentPolicy.Segment.OFFLINE) return
+        if (librarySearchOpen) {
+            closeLibrarySearch(clearQuery = true)
+        } else {
+            librarySearchOpen = true
+            refreshLibrarySearchRowVisibility()
+            binding.librarySearchInput.requestFocus()
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(binding.librarySearchInput, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun closeLibrarySearch(clearQuery: Boolean) {
+        librarySearchOpen = false
+        if (clearQuery && librarySearchQuery.isNotEmpty()) {
+            librarySearchQuery = ""
+            binding.librarySearchInput.setText("")
+            if (mode == Mode.LIBRARY && librarySegment != LibrarySegmentPolicy.Segment.OFFLINE) {
+                showLibrary(segment = librarySegment)
+            }
+        }
+        refreshLibrarySearchRowVisibility()
+    }
+
+    private fun refreshLibrarySearchRowVisibility() {
+        val show = mode == Mode.LIBRARY &&
+            librarySearchOpen &&
+            librarySegment != LibrarySegmentPolicy.Segment.OFFLINE
+        binding.librarySearchRow.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
+    private fun applyLibrarySearchQuery(raw: String) {
+        librarySearchQuery = raw.trim()
+        if (mode != Mode.LIBRARY || librarySegment == LibrarySegmentPolicy.Segment.OFFLINE) return
+        showLibrary(segment = librarySegment)
+    }
+
+    private fun enterFavoritesEditMode(preselect: String? = null) {
+        if (libraryLayoutClassic) return
+        if (librarySegment != LibrarySegmentPolicy.Segment.FAVORITES) return
+        favoritesEditMode = true
+        favoritesSelectedIds.clear()
+        if (!preselect.isNullOrBlank()) favoritesSelectedIds += preselect
+        adapter.selectionMode = true
+        binding.libraryCacheHook.visibility = View.GONE
+        refreshFavoritesEditChrome()
+        submitFavoritesSelectionRows()
+    }
+
+    private fun exitFavoritesEditMode(reload: Boolean) {
+        val wasEditing = favoritesEditMode
+        favoritesEditMode = false
+        favoritesSelectedIds.clear()
+        adapter.selectionMode = false
+        binding.libraryEditBar.visibility = View.GONE
+        binding.libraryDeleteBar.visibility = View.GONE
+        if (wasEditing && reload &&
+            mode == Mode.LIBRARY &&
+            librarySegment == LibrarySegmentPolicy.Segment.FAVORITES
+        ) {
+            binding.libraryCacheHook.visibility = View.VISIBLE
+            refreshLibraryCacheHook()
+            loadFavoritesList(fromSwipe = false)
+        }
+    }
+
+    private fun refreshFavoritesEditChrome() {
+        if (!favoritesEditMode || libraryLayoutClassic) {
+            binding.libraryEditBar.visibility = View.GONE
+            binding.libraryDeleteBar.visibility = View.GONE
+            return
+        }
+        binding.libraryEditBar.visibility = View.VISIBLE
+        binding.libraryDeleteBar.visibility = View.VISIBLE
+        val n = favoritesSelectedIds.size
+        binding.librarySelectedCount.text = getString(R.string.library_selected_count, n)
+        val allIds = favoritesPosterSnapshot.map { it.series.id }.toSet()
+        val allSelected = allIds.isNotEmpty() && favoritesSelectedIds.containsAll(allIds)
+        binding.librarySelectAll.text = getString(
+            if (allSelected) R.string.library_deselect_all else R.string.library_select_all,
+        )
+        binding.libraryDeleteBar.isEnabled = n > 0
+        binding.libraryDeleteBar.alpha = if (n > 0) 1f else 0.4f
+    }
+
+    private fun toggleFavoriteSelection(seriesId: String) {
+        if (!favoritesEditMode) return
+        if (seriesId in favoritesSelectedIds) favoritesSelectedIds.remove(seriesId)
+        else favoritesSelectedIds += seriesId
+        submitFavoritesSelectionRows()
+        refreshFavoritesEditChrome()
+    }
+
+    private fun toggleSelectAllFavorites() {
+        if (!favoritesEditMode) return
+        val allIds = favoritesPosterSnapshot.map { it.series.id }
+        if (favoritesSelectedIds.containsAll(allIds) && allIds.isNotEmpty()) {
+            favoritesSelectedIds.clear()
+        } else {
+            favoritesSelectedIds.clear()
+            favoritesSelectedIds.addAll(allIds)
+        }
+        submitFavoritesSelectionRows()
+        refreshFavoritesEditChrome()
+    }
+
+    private fun submitFavoritesSelectionRows() {
+        if (favoritesPosterSnapshot.isEmpty()) return
+        val posters = favoritesPosterSnapshot.map { row ->
+            row.copy(selected = row.series.id in favoritesSelectedIds)
+        }
+        favoritesPosterSnapshot = posters
+        val header = HomeRow.Header(
+            title = getString(R.string.segment_favorites),
+            subtitle = getString(R.string.library_selected_count, favoritesSelectedIds.size),
+        )
+        adapter.submit(listOf(header) + posters)
+    }
+
+    private fun confirmDeleteSelectedFavorites() {
+        val ids = favoritesSelectedIds.toList()
+        if (ids.isEmpty()) return
+        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
+            .setTitle(R.string.library_delete_confirm_title)
+            .setMessage(getString(R.string.library_delete_confirm_body, ids.size))
+            .setPositiveButton(R.string.library_delete) { _, _ ->
+                lifecycleScope.launch {
+                    ids.forEach { id ->
+                        repo.removeFavorite(id)
+                        container.chaseUpdates.clear(id)
+                    }
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.library_deleted_count, ids.size),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    exitFavoritesEditMode(reload = true)
+                }
+            }
+            .setNegativeButton(R.string.update_cancel, null)
+            .create()
+        showWatchDialog(dialog)
     }
 
     /**

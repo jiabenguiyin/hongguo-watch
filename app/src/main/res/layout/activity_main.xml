@@ -103,6 +103,55 @@
             android:text="@string/segment_offline"
             android:textColor="@color/text_secondary"
             android:textSize="@dimen/watch_meta" />
+
+        <!-- 官方「我的」内容 Tab 右侧放大镜：库内搜索 -->
+        <ImageView
+            android:id="@+id/librarySearchToggle"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/library_search"
+            android:padding="7dp"
+            android:src="@drawable/ic_search" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/librarySearchRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <EditText
+            android:id="@+id/librarySearchInput"
+            android:layout_width="0dp"
+            android:layout_height="@dimen/watch_control_h"
+            android:layout_weight="1"
+            android:background="@drawable/bg_panel"
+            android:hint="@string/library_search_hint"
+            android:imeOptions="actionSearch"
+            android:importantForAutofill="no"
+            android:inputType="text"
+            android:maxLines="1"
+            android:paddingHorizontal="10dp"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_secondary"
+            android:textSize="@dimen/watch_meta" />
+
+        <TextView
+            android:id="@+id/librarySearchClear"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/watch_control_h"
+            android:layout_marginStart="4dp"
+            android:background="@drawable/bg_control_button"
+            android:gravity="center"
+            android:minWidth="44dp"
+            android:paddingHorizontal="8dp"
+            android:text="@string/library_search_clear"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta" />
     </LinearLayout>
 
     <!-- 非离线段时展示占用摘要；点按进入离线段 -->
@@ -264,6 +313,49 @@
         android:textSize="@dimen/watch_meta"
         android:visibility="gone" />
 
+    <!-- 收藏批量编辑条：全选 | 已选 N | 完成 -->
+    <LinearLayout
+        android:id="@+id/libraryEditBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/bg_panel"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="4dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/librarySelectAll"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="6dp"
+            android:text="@string/library_select_all"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/librarySelectedCount"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:textColor="@color/text_secondary"
+            android:textSize="@dimen/watch_meta" />
+
+        <TextView
+            android:id="@+id/libraryEditDone"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="6dp"
+            android:text="@string/library_edit_done"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta"
+            android:textStyle="bold" />
+    </LinearLayout>
+
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -305,6 +397,20 @@
             android:layout_gravity="center"
             android:indeterminate="true"
             android:indeterminateTint="@color/accent"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/libraryDeleteBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:background="@color/bg_elevated"
+            android:gravity="center"
+            android:paddingVertical="10dp"
+            android:text="@string/library_delete"
+            android:textColor="@color/accent"
+            android:textSize="@dimen/watch_body"
+            android:textStyle="bold"
             android:visibility="gone" />
 
         <ScrollView

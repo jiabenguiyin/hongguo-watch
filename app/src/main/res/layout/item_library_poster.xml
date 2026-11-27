@@ -34,6 +34,18 @@
             android:textSize="9sp"
             android:textStyle="bold"
             android:visibility="gone" />
+
+        <ImageView
+            android:id="@+id/posterCheck"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_gravity="bottom|end"
+            android:layout_margin="4dp"
+            android:background="@drawable/bg_poster_check"
+            android:contentDescription="@null"
+            android:padding="3dp"
+            android:src="@drawable/ic_check_white"
+            android:visibility="gone" />
     </FrameLayout>
 
     <TextView

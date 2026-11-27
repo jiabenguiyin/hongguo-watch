@@ -31,8 +31,17 @@ class SettingsStore(private val context: Context) {
     /** 息屏/退后台续听；默认关（省电）。 */
     private val screenOffContinueKey = booleanPreferencesKey("screen_off_continue")
     private val episodeWheelEnabledKey = booleanPreferencesKey("episode_wheel_enabled")
+    /**
+     * 库页排版：false=官方新样式（三列海报，默认）；true=旧列表排版。
+     * 旧代码路径保留，仅由此开关启用。
+     */
+    private val libraryLayoutClassicKey = booleanPreferencesKey("library_layout_classic")
 
     val wifiOnly: Flow<Boolean> = context.dataStore.data.map { it[wifiOnlyKey] ?: false }
+    /** true = 旧列表；false = 官方新三列（默认）。 */
+    val libraryLayoutClassic: Flow<Boolean> = context.dataStore.data.map {
+        it[libraryLayoutClassicKey] ?: false
+    }
     /** 熄屏续听：关=熄屏暂停（默认）；开=熄屏继续出声。 */
     val screenOffContinue: Flow<Boolean> = context.dataStore.data.map {
         it[screenOffContinueKey] ?: ScreenOffPlaybackPolicy.DEFAULT_CONTINUE_ENABLED
@@ -83,6 +92,10 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[episodeWheelEnabledKey] = enabled }
     }
 
+    suspend fun setLibraryLayoutClassic(classic: Boolean) {
+        context.dataStore.edit { it[libraryLayoutClassicKey] = classic }
+    }
+
     suspend fun setMaxQuality(height: Int) {
         context.dataStore.edit { it[maxQualityKey] = normalizeQuality(height) }
     }
@@ -122,6 +135,7 @@ class SettingsStore(private val context: Context) {
 
     suspend fun wifiOnlyNow(): Boolean = wifiOnly.first()
     suspend fun screenOffContinueNow(): Boolean = screenOffContinue.first()
+    suspend fun libraryLayoutClassicNow(): Boolean = libraryLayoutClassic.first()
     suspend fun maxQualityNow(): Int = maxQuality.first()
     suspend fun playbackSpeedNow(): Float = playbackSpeed.first()
     suspend fun roundAdaptModeNow(): Int = roundAdaptMode.first()

@@ -70,6 +70,7 @@ sealed class HomeRow {
         val watchedEpisode: Int? = null,
         val totalEpisodes: Int? = null,
         val hasUpdate: Boolean = false,
+        val selected: Boolean = false,
     ) : HomeRow()
 }
 
@@ -82,10 +83,19 @@ class SeriesListAdapter(
     private val onResumeClick: ((Series) -> Unit)? = null,
     /** 历史长按删除等。 */
     private val onItemLongClick: ((Series) -> Boolean)? = null,
+    private val onSelectionToggle: ((Series) -> Unit)? = null,
     private val onClick: (Series) -> Unit,
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     private val rows = mutableListOf<HomeRow>()
     var showResumeHint: Boolean = false
+        set(value) {
+            if (field != value) {
+                field = value
+                notifyDataSetChanged()
+            }
+        }
+    /** 收藏批量编辑：海报显示勾选框，点击改选中态。 */
+    var selectionMode: Boolean = false
         set(value) {
             if (field != value) {
                 field = value
@@ -364,7 +374,18 @@ class SeriesListAdapter(
                 binding.posterMeta.visibility = View.VISIBLE
                 binding.posterMeta.text = meta
             }
-            binding.updateBadge.visibility = if (row.hasUpdate) View.VISIBLE else View.GONE
+            binding.updateBadge.visibility =
+                if (!selectionMode && row.hasUpdate) View.VISIBLE else View.GONE
+            if (selectionMode) {
+                binding.posterCheck.visibility = View.VISIBLE
+                binding.posterCheck.isSelected = row.selected
+                binding.posterCheck.setImageResource(
+                    if (row.selected) R.drawable.ic_check_white else 0,
+                )
+            } else {
+                binding.posterCheck.visibility = View.GONE
+                binding.posterCheck.isSelected = false
+            }
             val radius = binding.root.resources.displayMetrics.density * 6f
             val coverUrl = CoverUrls.normalize(series.cover).ifBlank { series.cover }
             binding.posterCover.load(coverUrl.ifBlank { null }) {
@@ -374,9 +395,20 @@ class SeriesListAdapter(
                 placeholder(R.drawable.bg_cover)
                 error(R.drawable.bg_cover)
             }
-            binding.root.setOnClickListener { onClick(series) }
+            binding.root.setOnClickListener {
+                if (selectionMode) {
+                    onSelectionToggle?.invoke(series)
+                } else {
+                    onClick(series)
+                }
+            }
             binding.root.setOnLongClickListener {
-                onItemLongClick?.invoke(series) == true
+                if (selectionMode) {
+                    onSelectionToggle?.invoke(series)
+                    true
+                } else {
+                    onItemLongClick?.invoke(series) == true
+                }
             }
         }
     }

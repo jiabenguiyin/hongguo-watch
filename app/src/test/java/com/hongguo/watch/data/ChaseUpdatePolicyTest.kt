@@ -28,4 +28,18 @@ class ChaseUpdatePolicyTest {
         assertEquals("看到第3集", ChaseUpdatePolicy.progressLabel(3, 0))
         assertEquals("", ChaseUpdatePolicy.progressLabel(null, 0))
     }
+
+    @Test
+    fun formatCollectCountUsesWan() {
+        assertEquals("", ChaseUpdatePolicy.formatCollectCount(0))
+        assertEquals("999", ChaseUpdatePolicy.formatCollectCount(999))
+        assertEquals("1.2万", ChaseUpdatePolicy.formatCollectCount(12_000))
+        assertEquals("98.8万", ChaseUpdatePolicy.formatCollectCount(988_000))
+    }
+
+    @Test
+    fun parseCollectCountLabelFromRankTag() {
+        assertEquals(988_000L, ChaseUpdatePolicy.parseCollectCountLabel("98.8万收藏"))
+        assertEquals(0L, ChaseUpdatePolicy.parseCollectCountLabel("都市"))
+    }
 }

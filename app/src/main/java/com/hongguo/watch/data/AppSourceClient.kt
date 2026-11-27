@@ -408,9 +408,60 @@ class AppSourceClient(
                 description = videoData.str("series_intro").ifEmpty { videoData.str("video_desc") },
                 episodeCount = episodes.size,
                 source = SeriesSource.APP,
+                collectCount = parseCollectCount(videoData),
             ),
             episodes = episodes,
         )
+    }
+
+    /**
+     * 官方详情社交收藏数。候选：`favorite_cnt` / `collect_cnt` / `collect_count` /
+     * `all_bookshelf_count`；再试 `video_cover_stat_infos`。
+     */
+    private fun parseCollectCount(videoData: JSONObject): Long {
+        val directKeys = listOf(
+            "favorite_cnt",
+            "collect_cnt",
+            "collect_count",
+            "all_bookshelf_count",
+            "bookshelf_count",
+            "collectors_count",
+        )
+        for (key in directKeys) {
+            val value = videoData.optLong(key, -1L)
+            if (value > 0L) return value
+            val asText = videoData.str(key)
+            val parsed = asText.toLongOrNull()
+            if (parsed != null && parsed > 0L) return parsed
+        }
+        val parent = videoData.optJSONObject("series_data") ?: videoData.optJSONObject("book_data")
+        if (parent != null) {
+            for (key in directKeys) {
+                val value = parent.optLong(key, -1L)
+                if (value > 0L) return value
+            }
+        }
+        val stats = videoData.optJSONArray("video_cover_stat_infos")
+        if (stats != null) {
+            for (i in 0 until stats.length()) {
+                val row = stats.optJSONObject(i) ?: continue
+                val type = row.str("video_cover_stat_type").ifBlank { row.str("stat_type") }
+                val valueText = row.str("video_cover_stat_value").ifBlank { row.str("stat_value") }
+                val typeNum = row.optInt("video_cover_stat_type", row.optInt("stat_type", -1))
+                val looksCollect = type.contains("collect", ignoreCase = true) ||
+                    type.contains("favorite", ignoreCase = true) ||
+                    type.contains("bookshelf", ignoreCase = true) ||
+                    type.contains("收藏") ||
+                    typeNum == 1 || typeNum == 2
+                if (!looksCollect && valueText.isBlank()) continue
+                val fromValue = valueText.toLongOrNull()
+                    ?: com.hongguo.watch.data.ChaseUpdatePolicy.parseCollectCountLabel(valueText)
+                if (fromValue > 0L) return fromValue
+                val raw = row.optLong("video_cover_stat_value", row.optLong("stat_value", -1L))
+                if (raw > 0L && looksCollect) return raw
+            }
+        }
+        return 0L
     }
 
     /**

@@ -273,6 +273,16 @@ class ContentRepository internal constructor(
         return added
     }
 
+    /** 批量编辑：移除收藏（已不在收藏则忽略）。 */
+    suspend fun removeFavorite(seriesId: String) {
+        val id = seriesId.trim()
+        if (id.isEmpty()) return
+        val current = currentLibrary().favorites.find(id) ?: return
+        // toggleFavorite：已收藏则删除并返回 false
+        val nowFavorited = currentLibrary().toggleFavorite(current)
+        if (!nowFavorited) onFavoriteChanged(current, false)
+    }
+
     suspend fun refreshFavoriteMetadata(
         seriesId: String,
         seriesTitle: String,

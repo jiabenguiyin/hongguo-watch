@@ -141,6 +141,8 @@
     <string name="history_deleted">已删除该条历史</string>
     <string name="history_delete_confirm_title">删除这条历史？</string>
     <string name="history_delete_confirm_body">将从观看历史移除「%1$s」</string>
+    <string name="history_batch_delete_confirm_title">删除选中历史？</string>
+    <string name="history_batch_delete_confirm_body">将移除 %1$d 条观看历史。</string>
     <string name="time_lock_title">时间管理</string>
     <string name="time_lock_label">时间锁</string>
     <string name="time_lock_hint">防沉迷：限制每日观看时长。额度用尽后锁定应用，需输入 4 位密码才能继续</string>

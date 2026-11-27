@@ -60,7 +60,7 @@ class DetailActivity : WatchDisplayActivity() {
     private var ascending = true
     private var episodesExpanded = false
     private var selectedRangeIndex = 0
-    private var episodeRanges: List<IntRange> = emptyList()
+    private var episodePages: List<EpisodeExpandPolicy.Page> = emptyList()
     private var incomingTags: List<String> = emptyList()
 
     /** 详情页手动下载：多选模式。 */
@@ -221,10 +221,10 @@ class DetailActivity : WatchDisplayActivity() {
                     binding.continueButton.text =
                         getString(R.string.continue_watch) + " · ${history.episodeNumber}"
                 }
-                episodeRanges = EpisodeExpandPolicy.ranges(episodes.size)
-                selectedRangeIndex = EpisodeExpandPolicy.rangeIndexForEpisode(
+                episodePages = EpisodeExpandPolicy.pages(episodes)
+                selectedRangeIndex = EpisodeExpandPolicy.pageIndexForEpisode(
                     history?.episodeNumber ?: 1,
-                    episodes.size,
+                    episodePages,
                 )
                 binding.expandToggle.visibility =
                     if (EpisodeExpandPolicy.shouldShowExpand(episodes.size)) View.VISIBLE else View.GONE
@@ -290,14 +290,14 @@ class DetailActivity : WatchDisplayActivity() {
 
     private fun renderEpisodeRanges() {
         binding.episodeRangeRow.removeAllViews()
-        if (episodeRanges.isEmpty()) return
-        selectedRangeIndex = selectedRangeIndex.coerceIn(0, episodeRanges.lastIndex)
+        if (episodePages.isEmpty()) return
+        selectedRangeIndex = selectedRangeIndex.coerceIn(0, episodePages.lastIndex)
         val padH = WatchUi.dp(this, 8f)
         val padV = WatchUi.dp(this, 4f)
         val gap = WatchUi.dp(this, 4f)
-        episodeRanges.forEachIndexed { index, range ->
+        episodePages.forEachIndexed { index, page ->
             val chip = TextView(this).apply {
-                text = getString(R.string.episode_range, range.first, range.last)
+                text = getString(R.string.episode_range, page.startNumber, page.endNumber)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
                 includeFontPadding = false
                 setPadding(padH, padV, padH, padV)
@@ -312,13 +312,13 @@ class DetailActivity : WatchDisplayActivity() {
                     if (index == selectedRangeIndex) R.drawable.bg_top_tab_active else R.drawable.bg_top_tab_idle,
                 )
                 setOnClickListener {
-                    selectedRangeIndex = index
-                    if (downloadSelectMode) {
-                        // 分段即批量：点 1–50 / 51–100 切换并勾选（或取消）该段
-                        toggleRangeSelection(range)
+                    // 分段芯片只负责翻页；勾选/下载用「选本段」「下本段」，避免点芯片误取消勾选
+                    if (selectedRangeIndex != index) {
+                        selectedRangeIndex = index
+                        renderEpisodeRanges()
+                        submitEpisodes()
+                        refreshDownloadChrome()
                     }
-                    renderEpisodeRanges()
-                    submitEpisodes()
                 }
             }
             val lp = android.widget.LinearLayout.LayoutParams(
@@ -331,12 +331,13 @@ class DetailActivity : WatchDisplayActivity() {
     }
 
     private fun submitEpisodes() {
-        val ordered = if (ascending) episodes else episodes.asReversed()
-        val visible = if (episodesExpanded && episodeRanges.isNotEmpty()) {
-            val range = episodeRanges[selectedRangeIndex.coerceIn(0, episodeRanges.lastIndex)]
-            EpisodeExpandPolicy.sliceForRange(ordered, range)
-        } else {
-            ordered
+        val visible = when {
+            episodesExpanded && episodePages.isNotEmpty() -> {
+                val page = episodePages[selectedRangeIndex.coerceIn(0, episodePages.lastIndex)]
+                EpisodeExpandPolicy.visibleEpisodes(page, ascending)
+            }
+            ascending -> episodes
+            else -> episodes.asReversed()
         }
         adapter.submit(
             episodes = visible,
@@ -405,24 +406,19 @@ class DetailActivity : WatchDisplayActivity() {
         submitEpisodes()
     }
 
-    private fun currentEpisodeRange(): IntRange? {
-        if (episodeRanges.isEmpty()) return null
-        return episodeRanges[selectedRangeIndex.coerceIn(0, episodeRanges.lastIndex)]
-    }
-
-    private fun toggleRangeSelection(range: IntRange): Boolean {
-        val ids = EpisodeExpandPolicy.idsInRange(episodes, range)
-        return EpisodeExpandPolicy.toggleRangeSelection(downloadChecked, ids)
+    private fun currentEpisodePage(): EpisodeExpandPolicy.Page? {
+        if (episodePages.isEmpty()) return null
+        return episodePages[selectedRangeIndex.coerceIn(0, episodePages.lastIndex)]
     }
 
     private fun toggleCurrentRangeSelection() {
-        val range = currentEpisodeRange() ?: return
-        val selected = toggleRangeSelection(range)
+        val page = currentEpisodePage() ?: return
+        val selected = EpisodeExpandPolicy.toggleRangeSelection(downloadChecked, page.ids)
         submitEpisodes()
         Toast.makeText(
             this,
             if (selected) {
-                getString(R.string.download_range_selected, range.first, range.last)
+                getString(R.string.download_range_selected, page.startNumber, page.endNumber)
             } else {
                 getString(R.string.download_range_cleared)
             },
@@ -440,9 +436,10 @@ class DetailActivity : WatchDisplayActivity() {
             ),
         )
         binding.cacheAction.text = getString(R.string.download_action)
+        // 至少两段时才显示「本段」（单段与全季等价）
         val showRangeBatch = downloadSelectMode &&
             episodesExpanded &&
-            episodeRanges.size > 1
+            episodePages.size > 1
         binding.downloadRangeButton.visibility = if (showRangeBatch) View.VISIBLE else View.GONE
         binding.downloadSelectRangeButton.visibility = if (showRangeBatch) View.VISIBLE else View.GONE
         val seasonLp = binding.downloadSeasonButton.layoutParams
@@ -466,12 +463,12 @@ class DetailActivity : WatchDisplayActivity() {
         } else {
             getString(R.string.download_selected)
         }
-        val range = currentEpisodeRange()
-        if (range != null && episodeRanges.size > 1) {
+        val page = currentEpisodePage()
+        if (page != null && binding.downloadRangeButton.visibility == View.VISIBLE) {
             binding.downloadRangeButton.text =
-                getString(R.string.download_range_labeled, range.first, range.last)
+                getString(R.string.download_range_labeled, page.startNumber, page.endNumber)
             binding.downloadSelectRangeButton.text =
-                getString(R.string.download_select_range_labeled, range.first, range.last)
+                getString(R.string.download_select_range_labeled, page.startNumber, page.endNumber)
         } else {
             binding.downloadRangeButton.setText(R.string.download_range)
             binding.downloadSelectRangeButton.setText(R.string.download_select_range)
@@ -507,11 +504,7 @@ class DetailActivity : WatchDisplayActivity() {
         }
         val targets = when (mode) {
             DownloadEnqueueMode.FULL_SEASON -> episodes
-            DownloadEnqueueMode.CURRENT_RANGE -> {
-                val range = currentEpisodeRange()
-                if (range == null) emptyList()
-                else EpisodeExpandPolicy.sliceForRange(episodes, range)
-            }
+            DownloadEnqueueMode.CURRENT_RANGE -> currentEpisodePage()?.episodes.orEmpty()
             DownloadEnqueueMode.CHECKED -> episodes.filter { it.id in downloadChecked }
         }
         if (targets.isEmpty()) {

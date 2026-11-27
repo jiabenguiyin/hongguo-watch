@@ -61,7 +61,7 @@
     <string name="download_selected">下载所选</string>
     <string name="download_selected_count">下载所选（%1$d）</string>
     <string name="download_cancel">取消</string>
-    <string name="download_hint">点分段可选整段（如 1–50），或点集多选 / 全季</string>
+    <string name="download_hint">点分段切换页；「选本段 / 下本段」按当前页批量，或点集多选 / 全季</string>
     <string name="download_pick_mode">选择要下载的集</string>
     <string name="download_none_selected">请先选择分集</string>
     <string name="download_queued">已加入下载：%1$d 集</string>

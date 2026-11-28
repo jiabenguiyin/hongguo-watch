@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Locale
 
 class UpdateMirrorPolicyTest {
     @Test
@@ -14,7 +15,7 @@ class UpdateMirrorPolicyTest {
     }
 
     @Test
-    fun normalizeDefaultsToImciel() {
+    fun normalizeDefaultsToMeali() {
         assertEquals(
             UpdateMirrorPolicy.DEFAULT_MIRROR_BASE,
             UpdateMirrorPolicy.normalizeMirrorBase(null),
@@ -34,7 +35,7 @@ class UpdateMirrorPolicyTest {
         val apk =
             "https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.5.8/hongguo-watch-0.5.8-arm64-v8a.apk"
         assertEquals(
-            "https://ghproxy.imciel.com/$apk",
+            "https://gh.meali.top/$apk",
             UpdateMirrorPolicy.rewrite(apk, UpdateMirrorPolicy.DEFAULT_MIRROR_BASE),
         )
         assertEquals(
@@ -47,42 +48,58 @@ class UpdateMirrorPolicyTest {
     fun rewriteDoesNotDoubleWrap() {
         val apk =
             "https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.5.8/a.apk"
-        val once = UpdateMirrorPolicy.rewrite(apk, "https://ghproxy.imciel.com/")
-        assertEquals(once, UpdateMirrorPolicy.rewrite(once, "https://ghproxy.imciel.com/"))
+        val once = UpdateMirrorPolicy.rewrite(apk, "https://gh.meali.top/")
+        assertEquals(once, UpdateMirrorPolicy.rewrite(once, "https://gh.meali.top/"))
     }
 
     @Test
-    fun autoDownloadCandidatesPreferDualSiteFailoverThenOfficial() {
+    fun autoDownloadCandidatesFollowShanghaiLadderThenOfficial() {
         val apk =
             "https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.5.8/a.apk"
         val urls = UpdateMirrorPolicy.downloadCandidateUrls(
-            UpdateMirrorPolicy.Preference(
+            preference = UpdateMirrorPolicy.Preference(
                 mode = UpdateMirrorPolicy.Mode.AUTO,
-                mirrorBase = "https://ghproxy.imciel.com/",
+                mirrorBase = UpdateMirrorPolicy.DEFAULT_MIRROR_BASE,
             ),
-            apk,
+            officialApkUrl = apk,
+            mainlandChina = true,
         )
-        assertEquals("https://ghproxy.imciel.com/$apk", urls.first())
         assertEquals(
             listOf(
-                "https://ghproxy.imciel.com/$apk",
+                "https://gh.meali.top/$apk",
                 "https://jiashu.1win.eu.org/$apk",
-                "https://xsadwsd.kdns.fr/$apk",
+                "https://gh.monlor.com/$apk",
                 "https://gitproxy.127731.xyz/$apk",
-                "https://ghfast.top/$apk",
+                "https://free.cn.eu.org/$apk",
                 "https://cdn.akaere.online/$apk",
+                "https://gh.inkchills.cn/$apk",
                 "https://gh.chjina.com/$apk",
                 apk,
             ),
             urls,
         )
-        // Dot 云电脑常 0 通过 / 上海弱节点不再进入 APK 下载回退
+        // 旧首选 / 仅 Dot 强节点不再进入 APK 主梯队
+        assertFalse(urls.contains("https://ghproxy.imciel.com/$apk"))
+        assertFalse(urls.contains("https://xsadwsd.kdns.fr/$apk"))
+        assertFalse(urls.contains("https://ghfast.top/$apk"))
         assertFalse(urls.contains("https://gh-proxy.com/$apk"))
-        assertFalse(urls.contains("https://cdn.gh-proxy.com/$apk"))
-        assertFalse(urls.contains("https://gh.monlor.com/$apk"))
-        assertFalse(urls.contains("https://gh.ddlc.top/$apk"))
         assertEquals(apk, urls.last())
         assertEquals(urls.size, urls.toSet().size)
+    }
+
+    @Test
+    fun nonMainlandAutoDownloadUsesOfficialOnly() {
+        val apk =
+            "https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.5.8/a.apk"
+        val urls = UpdateMirrorPolicy.downloadCandidateUrls(
+            preference = UpdateMirrorPolicy.Preference(
+                mode = UpdateMirrorPolicy.Mode.AUTO,
+                mirrorBase = UpdateMirrorPolicy.DEFAULT_MIRROR_BASE,
+            ),
+            officialApkUrl = apk,
+            mainlandChina = false,
+        )
+        assertEquals(listOf(apk), urls)
     }
 
     @Test
@@ -115,7 +132,7 @@ class UpdateMirrorPolicyTest {
         val urls = UpdateMirrorPolicy.apiCandidateUrls(
             UpdateMirrorPolicy.Preference(
                 mode = UpdateMirrorPolicy.Mode.OFFICIAL,
-                mirrorBase = "https://ghproxy.imciel.com/",
+                mirrorBase = UpdateMirrorPolicy.DEFAULT_MIRROR_BASE,
             ),
             api,
         )
@@ -123,14 +140,44 @@ class UpdateMirrorPolicyTest {
     }
 
     @Test
-    fun catalogIncludesDefaultAndGhProxy() {
+    fun catalogIncludesDefaultAndLegacyNodes() {
+        assertTrue(UpdateMirrorPolicy.PROXY_NODE_KEYS.contains("gh.meali.top"))
         assertTrue(UpdateMirrorPolicy.PROXY_NODE_KEYS.contains("ghproxy.imciel.com"))
         assertTrue(UpdateMirrorPolicy.PROXY_NODE_KEYS.contains("gh-proxy.com"))
         assertTrue(UpdateMirrorPolicy.PROXY_NODE_KEYS.contains("ghfast.top"))
+        assertEquals("gh.meali.top", UpdateMirrorPolicy.PROXY_NODE_KEYS.first())
         assertFalse(UpdateMirrorPolicy.isGithubFamilyUrl("https://example.com/a.apk"))
         assertTrue(
             UpdateMirrorPolicy.isGithubFamilyUrl(
                 "https://api.github.com/repos/jiabenguiyin/hongguo-watch/releases/latest",
+            ),
+        )
+    }
+
+    @Test
+    fun mainlandDetectionUsesLocaleCountryOrTimezone() {
+        assertTrue(
+            UpdateMirrorPolicy.isLikelyMainlandChina(
+                locale = Locale.SIMPLIFIED_CHINESE,
+                timeZoneId = "Asia/Tokyo",
+            ),
+        )
+        assertTrue(
+            UpdateMirrorPolicy.isLikelyMainlandChina(
+                locale = Locale.US,
+                timeZoneId = "Asia/Shanghai",
+            ),
+        )
+        assertFalse(
+            UpdateMirrorPolicy.isLikelyMainlandChina(
+                locale = Locale.JAPAN,
+                timeZoneId = "Asia/Tokyo",
+            ),
+        )
+        assertFalse(
+            UpdateMirrorPolicy.isLikelyMainlandChina(
+                locale = Locale.TRADITIONAL_CHINESE,
+                timeZoneId = "Asia/Taipei",
             ),
         )
     }
@@ -144,7 +191,7 @@ class UpdateMirrorPolicyTest {
             ),
         )
         assertEquals(
-            "ghproxy.imciel.com",
+            "gh.meali.top",
             UpdateMirrorPolicy.displayLabel(
                 UpdateMirrorPolicy.Preference(
                     UpdateMirrorPolicy.Mode.AUTO,

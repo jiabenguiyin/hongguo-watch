@@ -6,6 +6,9 @@ package com.hongguo.watch.data
  * 节点来自 [hiwiki 镜像目录](https://git.hiwiki.org/zh-CN/mirrors) 的 `proxyNodeKeys`，
  * 默认与目录一致：`https://ghproxy.imciel.com/` 前缀代理（`{base}{完整 GitHub URL}`）。
  * 「自动镜像」失败时依次尝试备用节点，最后回落官方 GitHub。
+ *
+ * APK 下载回退顺序按 2026-11-28 测速（上海 + Dot 云电脑）单独维护；
+ * 发布 API 未随该表测试，仍用 [API_FAILOVER_KEYS]，勿与下载列表混改。
  */
 object UpdateMirrorPolicy {
     enum class Mode {
@@ -35,50 +38,53 @@ object UpdateMirrorPolicy {
     /**
      * hiwiki `proxyNodeKeys`（2026-11）：前缀代理主机名列表。
      * 全部内置供「调整镜像」选择；下载时仅对选中项 + 少量备用做故障转移。
+     * 靠前节点优先展示双站高通过率主机（2026-11-28 测速）。
      */
     val PROXY_NODE_KEYS: List<String> = listOf(
         "ghproxy.imciel.com",
+        "jiashu.1win.eu.org",
         "xsadwsd.kdns.fr",
-        "gg.z321.cc.cd",
+        "gitproxy.127731.xyz",
         "ghfast.top",
-        "git.yylx.win",
-        "tvv.tw",
-        "gh.idayer.com",
-        "down.mxw.xx.kg",
-        "777.z321.cc.cd",
-        "gh.monlor.com",
-        "gh-proxy.com",
-        "fastgit.cc",
-        "gh.ddlc.top",
+        "free.cn.eu.org",
         "cdn.akaere.online",
+        "gh.inkchills.cn",
+        "gh.chjina.com",
+        "github.ednovas.xyz",
+        "down.mxw.xx.kg",
+        "tvv.tw",
+        "git.669966.xyz",
+        "gh.my-website.ccwu.cc",
+        "fastgit.cc",
+        "gh.acmsz.top",
+        "ghm.078465.xyz",
+        "gh.meali.top",
+        "gh.monlor.com",
+        "gg.z321.cc.cd",
+        "git.yylx.win",
+        "gh.idayer.com",
+        "777.z321.cc.cd",
+        "gh-proxy.com",
+        "gh.ddlc.top",
         "cdn.gh-proxy.com",
         "g.z321.cc.cd",
-        "gh.my-website.ccwu.cc",
-        "free.cn.eu.org",
         "gh.07150721.xyz",
-        "gh.acmsz.top",
         "github.tbap.top",
         "gh.noki.icu",
         "ghproxy.felicity.land",
         "github.xxlab.tech",
         "gh.sixyin.com",
-        "github.ednovas.xyz",
-        "git.669966.xyz",
         "ghfile.geekertao.top",
         "gh.dpik.top",
         "ghproxy.monkeyray.net",
         "ghproxy.net",
-        "gitproxy.127731.xyz",
         "g.blfrp.cn",
         "github-proxy.memory-echoes.cn",
-        "jiashu.1win.eu.org",
         "github.dpik.top",
         "down.mxw.qzz.io",
-        "gh.inkchills.cn",
         "gitproxy.mrhjx.cn",
         "gh.927223.xyz",
         "gh.felicity.ac.cn",
-        "ghm.078465.xyz",
         "gh.catmak.name",
         "github.chenc.dev",
         "ghpxy.hwinzniej.top",
@@ -86,9 +92,7 @@ object UpdateMirrorPolicy {
         "ghproxy.1888866.xyz",
         "ghp.arslantu.xyz",
         "ghproxy.cxkpro.top",
-        "gh.chjina.com",
         "ghp.keleyaa.com",
-        "gh.meali.top",
         "github.ikgy.top",
         "cfgh.ikgy.top",
         "github.nswrz.cn",
@@ -105,8 +109,24 @@ object UpdateMirrorPolicy {
         "ghf.xn--eqrr82bzpe.top",
     )
 
-    /** 下载 / 检查更新时，在选中镜像之后尝试的备用前缀（仍来自同一目录）。 */
-    private val FAILOVER_KEYS: List<String> = listOf(
+    /**
+     * APK 下载备用前缀（2026-11-28）：优先双站共同轮次均通过的主机，
+     * 再按通过率 / 中位速度；剔除 Dot 云电脑常 0 通过或上海弱的节点
+     *（如 gh-proxy.com / cdn.gh-proxy.com / gh.monlor.com / gh.ddlc.top）。
+     */
+    private val DOWNLOAD_FAILOVER_KEYS: List<String> = listOf(
+        "jiashu.1win.eu.org",
+        "xsadwsd.kdns.fr",
+        "gitproxy.127731.xyz",
+        "ghfast.top",
+        "cdn.akaere.online",
+        "gh.chjina.com",
+    )
+
+    /**
+     * 发布 API（api.github.com）备用前缀：未随 2026-11-28 APK 表测试，保持原序。
+     */
+    private val API_FAILOVER_KEYS: List<String> = listOf(
         "gh-proxy.com",
         "cdn.gh-proxy.com",
         "ghfast.top",
@@ -172,14 +192,18 @@ object UpdateMirrorPolicy {
     fun apiCandidateUrls(
         preference: Preference,
         officialApi: String,
-    ): List<String> = candidateUrls(officialApi, preference)
+    ): List<String> = candidateUrls(officialApi, preference, API_FAILOVER_KEYS)
 
     fun downloadCandidateUrls(
         preference: Preference,
         officialApkUrl: String,
-    ): List<String> = candidateUrls(officialApkUrl, preference)
+    ): List<String> = candidateUrls(officialApkUrl, preference, DOWNLOAD_FAILOVER_KEYS)
 
-    private fun candidateUrls(officialUrl: String, preference: Preference): List<String> {
+    private fun candidateUrls(
+        officialUrl: String,
+        preference: Preference,
+        failoverKeys: List<String>,
+    ): List<String> {
         val original = officialUrl.trim()
         if (original.isEmpty()) return emptyList()
         if (preference.mode == Mode.OFFICIAL) return listOf(original)
@@ -187,7 +211,7 @@ object UpdateMirrorPolicy {
         val selected = normalizeMirrorBase(preference.mirrorBase)
         val out = LinkedHashSet<String>()
         out += rewrite(original, selected)
-        for (key in FAILOVER_KEYS) {
+        for (key in failoverKeys) {
             val base = "https://$key/"
             if (base.equals(selected, ignoreCase = true)) continue
             out += rewrite(original, base)

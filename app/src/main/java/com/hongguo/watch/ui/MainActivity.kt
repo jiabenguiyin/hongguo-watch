@@ -1660,13 +1660,19 @@ class MainActivity : WatchDisplayActivity() {
         binding.seriesList.scrollToPosition(0)
         listJob = lifecycleScope.launch {
             try {
-                val totalById = repo.favorites()
-                    .associate { it.seriesId to it.episodeCount }
-                val history = repo.allHistory()
+                val rawHistory = repo.allHistory()
                     .filter { matchesLibrarySearch(it.seriesTitle) }
-                    .let { rows ->
-                        HistoryFilterPolicy.filter(rows, totalById, historyFilterCriteria)
-                    }
+                // 「是否看完」依赖总集数：历史行自带 episodeCount，缺则收藏回退，再缺则拉详情。
+                val totalById = repo.historyEpisodeTotals(
+                    history = rawHistory,
+                    resolveMissing = historyFilterCriteria.complete !=
+                        HistoryFilterPolicy.CompleteState.ALL,
+                )
+                val history = HistoryFilterPolicy.filter(
+                    rawHistory,
+                    totalById,
+                    historyFilterCriteria,
+                )
                 if (token != listGeneration || mode != Mode.LIBRARY ||
                     librarySegment != LibrarySegmentPolicy.Segment.HISTORY
                 ) {

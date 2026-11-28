@@ -144,6 +144,7 @@ internal object LibrarySyncWire {
         .put("episodeNumber", episodeNumber.coerceIn(0, MAX_EPISODES))
         .put("positionMs", positionMs.coerceIn(0, MAX_NUMBER))
         .put("durationMs", durationMs.coerceIn(0, MAX_NUMBER))
+        .put("episodeCount", episodeCount.coerceIn(0, MAX_EPISODES))
 
     private fun FavoriteEntity.toJson(): JSONObject = record(seriesId, seriesTitle, cover, source, updatedAt)
         .put("episodeCount", episodeCount.coerceIn(0, MAX_EPISODES))
@@ -166,6 +167,8 @@ internal object LibrarySyncWire {
         durationMs = number("durationMs"),
         updatedAt = number("updatedAt"),
         source = text("source", MAX_SOURCE_LENGTH),
+        // 旧同步载荷可能无此字段，缺省 0。
+        episodeCount = optionalNumber("episodeCount", MAX_EPISODES.toLong())?.toInt() ?: 0,
     )
 
     private fun JSONObject.toFavorite(): FavoriteEntity = FavoriteEntity(
@@ -196,6 +199,11 @@ internal object LibrarySyncWire {
         }
         if (number !in 0..max) throw SyncServiceException()
         return number
+    }
+
+    private fun JSONObject.optionalNumber(name: String, max: Long = MAX_NUMBER): Long? {
+        if (!has(name) || isNull(name)) return null
+        return number(name, max)
     }
 
     private fun JSONObject.text(name: String, limit: Int, blankAllowed: Boolean = false): String =

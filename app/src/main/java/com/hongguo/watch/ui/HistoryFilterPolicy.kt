@@ -9,7 +9,8 @@ import java.util.concurrent.TimeUnit
  *
  * 数据约束：
  * - 时长用 [estimatedWatchedMs]：`(集号-1)*本集时长 + 本集进度`；无 duration 时仅用本集 positionMs。
- * - 看完：总集数已知且当前集 ≥ 总集，且本集进度 ≥95%（或无时长时视为已到末集）。
+ * - 看完：总集数取自历史行 [WatchHistoryEntity.episodeCount]（收藏仅回退），
+ *   当前集 ≥ 总集，且本集进度 ≥95%（或无可靠时长时视为已到末集）。
  * - 时间用 [WatchHistoryEntity.updatedAt]。
  */
 object HistoryFilterPolicy {

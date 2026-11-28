@@ -61,7 +61,7 @@ class RedfruitCloudLibraryTest {
         val requests = mutableListOf<okhttp3.Request>()
         val cloud = cloud(
             requests,
-            responseBody = """{"code":0,"data":{"video_data":[{"book_id":"12345","vid":"67890","vid_index":4,"current_play_time":21000,"current_total_time":90000,"last_watch_time":1792500000000}]}}""",
+            responseBody = """{"code":0,"data":{"video_data":[{"book_id":"12345","vid":"67890","vid_index":4,"current_play_time":21000,"current_total_time":90000,"last_watch_time":1792500000000,"episode_cnt":80}]}}""",
         )
 
         val rows = cloud.recentProgress(credentials)
@@ -74,6 +74,26 @@ class RedfruitCloudLibraryTest {
         assertEquals("67890", rows.single().episodeId)
         assertEquals(4, rows.single().episodeNumber)
         assertEquals(21_000L, rows.single().positionMs)
+        assertEquals(80, rows.single().episodeCount)
+    }
+
+    @Test
+    fun parseHistoryKeepsEpisodeCountFromCloudRow() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val cloud = cloud(
+            requests,
+            responseBody = """{"code":0,"data":{"data_list":[
+                {"book_id_str":"12345","book_name":"示例剧","vid_str":"130","vid_index":130,
+                 "current_play_time":59000,"current_total_time":60000,"read_timestamp_ms":2000,
+                 "episode_count":130}
+            ],"has_more":false}}""",
+        )
+
+        val rows = cloud.history(credentials)
+
+        assertEquals(1, rows.size)
+        assertEquals(130, rows.single().episodeNumber)
+        assertEquals(130, rows.single().episodeCount)
     }
 
     @Test

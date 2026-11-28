@@ -18,7 +18,7 @@ PASSWORD = "first local test password!"
 def history(series, position=42):
     return {"seriesId": series, "seriesTitle": "测试剧集", "cover": "https://images.example/poster.jpg",
             "source": "APPSOURCE", "updatedAt": 12345678, "episodeId": "one", "episodeNumber": 1,
-            "positionMs": position, "durationMs": 5000}
+            "positionMs": position, "durationMs": 5000, "episodeCount": 0}
 
 
 def favorite(series):

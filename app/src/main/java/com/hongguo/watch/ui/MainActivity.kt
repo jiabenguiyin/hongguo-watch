@@ -1884,22 +1884,18 @@ class MainActivity : WatchDisplayActivity() {
         if (show) styleFavoritesFilterChips(foldersSelected = false)
     }
 
+    /** 与历史筛选芯片同一套：选中红描边+红字，未选深灰底灰字。 */
     private fun styleFavoritesFilterChips(foldersSelected: Boolean) {
-        fun style(view: TextView, active: Boolean) {
-            view.setBackgroundResource(
-                if (active) R.drawable.bg_top_tab_active else R.drawable.bg_top_tab_idle,
-            )
+        fun style(view: TextView, selected: Boolean) {
+            view.isSelected = selected
             view.setTextColor(
                 ContextCompat.getColor(
                     this,
-                    if (active) R.color.text_primary else R.color.text_secondary,
+                    if (selected) R.color.accent else R.color.text_secondary,
                 ),
             )
-            view.typeface = if (active) {
-                android.graphics.Typeface.DEFAULT_BOLD
-            } else {
-                android.graphics.Typeface.DEFAULT
-            }
+            view.paint.isFakeBoldText = selected
+            view.invalidate()
         }
         style(binding.favoritesFilterAll, !foldersSelected)
         style(binding.favoritesFilterFolders, foldersSelected)

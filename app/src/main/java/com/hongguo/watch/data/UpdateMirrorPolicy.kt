@@ -1,13 +1,17 @@
 package com.hongguo.watch.data
 
+import java.util.Locale
+import java.util.TimeZone
+
 /**
  * GitHub Releases 检查 / APK 下载镜像策略。
  *
  * 节点来自 [hiwiki 镜像目录](https://git.hiwiki.org/zh-CN/mirrors) 的 `proxyNodeKeys`，
- * 默认与目录一致：`https://ghproxy.imciel.com/` 前缀代理（`{base}{完整 GitHub URL}`）。
- * 「自动镜像」失败时依次尝试备用节点，最后回落官方 GitHub。
+ * 默认与上海测速首选一致：`https://gh.meali.top/` 前缀代理（`{base}{完整 GitHub URL}`）。
+ * 「自动镜像」在大陆网络下失败时依次尝试备用节点，最后回落官方 GitHub。
  *
- * APK 下载回退顺序按 2026-11-28 测速（上海 + Dot 云电脑）单独维护；
+ * APK 下载回退顺序按 2026-11-28 **上海**测速单独维护（日本 Dot 仅作海外参考）；
+ * 非大陆网络 APK 下载跳过镜像、直连 GitHub。
  * 发布 API 未随该表测试，仍用 [API_FAILOVER_KEYS]，勿与下载列表混改。
  */
 object UpdateMirrorPolicy {
@@ -15,7 +19,7 @@ object UpdateMirrorPolicy {
         /** 直连 GitHub / api.github.com */
         OFFICIAL,
 
-        /** 前缀代理；默认 ghproxy.imciel.com，可在设置中调整 */
+        /** 前缀代理；默认 gh.meali.top，可在设置中调整 */
         AUTO,
     }
 
@@ -30,26 +34,38 @@ object UpdateMirrorPolicy {
     )
 
     const val GITHUB_HOME = "https://github.com/"
-    const val DEFAULT_MIRROR_KEY = "ghproxy.imciel.com"
-    const val DEFAULT_MIRROR_BASE = "https://ghproxy.imciel.com/"
+    const val DEFAULT_MIRROR_KEY = "gh.meali.top"
+    const val DEFAULT_MIRROR_BASE = "https://gh.meali.top/"
 
     val DEFAULT_NODE = Node(DEFAULT_MIRROR_KEY, DEFAULT_MIRROR_BASE)
 
+    /** 中国大陆常用时区（不含港台澳）。 */
+    private val MAINLAND_TIME_ZONE_IDS: Set<String> = setOf(
+        "Asia/Shanghai",
+        "Asia/Chongqing",
+        "Asia/Harbin",
+        "Asia/Urumqi",
+        "Asia/Kashgar",
+        "PRC",
+    )
+
     /**
      * hiwiki `proxyNodeKeys`（2026-11）：前缀代理主机名列表。
-     * 全部内置供「调整镜像」选择；下载时仅对选中项 + 少量备用做故障转移。
-     * 靠前节点优先展示双站高通过率主机（2026-11-28 测速）。
+     * 全部内置供「调整镜像」选择；下载时仅对选中项 + 上海梯队做故障转移。
+     * 列表靠前优先上海测速 TOP 主机（2026-11-28）。
      */
     val PROXY_NODE_KEYS: List<String> = listOf(
-        "ghproxy.imciel.com",
+        "gh.meali.top",
         "jiashu.1win.eu.org",
-        "xsadwsd.kdns.fr",
+        "gh.monlor.com",
         "gitproxy.127731.xyz",
-        "ghfast.top",
         "free.cn.eu.org",
         "cdn.akaere.online",
         "gh.inkchills.cn",
         "gh.chjina.com",
+        "ghproxy.imciel.com",
+        "xsadwsd.kdns.fr",
+        "ghfast.top",
         "github.ednovas.xyz",
         "down.mxw.xx.kg",
         "tvv.tw",
@@ -58,8 +74,6 @@ object UpdateMirrorPolicy {
         "fastgit.cc",
         "gh.acmsz.top",
         "ghm.078465.xyz",
-        "gh.meali.top",
-        "gh.monlor.com",
         "gg.z321.cc.cd",
         "git.yylx.win",
         "gh.idayer.com",
@@ -110,16 +124,18 @@ object UpdateMirrorPolicy {
     )
 
     /**
-     * APK 下载备用前缀（2026-11-28）：优先双站共同轮次均通过的主机，
-     * 再按通过率 / 中位速度；剔除 Dot 云电脑常 0 通过或上海弱的节点
-     *（如 gh-proxy.com / cdn.gh-proxy.com / gh.monlor.com / gh.ddlc.top）。
+     * APK 下载备用前缀（2026-11-28 上海测速权威排序）。
+     * 默认首选 [DEFAULT_MIRROR_KEY]；本表为其后的大陆梯队，最后回落 GitHub 官方。
+     * 不含仅在日本 Dot 表现好的 xsadwsd.kdns.fr / ghfast.top，也不把旧首选
+     * ghproxy.imciel.com 放进主梯队（目录中仍可选）。
      */
     private val DOWNLOAD_FAILOVER_KEYS: List<String> = listOf(
         "jiashu.1win.eu.org",
-        "xsadwsd.kdns.fr",
+        "gh.monlor.com",
         "gitproxy.127731.xyz",
-        "ghfast.top",
+        "free.cn.eu.org",
         "cdn.akaere.online",
+        "gh.inkchills.cn",
         "gh.chjina.com",
     )
 
@@ -136,6 +152,20 @@ object UpdateMirrorPolicy {
 
     val BUILT_IN_NODES: List<Node> = PROXY_NODE_KEYS.map { key ->
         Node(key = key, base = "https://$key/")
+    }
+
+    /**
+     * 是否像中国大陆设备环境（不含港台澳）。
+     * 依据系统国家码 `CN`，或大陆时区；不依赖电话权限。
+     * 非大陆时 APK 自动镜像会跳过 CN 节点、直连 GitHub。
+     */
+    fun isLikelyMainlandChina(
+        locale: Locale = Locale.getDefault(),
+        timeZoneId: String = TimeZone.getDefault().id,
+    ): Boolean {
+        val country = locale.country.trim().uppercase(Locale.ROOT)
+        if (country == "CN") return true
+        return timeZoneId.trim() in MAINLAND_TIME_ZONE_IDS
     }
 
     fun parseMode(raw: String?): Mode = when (raw?.trim()?.uppercase()) {
@@ -194,10 +224,24 @@ object UpdateMirrorPolicy {
         officialApi: String,
     ): List<String> = candidateUrls(officialApi, preference, API_FAILOVER_KEYS)
 
+    /**
+     * APK 下载候选地址。
+     * - 官方模式：仅官方 URL
+     * - 非大陆：即使自动镜像也只走官方 GitHub（跳过 CN 镜像）
+     * - 大陆自动镜像：选中节点 → 上海梯队 → 官方
+     */
     fun downloadCandidateUrls(
         preference: Preference,
         officialApkUrl: String,
-    ): List<String> = candidateUrls(officialApkUrl, preference, DOWNLOAD_FAILOVER_KEYS)
+        mainlandChina: Boolean = isLikelyMainlandChina(),
+    ): List<String> {
+        val original = officialApkUrl.trim()
+        if (original.isEmpty()) return emptyList()
+        if (preference.mode == Mode.OFFICIAL || !mainlandChina) {
+            return listOf(original)
+        }
+        return candidateUrls(original, preference, DOWNLOAD_FAILOVER_KEYS)
+    }
 
     private fun candidateUrls(
         officialUrl: String,

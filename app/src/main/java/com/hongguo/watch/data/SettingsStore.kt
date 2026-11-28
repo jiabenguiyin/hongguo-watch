@@ -39,7 +39,7 @@ class SettingsStore(private val context: Context) {
     private val libraryLayoutListKey = booleanPreferencesKey("library_layout_classic")
     /** 更新检查 / APK 下载：OFFICIAL 或 AUTO（默认 AUTO）。 */
     private val updateMirrorModeKey = stringPreferencesKey("update_mirror_mode")
-    /** 自动镜像前缀，默认 https://ghproxy.imciel.com/ */
+    /** 自动镜像前缀，默认 https://gh.meali.top/ */
     private val updateMirrorBaseKey = stringPreferencesKey("update_mirror_base")
 
     val wifiOnly: Flow<Boolean> = context.dataStore.data.map { it[wifiOnlyKey] ?: false }

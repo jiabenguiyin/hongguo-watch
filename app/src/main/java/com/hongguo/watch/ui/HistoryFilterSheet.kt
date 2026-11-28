@@ -24,15 +24,6 @@ object HistoryFilterSheet {
         val binding = DialogHistoryFilterBinding.inflate(LayoutInflater.from(context))
         dialog.setContentView(binding.root)
 
-        // 首帧即按手表圆角/大圆角内收，避免 X / 清空·确定贴角被裁。
-        val preferred = WatchUi.preferredInsets(context)
-        binding.root.setPadding(
-            preferred.horizontal,
-            preferred.top,
-            preferred.horizontal,
-            preferred.vertical,
-        )
-
         var draft = initial
 
         fun bindDuration() {

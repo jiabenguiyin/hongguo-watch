@@ -8,7 +8,6 @@ import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowManager
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.TextView
@@ -76,7 +75,8 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         binding = ActivityFavoritesFoldersBinding.inflate(layoutInflater)
         setContentView(binding.root)
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
-        WatchUi.applySafePadding(binding.foldersRoot)
+        // 与设置/显示设置同一套：顶栏 + 底栏交给 WatchUi 大圆角安全边
+        applyFoldersChrome()
         WatchToolbarClock(this, binding.toolbarClock)
 
         binding.folderList.layoutManager = LinearLayoutManager(this)
@@ -123,6 +123,23 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
+    }
+
+    /**
+     * 列表底栏「+ 新建/添加」、编辑底栏「移动到|删除」随模式切换；
+     * 顶栏含返回/标题/全选·完成，与 [DisplaySettingsActivity] 同用 [WatchUi.applySafePadding]。
+     */
+    private fun applyFoldersChrome() {
+        val bottomChrome = if (binding.itemActionBar.visibility == View.VISIBLE) {
+            binding.itemActionBar
+        } else {
+            binding.createButton
+        }
+        WatchUi.applySafePadding(
+            binding.foldersRoot,
+            topChrome = binding.foldersTopChrome,
+            bottomChrome = bottomChrome,
+        )
     }
 
     private fun onEmptyAction() {
@@ -234,6 +251,7 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         binding.emptyAction.setOnClickListener {
             startActivity(Intent(this, AccountSyncActivity::class.java))
         }
+        applyFoldersChrome()
     }
 
     private fun renderFolderList(folders: List<RedfruitBookshelfFolder>) {
@@ -256,6 +274,7 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         } else {
             binding.emptyPanel.visibility = View.GONE
         }
+        applyFoldersChrome()
     }
 
     private fun renderFolderDetail(folder: RedfruitBookshelfFolder, items: List<RedfruitBookshelfFolderItem>) {
@@ -303,14 +322,15 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
             hideItemEditChrome()
         } else {
             binding.emptyPanel.visibility = View.GONE
-            refreshItemEditChrome()
             if (itemEditMode) {
                 binding.createButton.visibility = View.GONE
             } else {
                 binding.createButton.visibility = View.VISIBLE
                 binding.createButton.text = getString(R.string.favorites_folder_add)
             }
+            refreshItemEditChrome()
         }
+        applyFoldersChrome()
     }
 
     private fun submitItemRows() {
@@ -361,6 +381,7 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         binding.editButton.visibility = View.GONE
         binding.editBar.visibility = View.GONE
         binding.itemActionBar.visibility = View.GONE
+        applyFoldersChrome()
     }
 
     private fun refreshItemEditChrome() {
@@ -375,6 +396,7 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
             binding.manageButton.visibility = View.VISIBLE
             binding.backButton.visibility = View.VISIBLE
             binding.subtitleView.visibility = View.VISIBLE
+            applyFoldersChrome()
             return
         }
         binding.editButton.visibility = View.GONE
@@ -396,6 +418,7 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         binding.deleteBar.isEnabled = enabled
         binding.moveBar.alpha = if (enabled) 1f else 0.4f
         binding.deleteBar.alpha = if (enabled) 1f else 0.4f
+        applyFoldersChrome()
     }
 
     private fun toggleItemSelection(seriesId: String) {
@@ -792,17 +815,9 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         ).show()
     }
 
+    /** 与设置/更新弹窗一致：近全宽减圆角安全边 + 深色底。 */
     private fun showWatchDialog(dialog: AlertDialog) {
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.isAllCaps = false
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.isAllCaps = false
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.isAllCaps = false
-        }
-        dialog.show()
-        dialog.window?.let { window ->
-            window.setLayout(WatchUi.dialogContentWidthPx(this), WindowManager.LayoutParams.WRAP_CONTENT)
-            window.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)
-        }
+        WatchAlertDialogs.show(this, dialog)
     }
 
     private class FolderPickAdapter(

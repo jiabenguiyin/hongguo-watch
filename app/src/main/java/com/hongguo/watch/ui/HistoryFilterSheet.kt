@@ -5,6 +5,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.TextView
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -12,7 +13,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.hongguo.watch.R
 import com.hongguo.watch.databinding.DialogHistoryFilterBinding
 
-/** 历史筛选底栏：深色可滚动，手表近全宽。 */
+/** 历史筛选底栏：深色可滚动，手表近全宽；首开即展开，圆角安全内收。 */
 object HistoryFilterSheet {
     fun show(
         context: Context,
@@ -105,16 +106,42 @@ object HistoryFilterSheet {
         }
 
         dialog.setOnShowListener {
-            val sheet = dialog.findViewById<ViewGroup>(
+            val sheet = dialog.findViewById<FrameLayout>(
                 com.google.android.material.R.id.design_bottom_sheet,
             ) ?: return@setOnShowListener
             sheet.setBackgroundResource(android.R.color.transparent)
+
+            // 内容必须填满 sheet：ScrollView weight 在 wrap_content 父级下首测无效，
+            // 拖动手势才会二次 measure —— 表现为「是否看完」被裁切，拖一下才正常。
+            sheet.layoutParams = sheet.layoutParams.apply {
+                height = ViewGroup.LayoutParams.MATCH_PARENT
+            }
+            binding.root.layoutParams = binding.root.layoutParams.apply {
+                width = ViewGroup.LayoutParams.MATCH_PARENT
+                height = ViewGroup.LayoutParams.MATCH_PARENT
+            }
+
             val behavior = BottomSheetBehavior.from(sheet)
             behavior.skipCollapsed = true
+            behavior.isFitToContents = false
+            behavior.expandedOffset = HistoryFilterSheetLayout.expandedTopOffsetPx(
+                context.resources.displayMetrics.heightPixels,
+            )
             behavior.state = BottomSheetBehavior.STATE_EXPANDED
-            val maxH = (context.resources.displayMetrics.heightPixels * 0.88f).toInt()
-            sheet.layoutParams = sheet.layoutParams.apply { height = maxH }
-            sheet.requestLayout()
+
+            WatchUi.applySafePadding(
+                binding.root,
+                topChrome = binding.historyFilterHeader,
+                bottomChrome = binding.historyFilterActions,
+            )
+
+            // 再贴一帧确保 EXPANDED + match_parent 在首绘前落稳，不依赖用户 fling。
+            sheet.post {
+                if (!behavior.isFitToContents) {
+                    behavior.state = BottomSheetBehavior.STATE_EXPANDED
+                }
+                binding.root.requestLayout()
+            }
         }
         dialog.show()
         return dialog

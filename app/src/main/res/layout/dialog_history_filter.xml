@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- match_parent：底栏展开后 ScrollView weight 才能在首帧正确分配高度，避免拖一下才正常。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
+    android:layout_height="match_parent"
     android:background="@drawable/bg_bottom_sheet_dark"
-    android:orientation="vertical"
-    android:paddingTop="8dp">
+    android:orientation="vertical">
 
     <LinearLayout
+        android:id="@+id/historyFilterHeader"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
@@ -40,7 +41,8 @@
             android:layout_height="36dp" />
     </LinearLayout>
 
-    <ScrollView
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/historyFilterScroll"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
@@ -121,9 +123,10 @@
                 android:columnCount="3"
                 android:useDefaultMargins="true" />
         </LinearLayout>
-    </ScrollView>
+    </androidx.core.widget.NestedScrollView>
 
     <LinearLayout
+        android:id="@+id/historyFilterActions"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"

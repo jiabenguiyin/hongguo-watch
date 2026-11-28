@@ -19,7 +19,6 @@
     <color name="banner_scrim_end">#CC000000</color>
     <color name="rating_good">#34C759</color>
     <color name="heat">#FF6B4A</color>
-    <!-- 历史封面观看进度条：官方橙条，区别于强调粉红 accent -->
-    <color name="history_progress">#FF6B35</color>
-    <color name="history_filter_chip_text_selected">#FF8A4A</color>
+    <!-- 历史封面观看进度条沿用品牌红，与筛选/确定一致 -->
+    <color name="history_progress">@color/accent</color>
 </resources>

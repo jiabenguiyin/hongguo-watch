@@ -14,14 +14,16 @@
         android:paddingHorizontal="10dp"
         android:paddingBottom="6dp">
 
-        <TextView
+        <ImageButton
             android:id="@+id/historyFilterDismiss"
             android:layout_width="36dp"
             android:layout_height="36dp"
-            android:gravity="center"
-            android:text="∨"
-            android:textColor="@color/text_secondary"
-            android:textSize="16sp" />
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/history_filter_close"
+            android:padding="8dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_close"
+            android:tint="@color/text_secondary" />
 
         <TextView
             android:layout_width="0dp"

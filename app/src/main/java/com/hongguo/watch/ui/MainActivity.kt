@@ -1770,7 +1770,7 @@ class MainActivity : WatchDisplayActivity() {
         view.setTextColor(
             ContextCompat.getColor(
                 this,
-                if (selected) R.color.history_filter_chip_text_selected else R.color.text_secondary,
+                if (selected) R.color.accent else R.color.text_secondary,
             ),
         )
         view.paint.isFakeBoldText = selected

@@ -155,6 +155,7 @@
     <string name="history_batch_delete_confirm_body">将移除 %1$d 条观看历史。</string>
     <string name="history_recent_watching">最近在看</string>
     <string name="history_filter">筛选</string>
+    <string name="history_filter_close">关闭筛选</string>
     <string name="history_filter_duration">已播放时长</string>
     <string name="history_filter_episodes">已播放集数</string>
     <string name="history_filter_time">时间</string>

@@ -130,7 +130,7 @@ object HistoryFilterSheet {
         val ctx = grid.context
         val padH = dp(ctx, 6f)
         val padV = dp(ctx, 5f)
-        val selectedColor = ctx.getColor(R.color.history_filter_chip_text_selected)
+        val selectedColor = ctx.getColor(R.color.accent)
         val idleColor = ctx.getColor(R.color.text_secondary)
         labels.forEach { (labelRes, value) ->
             val chip = TextView(ctx).apply {

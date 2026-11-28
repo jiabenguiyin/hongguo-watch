@@ -283,21 +283,6 @@
         </LinearLayout>
     </HorizontalScrollView>
 
-    <!-- 非离线段时展示占用摘要；点按进入离线段 -->
-    <TextView
-        android:id="@+id/libraryCacheHook"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:background="@drawable/bg_panel"
-        android:gravity="center_vertical"
-        android:minHeight="32dp"
-        android:paddingHorizontal="10dp"
-        android:paddingVertical="6dp"
-        android:textColor="@color/text_secondary"
-        android:textSize="@dimen/watch_meta"
-        android:visibility="gone" />
-
     <HorizontalScrollView
         android:id="@+id/homeNavScroll"
         android:layout_width="match_parent"

@@ -7,7 +7,6 @@ import android.view.WindowManager
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
@@ -77,7 +76,7 @@ object TimeLockGate {
                 orientation = LinearLayout.VERTICAL
                 addView(input)
             }
-            val dialog = AlertDialog.Builder(activity, R.style.Theme_HongguoWatch_AlertDialog)
+            val dialog = WatchAlertDialogs.builder(activity)
                 .setTitle(R.string.time_lock_limit_reached_title)
                 .setMessage(activity.getString(R.string.time_lock_limit_reached_body, limitLabel))
                 .setView(column)
@@ -104,12 +103,7 @@ object TimeLockGate {
             dialog.setOnDismissListener {
                 // 仅当未通过 PIN 解锁时，允许下次再弹
             }
-            dialog.show()
-            dialog.window?.let { window ->
-                val width = WatchUi.dialogContentWidthPx(activity)
-                window.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT)
-                window.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)
-            }
+            WatchAlertDialogs.show(activity, dialog)
             dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
             input.requestFocus()
         }

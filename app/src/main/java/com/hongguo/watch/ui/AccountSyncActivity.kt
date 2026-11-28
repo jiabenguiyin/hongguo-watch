@@ -5,10 +5,8 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.SystemClock
-import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.addCallback
-import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
@@ -284,7 +282,7 @@ class AccountSyncActivity : WatchDisplayActivity() {
             state.localHistoryCount,
             state.localFavoriteCount,
         )
-        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
+        val dialog = WatchAlertDialogs.builder(this)
             .setTitle(R.string.redfruit_initial_merge_title)
             .setMessage(message)
             .setPositiveButton(R.string.redfruit_initial_merge) { _, _ ->
@@ -295,47 +293,43 @@ class AccountSyncActivity : WatchDisplayActivity() {
             }
             .setNeutralButton(R.string.redfruit_initial_merge_later, null)
             .create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.isAllCaps = false
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.isAllCaps = false
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.isAllCaps = false
-        }
-        dialog.show()
-        dialog.window?.setLayout(WatchUi.dialogContentWidthPx(this), WindowManager.LayoutParams.WRAP_CONTENT)
-        dialog.window?.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)
+        WatchAlertDialogs.show(this, dialog)
     }
 
     private fun confirmSignOut() {
-        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
-            .setTitle(R.string.redfruit_cloud_sign_out_confirm)
-            .setMessage(R.string.redfruit_cloud_sign_out_message)
-            .setNegativeButton(R.string.update_cancel, null)
-            .setPositiveButton(R.string.account_sync_sign_out) { _, _ -> account.signOut() }
-            .show()
-        dialog.window?.setLayout(WatchUi.dialogContentWidthPx(this), WindowManager.LayoutParams.WRAP_CONTENT)
-        dialog.window?.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)
+        WatchAlertDialogs.show(
+            this,
+            WatchAlertDialogs.builder(this)
+                .setTitle(R.string.redfruit_cloud_sign_out_confirm)
+                .setMessage(R.string.redfruit_cloud_sign_out_message)
+                .setNegativeButton(R.string.update_cancel, null)
+                .setPositiveButton(R.string.account_sync_sign_out) { _, _ -> account.signOut() }
+                .create(),
+        )
     }
 
     private fun confirmEnableAutoSync() {
-        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
-            .setTitle(R.string.redfruit_auto_sync_confirm_title)
-            .setMessage(R.string.redfruit_auto_sync_confirm_message)
-            .setNegativeButton(R.string.update_cancel, null)
-            .setPositiveButton(R.string.redfruit_auto_sync) { _, _ -> account.setAutoSyncEnabled(true) }
-            .show()
-        dialog.window?.setLayout(WatchUi.dialogContentWidthPx(this), WindowManager.LayoutParams.WRAP_CONTENT)
-        dialog.window?.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)
+        WatchAlertDialogs.show(
+            this,
+            WatchAlertDialogs.builder(this)
+                .setTitle(R.string.redfruit_auto_sync_confirm_title)
+                .setMessage(R.string.redfruit_auto_sync_confirm_message)
+                .setNegativeButton(R.string.update_cancel, null)
+                .setPositiveButton(R.string.redfruit_auto_sync) { _, _ -> account.setAutoSyncEnabled(true) }
+                .create(),
+        )
     }
 
     private fun confirmLocalSync() {
-        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
-            .setTitle(R.string.redfruit_sync_local_confirm_title)
-            .setMessage(R.string.redfruit_sync_local_confirm_message)
-            .setNegativeButton(R.string.update_cancel, null)
-            .setPositiveButton(R.string.redfruit_sync_local) { _, _ -> account.syncLocalNow() }
-            .show()
-        dialog.window?.setLayout(WatchUi.dialogContentWidthPx(this), WindowManager.LayoutParams.WRAP_CONTENT)
-        dialog.window?.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)
+        WatchAlertDialogs.show(
+            this,
+            WatchAlertDialogs.builder(this)
+                .setTitle(R.string.redfruit_sync_local_confirm_title)
+                .setMessage(R.string.redfruit_sync_local_confirm_message)
+                .setNegativeButton(R.string.update_cancel, null)
+                .setPositiveButton(R.string.redfruit_sync_local) { _, _ -> account.syncLocalNow() }
+                .create(),
+        )
     }
 
     private fun updateSmsButton(state: RedfruitAccountState) {

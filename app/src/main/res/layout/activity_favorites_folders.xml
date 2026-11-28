@@ -211,7 +211,7 @@
             android:visibility="gone" />
     </FrameLayout>
 
-    <!-- 编辑底栏：对齐筛选 清空|确定 —— 双钮中间留缝，避开左右下角 -->
+    <!-- 编辑底栏：仅不同操作才双钮（移动到|删除，refs 37）；对齐筛选清空|确定 -->
     <LinearLayout
         android:id="@+id/itemActionBar"
         android:layout_width="match_parent"
@@ -248,40 +248,18 @@
             android:textStyle="bold" />
     </LinearLayout>
 
-    <!-- 新建/添加：宽条拆成双钮（同筛选 清空|确定），避免圆角裁切 refs 34 -->
-    <LinearLayout
-        android:id="@+id/createActionBar"
+    <!-- 新建/添加：单钮（勿复制同文案双钮 refs 35–36）；四角靠 WatchUi bottomChrome -->
+    <TextView
+        android:id="@+id/createButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/watch_pad_tight"
-        android:orientation="horizontal"
-        android:visibility="gone">
-
-        <TextView
-            android:id="@+id/createButtonLeft"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="6dp"
-            android:layout_weight="1"
-            android:background="@drawable/bg_history_filter_clear"
-            android:gravity="center"
-            android:minHeight="@dimen/watch_control_h"
-            android:text="@string/favorites_folder_create_plus"
-            android:textColor="@color/text_primary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/createButtonRight"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:background="@drawable/bg_history_filter_confirm"
-            android:gravity="center"
-            android:minHeight="@dimen/watch_control_h"
-            android:text="@string/favorites_folder_create_plus"
-            android:textColor="@color/text_primary"
-            android:textSize="13sp"
-            android:textStyle="bold" />
-    </LinearLayout>
+        android:background="@drawable/bg_history_filter_confirm"
+        android:gravity="center"
+        android:minHeight="@dimen/watch_control_h"
+        android:text="@string/favorites_folder_create_plus"
+        android:textColor="@color/text_primary"
+        android:textSize="@dimen/watch_body"
+        android:textStyle="bold"
+        android:visibility="gone" />
 </LinearLayout>

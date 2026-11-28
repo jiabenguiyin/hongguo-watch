@@ -84,8 +84,7 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         binding.backButton.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
         binding.swipeRefresh.setColorSchemeResources(R.color.accent)
         binding.swipeRefresh.setOnRefreshListener { reload(fromSwipe = true) }
-        binding.createButtonLeft.setOnClickListener { onCreateClicked() }
-        binding.createButtonRight.setOnClickListener { onCreateClicked() }
+        binding.createButton.setOnClickListener { onCreateClicked() }
         binding.emptyAction.setOnClickListener { onEmptyAction() }
         binding.manageButton.setOnClickListener {
             openFolder?.let(::showManageSheet)
@@ -130,27 +129,16 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
     }
 
     /**
-     * 与 [SettingsActivity] / 筛选底栏同一路径：
+     * 与 [SettingsActivity] / [DisplaySettingsActivity] 同一路径：
      * [WatchUi.applySafePadding](root, topChrome[, bottomChrome])。
-     * 底栏均为筛选式双钮（中间留缝），整行作 bottomChrome margin 内收。
+     *
+     * - 编辑「移动到|删除」：不同操作才双钮（refs 37），整行 bottomChrome。
+     * - 「新建/添加」：单钮（refs 35–36 禁止同文案双份），同显示设置保存钮 margin 内收。
      */
     private fun applyFoldersChrome() {
-        // 清掉旧版 contentPadding / margin 残留，避免双钮被挤歪
-        listOf(binding.itemActionBar, binding.createActionBar).forEach { bar ->
-            if (bar.paddingLeft != 0 || bar.paddingRight != 0) {
-                bar.setPadding(0, bar.paddingTop, 0, bar.paddingBottom)
-            }
-            (bar.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
-                if (lp.leftMargin != 0 || lp.rightMargin != 0) {
-                    lp.leftMargin = 0
-                    lp.rightMargin = 0
-                    bar.layoutParams = lp
-                }
-            }
-        }
         val bottomChrome = when {
             binding.itemActionBar.visibility == View.VISIBLE -> binding.itemActionBar
-            binding.createActionBar.visibility == View.VISIBLE -> binding.createActionBar
+            binding.createButton.visibility == View.VISIBLE -> binding.createButton
             else -> null
         }
         WatchUi.applySafePadding(
@@ -161,12 +149,11 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
     }
 
     private fun setCreateActionVisible(visible: Boolean) {
-        binding.createActionBar.visibility = if (visible) View.VISIBLE else View.GONE
+        binding.createButton.visibility = if (visible) View.VISIBLE else View.GONE
     }
 
     private fun setCreateActionText(text: CharSequence) {
-        binding.createButtonLeft.text = text
-        binding.createButtonRight.text = text
+        binding.createButton.text = text
     }
 
     private fun onEmptyAction() {

@@ -116,7 +116,10 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
 
     override fun onResume() {
         super.onResume()
-        recreateForDisplaySizeChange()
+        if (recreateForDisplaySizeChange()) return
+        // 与 SettingsActivity 一致：每次回前台重套四角安全边（真机 inset 偶发首帧不全）
+        if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
+        applyFoldersChrome()
         if (openFolder == null) reload(fromSwipe = false)
     }
 
@@ -126,14 +129,15 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
     }
 
     /**
-     * 列表底栏「+ 新建/添加」、编辑底栏「移动到|删除」随模式切换；
-     * 顶栏含返回/标题/全选·完成，与 [DisplaySettingsActivity] 同用 [WatchUi.applySafePadding]。
+     * 与 [SettingsActivity] / [DisplaySettingsActivity] 同一路径：
+     * [WatchUi.applySafePadding](root, topChrome, bottomChrome)。
+     * 底栏「+ 新建」或「移动到|删除」是 content 下方兄弟，不叠列表。
      */
     private fun applyFoldersChrome() {
-        val bottomChrome = if (binding.itemActionBar.visibility == View.VISIBLE) {
-            binding.itemActionBar
-        } else {
-            binding.createButton
+        val bottomChrome = when {
+            binding.itemActionBar.visibility == View.VISIBLE -> binding.itemActionBar
+            binding.createButton.visibility == View.VISIBLE -> binding.createButton
+            else -> null
         }
         WatchUi.applySafePadding(
             binding.foldersRoot,

@@ -1,28 +1,36 @@
 package com.hongguo.watch.ui
 
+import android.app.Activity
+import android.app.Dialog
 import android.content.Context
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.ViewGroup
-import android.widget.FrameLayout
+import android.view.WindowManager
 import android.widget.GridLayout
 import android.widget.TextView
-import com.google.android.material.bottomsheet.BottomSheetBehavior
-import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.hongguo.watch.R
 import com.hongguo.watch.databinding.DialogHistoryFilterBinding
 
-/** 历史筛选底栏：深色可滚动，手表近全宽；首开即展开，圆角安全内收。 */
+/**
+ * 历史筛选全屏面板。
+ *
+ * #75 仍用 BottomSheetBehavior：真机首开 measure 失败，拖一下才正常，且底栏盖芯片。
+ * 改为与 [DisplaySettingsActivity] 相同的结构 + [WatchUi.applySafePadding]：
+ * root → topChrome → Scroll(weight=1) → bottomChrome，首开即正确、芯片不会钻到清空/确定下面。
+ */
 object HistoryFilterSheet {
     fun show(
         context: Context,
         initial: HistoryFilterPolicy.Criteria,
         onApply: (HistoryFilterPolicy.Criteria) -> Unit,
-    ): BottomSheetDialog {
-        val dialog = BottomSheetDialog(context, R.style.Theme_HongguoWatch_BottomSheet)
+    ): Dialog {
+        val dialog = Dialog(context, R.style.Theme_HongguoWatch_FilterPanel)
         val binding = DialogHistoryFilterBinding.inflate(LayoutInflater.from(context))
         dialog.setContentView(binding.root)
+        dialog.setCancelable(true)
+        dialog.setCanceledOnTouchOutside(true)
 
         var draft = initial
 
@@ -106,42 +114,21 @@ object HistoryFilterSheet {
         }
 
         dialog.setOnShowListener {
-            val sheet = dialog.findViewById<FrameLayout>(
-                com.google.android.material.R.id.design_bottom_sheet,
-            ) ?: return@setOnShowListener
-            sheet.setBackgroundResource(android.R.color.transparent)
-
-            // 内容必须填满 sheet：ScrollView weight 在 wrap_content 父级下首测无效，
-            // 拖动手势才会二次 measure —— 表现为「是否看完」被裁切，拖一下才正常。
-            sheet.layoutParams = sheet.layoutParams.apply {
-                height = ViewGroup.LayoutParams.MATCH_PARENT
-            }
-            binding.root.layoutParams = binding.root.layoutParams.apply {
-                width = ViewGroup.LayoutParams.MATCH_PARENT
-                height = ViewGroup.LayoutParams.MATCH_PARENT
-            }
-
-            val behavior = BottomSheetBehavior.from(sheet)
-            behavior.skipCollapsed = true
-            behavior.isFitToContents = false
-            behavior.expandedOffset = HistoryFilterSheetLayout.expandedTopOffsetPx(
-                context.resources.displayMetrics.heightPixels,
+            dialog.window?.setLayout(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
             )
-            behavior.state = BottomSheetBehavior.STATE_EXPANDED
-
+            // 与设置页同一套：顶栏 + 底栏交给 WatchUi 大圆角安全边（勿另起 inset）
             WatchUi.applySafePadding(
-                binding.root,
+                binding.historyFilterRoot,
                 topChrome = binding.historyFilterHeader,
                 bottomChrome = binding.historyFilterActions,
             )
-
-            // 再贴一帧确保 EXPANDED + match_parent 在首绘前落稳，不依赖用户 fling。
-            sheet.post {
-                if (!behavior.isFitToContents) {
-                    behavior.state = BottomSheetBehavior.STATE_EXPANDED
-                }
-                binding.root.requestLayout()
+            val host = context as? Activity
+            if (host != null && WatchUi.isCompactWatch(host)) {
+                WatchUi.applyImmersive(host)
             }
+            binding.historyFilterRoot.requestApplyInsets()
         }
         dialog.show()
         return dialog

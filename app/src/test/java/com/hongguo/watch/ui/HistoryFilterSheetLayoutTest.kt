@@ -6,18 +6,30 @@ import org.junit.Test
 
 class HistoryFilterSheetLayoutTest {
     @Test
-    fun expandedTopOffset_matchesLegacyEightyEightPercentSheet() {
-        // 旧实现 sheet 高 = 0.88 * H → 顶留白 ≈ 0.12 * H
-        assertEquals(60, HistoryFilterSheetLayout.expandedTopOffsetPx(500))
-        assertEquals(48, HistoryFilterSheetLayout.expandedTopOffsetPx(408))
+    fun scrollViewport_leavesRoomAboveFixedActions() {
+        // CD12 Max 量级：顶栏 44+、底栏 44+、四角安全边后，滚动区仍为正
+        val viewport = HistoryFilterSheetLayout.scrollViewportHeightPx(
+            screenHeightPx = 466,
+            topChromePx = 48,
+            bottomChromePx = 48,
+            topSafePx = 28,
+            bottomSafePx = 36,
+        )
+        assertEquals(306, viewport)
+        assertTrue(viewport > 48) // 大于底栏，芯片可完整露出
     }
 
     @Test
-    fun expandedTopOffset_clampsTinyAndHugeScreens() {
-        assertEquals(0, HistoryFilterSheetLayout.expandedTopOffsetPx(0))
-        assertEquals(1, HistoryFilterSheetLayout.expandedTopOffsetPx(10))
-        val tall = HistoryFilterSheetLayout.expandedTopOffsetPx(2000)
-        assertTrue(tall <= 500) // ≤ 25%
-        assertEquals(240, tall)
+    fun scrollViewport_neverNegativeWhenChromeOversized() {
+        assertEquals(
+            0,
+            HistoryFilterSheetLayout.scrollViewportHeightPx(
+                screenHeightPx = 200,
+                topChromePx = 120,
+                bottomChromePx = 120,
+                topSafePx = 40,
+                bottomSafePx = 40,
+            ),
+        )
     }
 }

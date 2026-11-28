@@ -100,6 +100,8 @@ class MainActivity : WatchDisplayActivity() {
     /** 库内搜索（顶栏时钟左侧放大镜）。 */
     private var librarySearchOpen = false
     private var librarySearchQuery = ""
+    /** 历史筛选条件（仅历史分段）。 */
+    private var historyFilterCriteria = HistoryFilterPolicy.Criteria()
 
     private val container get() = (application as HongguoWatchApp).container
     private val repo get() = container.repository
@@ -130,15 +132,21 @@ class MainActivity : WatchDisplayActivity() {
             },
             onResumeClick = { resumeHistorySeries(it) },
             onItemLongClick = { series ->
-                if (mode == Mode.LIBRARY &&
-                    librarySegmentSupportsBatchEdit() &&
-                    !libraryLayoutList &&
-                    !libraryEditMode
-                ) {
-                    enterLibraryEditMode(preselect = series.id)
-                    true
-                } else {
-                    false
+                when {
+                    mode == Mode.LIBRARY &&
+                        librarySegment == LibrarySegmentPolicy.Segment.HISTORY &&
+                        libraryLayoutList -> {
+                        confirmDeleteHistoryItem(series)
+                        true
+                    }
+                    mode == Mode.LIBRARY &&
+                        librarySegmentSupportsBatchEdit() &&
+                        !libraryLayoutList &&
+                        !libraryEditMode -> {
+                        enterLibraryEditMode(preselect = series.id)
+                        true
+                    }
+                    else -> false
                 }
             },
             onSelectionToggle = { series -> toggleLibrarySelection(series.id) },
@@ -220,6 +228,28 @@ class MainActivity : WatchDisplayActivity() {
             binding.librarySearchInput.setText("")
             applyLibrarySearchQuery("")
             hideKeyboard()
+        }
+        binding.historyChipAll.setOnClickListener {
+            historyFilterCriteria = HistoryFilterPolicy.Criteria()
+            refreshHistoryFilterChips()
+            if (mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.HISTORY) {
+                loadHistoryList(fromSwipe = false)
+            }
+        }
+        binding.historyChipEp10.setOnClickListener {
+            historyFilterCriteria = historyFilterCriteria.copy(
+                episodes = HistoryFilterPolicy.EpisodesMin.OVER_10,
+            )
+            refreshHistoryFilterChips()
+            if (mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.HISTORY) {
+                loadHistoryList(fromSwipe = false)
+            }
+        }
+        binding.historyChipFilter.setOnClickListener { showHistoryFilterSheet() }
+        binding.historyChipEdit.setOnClickListener {
+            if (!libraryLayoutList && librarySegmentSupportsBatchEdit()) {
+                enterLibraryEditMode()
+            }
         }
         binding.librarySearchInput.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
@@ -466,6 +496,7 @@ class MainActivity : WatchDisplayActivity() {
         exitLibraryEditMode(reload = false)
         binding.librarySearchToggle.visibility = View.GONE
         binding.librarySearchRow.visibility = View.GONE
+        binding.historyFilterChipScroll.visibility = View.GONE
         binding.libraryEditBar.visibility = View.GONE
         binding.libraryDeleteBar.visibility = View.GONE
         highlightBottomTabs(home = true)
@@ -622,6 +653,7 @@ class MainActivity : WatchDisplayActivity() {
         binding.librarySegmentRow.visibility = View.GONE
         binding.librarySearchToggle.visibility = View.GONE
         binding.librarySearchRow.visibility = View.GONE
+        binding.historyFilterChipScroll.visibility = View.GONE
         binding.libraryEditBar.visibility = View.GONE
         binding.libraryDeleteBar.visibility = View.GONE
         binding.libraryCacheHook.visibility = View.GONE
@@ -1249,6 +1281,7 @@ class MainActivity : WatchDisplayActivity() {
             val poster = LibrarySegmentPolicy.usesPosterGrid(librarySegment, libraryLayoutList)
             when (librarySegment) {
                 LibrarySegmentPolicy.Segment.OFFLINE -> {
+                    binding.historyFilterChipScroll.visibility = View.GONE
                     binding.libraryCacheHook.visibility = View.GONE
                     binding.pageSubtitle.visibility = View.VISIBLE
                     binding.pageSubtitle.text = getString(R.string.offline_subtitle)
@@ -1259,10 +1292,14 @@ class MainActivity : WatchDisplayActivity() {
                     binding.libraryCacheHook.visibility =
                         if (libraryEditMode) View.GONE else View.VISIBLE
                     if (!libraryEditMode) refreshLibraryCacheHook()
+                    refreshHistoryFilterChips()
+                    binding.historyFilterChipScroll.visibility =
+                        if (libraryEditMode) View.GONE else View.VISIBLE
                     useSeriesAdapter(posterGrid = poster)
                     loadHistoryList(fromSwipe)
                 }
                 LibrarySegmentPolicy.Segment.FAVORITES -> {
+                    binding.historyFilterChipScroll.visibility = View.GONE
                     binding.pageSubtitle.visibility = View.GONE
                     binding.libraryCacheHook.visibility =
                         if (libraryEditMode) View.GONE else View.VISIBLE
@@ -1580,21 +1617,24 @@ class MainActivity : WatchDisplayActivity() {
             ),
         )
         val token = beginListLoad(clearAdapter = true)
-        // 与收藏同一套：列表无「续」/♡；三列可批量编辑；点按进详情
-        adapter.showResumeHint = false
+        // 列表模式：「续」续播；点封面/标题进详情；长按删除。三列：封面进度条 + 最近在看 + 批量编辑。
+        adapter.showResumeHint = libraryLayoutList
         adapter.selectionMode = libraryEditMode && !libraryLayoutList
         binding.seriesList.scrollToPosition(0)
         listJob = lifecycleScope.launch {
             try {
-                val history = repo.recentHistory()
+                val totalById = repo.favorites()
+                    .associate { it.seriesId to it.episodeCount }
+                val history = repo.allHistory()
                     .filter { matchesLibrarySearch(it.seriesTitle) }
+                    .let { rows ->
+                        HistoryFilterPolicy.filter(rows, totalById, historyFilterCriteria)
+                    }
                 if (token != listGeneration || mode != Mode.LIBRARY ||
                     librarySegment != LibrarySegmentPolicy.Segment.HISTORY
                 ) {
                     return@launch
                 }
-                val totalById = repo.favorites()
-                    .associate { it.seriesId to it.episodeCount }
                 if (libraryLayoutList) {
                     val rows = history.map { item ->
                         historyClassicRow(item, totalById[item.seriesId])
@@ -1608,13 +1648,15 @@ class MainActivity : WatchDisplayActivity() {
                     adapter.submit(rows)
                     binding.seriesList.scrollToPosition(0)
                     binding.emptyView.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
-                    binding.emptyView.text = libraryEmptyText(R.string.empty_history)
+                    binding.emptyView.text = historyEmptyText()
                 } else {
+                    val newestId = history.firstOrNull()?.seriesId
                     val posters = history.map { item ->
                         historyPosterRow(
                             item = item,
                             totalEpisodes = totalById[item.seriesId],
                             selected = item.seriesId in librarySelectedIds,
+                            recentWatching = item.seriesId == newestId,
                         )
                     }
                     libraryPosterSnapshot = posters
@@ -1635,7 +1677,7 @@ class MainActivity : WatchDisplayActivity() {
                     adapter.submit(listOf(header) + posters)
                     binding.seriesList.scrollToPosition(0)
                     binding.emptyView.visibility = if (posters.isEmpty()) View.VISIBLE else View.GONE
-                    binding.emptyView.text = libraryEmptyText(R.string.empty_history)
+                    binding.emptyView.text = historyEmptyText()
                     refreshLibraryEditChrome()
                 }
             } finally {
@@ -1646,10 +1688,18 @@ class MainActivity : WatchDisplayActivity() {
         }
     }
 
+    private fun historyEmptyText(): String {
+        if (!historyFilterCriteria.isDefault || librarySearchQuery.isNotBlank()) {
+            return getString(R.string.history_filter_empty)
+        }
+        return libraryEmptyText(R.string.empty_history)
+    }
+
     private fun historyPosterRow(
         item: WatchHistoryEntity,
         totalEpisodes: Int?,
         selected: Boolean = false,
+        recentWatching: Boolean = false,
     ): HomeRow.Poster {
         val total = totalEpisodes?.takeIf { it > 0 } ?: 0
         return HomeRow.Poster(
@@ -1665,6 +1715,8 @@ class MainActivity : WatchDisplayActivity() {
             watchedEpisode = item.episodeNumber.takeIf { it > 0 },
             totalEpisodes = total.takeIf { it > 0 },
             selected = selected,
+            progressPercent = HistoryFilterPolicy.coverProgressPercent(item, total.takeIf { it > 0 }),
+            recentWatching = recentWatching,
         )
     }
 
@@ -1673,13 +1725,14 @@ class MainActivity : WatchDisplayActivity() {
         totalEpisodes: Int?,
     ): HomeRow.Item {
         val total = totalEpisodes?.takeIf { it > 0 }
-        val percent = when {
-            item.durationMs > 0 ->
-                ((item.positionMs * 100) / item.durationMs).toInt().coerceIn(0, 100)
-            total != null && total > 0 ->
-                ((item.episodeNumber * 100) / total).coerceIn(0, 100)
-            else -> null
-        }
+        val percent = HistoryFilterPolicy.coverProgressPercent(item, total)
+            ?: when {
+                item.durationMs > 0 ->
+                    ((item.positionMs * 100) / item.durationMs).toInt().coerceIn(0, 100)
+                total != null && total > 0 ->
+                    ((item.episodeNumber * 100) / total).coerceIn(0, 100)
+                else -> null
+            }
         return HomeRow.Item(
             series = Series(
                 id = item.seriesId,
@@ -1694,6 +1747,72 @@ class MainActivity : WatchDisplayActivity() {
             watchedEpisode = item.episodeNumber.takeIf { it > 0 },
             totalEpisodes = total,
         )
+    }
+
+    private fun refreshHistoryFilterChips() {
+        val criteria = historyFilterCriteria
+        val allSelected = criteria.isDefault
+        val ep10Selected = criteria.episodes == HistoryFilterPolicy.EpisodesMin.OVER_10 &&
+            criteria.duration == HistoryFilterPolicy.DurationMin.ALL &&
+            criteria.time == HistoryFilterPolicy.TimeRange.ALL &&
+            criteria.complete == HistoryFilterPolicy.CompleteState.ALL
+        val filterActive = !criteria.isDefault && !ep10Selected
+        styleHistoryChip(binding.historyChipAll, allSelected)
+        styleHistoryChip(binding.historyChipEp10, ep10Selected)
+        styleHistoryChip(binding.historyChipFilter, filterActive)
+        styleHistoryChip(binding.historyChipEdit, selected = false)
+        binding.historyChipEdit.visibility =
+            if (libraryLayoutList) View.GONE else View.VISIBLE
+    }
+
+    private fun styleHistoryChip(view: TextView, selected: Boolean) {
+        view.isSelected = selected
+        view.setTextColor(
+            ContextCompat.getColor(
+                this,
+                if (selected) R.color.history_filter_chip_text_selected else R.color.text_secondary,
+            ),
+        )
+        view.paint.isFakeBoldText = selected
+        view.invalidate()
+    }
+
+    private fun showHistoryFilterSheet() {
+        HistoryFilterSheet.show(
+            context = this,
+            initial = historyFilterCriteria,
+            onApply = { criteria ->
+                historyFilterCriteria = criteria
+                refreshHistoryFilterChips()
+                if (mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.HISTORY) {
+                    loadHistoryList(fromSwipe = false)
+                }
+            },
+        )
+    }
+
+    private fun confirmDeleteHistoryItem(series: Series) {
+        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
+            .setTitle(R.string.history_delete_confirm_title)
+            .setMessage(getString(R.string.history_delete_confirm_body, series.title))
+            .setPositiveButton(R.string.history_delete) { _, _ ->
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) { repo.deleteHistory(series.id) }
+                    if (mode == Mode.LIBRARY &&
+                        librarySegment == LibrarySegmentPolicy.Segment.HISTORY
+                    ) {
+                        loadHistoryList(fromSwipe = false)
+                    }
+                    Toast.makeText(
+                        this@MainActivity,
+                        R.string.history_deleted,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
+            .setNegativeButton(R.string.download_cancel, null)
+            .create()
+        showWatchDialog(dialog)
     }
 
     /** 历史行 ♡：一键收藏/取消，不打断续播入口。总集数走详情接口，不用进度集号。 */
@@ -1936,6 +2055,9 @@ class MainActivity : WatchDisplayActivity() {
         if (!preselect.isNullOrBlank()) librarySelectedIds += preselect
         adapter.selectionMode = true
         binding.libraryCacheHook.visibility = View.GONE
+        if (librarySegment == LibrarySegmentPolicy.Segment.HISTORY) {
+            binding.historyFilterChipScroll.visibility = View.GONE
+        }
         refreshLibraryEditChrome()
         submitLibrarySelectionRows()
     }
@@ -1953,7 +2075,11 @@ class MainActivity : WatchDisplayActivity() {
             refreshLibraryCacheHook()
             when (segment) {
                 LibrarySegmentPolicy.Segment.FAVORITES -> loadFavoritesList(fromSwipe = false)
-                LibrarySegmentPolicy.Segment.HISTORY -> loadHistoryList(fromSwipe = false)
+                LibrarySegmentPolicy.Segment.HISTORY -> {
+                    binding.historyFilterChipScroll.visibility = View.VISIBLE
+                    refreshHistoryFilterChips()
+                    loadHistoryList(fromSwipe = false)
+                }
                 else -> Unit
             }
         }

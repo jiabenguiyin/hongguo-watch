@@ -19,6 +19,33 @@
             android:contentDescription="@null"
             android:scaleType="centerCrop" />
 
+        <!-- 封面底边观看进度（贴齐封面下沿，不落在标题下） -->
+        <ProgressBar
+            android:id="@+id/posterProgress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="3dp"
+            android:layout_gravity="bottom"
+            android:max="100"
+            android:progressDrawable="@drawable/cover_progress"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/recentWatchingBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|start"
+            android:layout_margin="3dp"
+            android:background="@drawable/bg_recent_watching_badge"
+            android:includeFontPadding="false"
+            android:paddingHorizontal="4dp"
+            android:paddingVertical="1dp"
+            android:text="@string/history_recent_watching"
+            android:textColor="@color/text_primary"
+            android:textSize="8sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/updateBadge"
             android:layout_width="wrap_content"

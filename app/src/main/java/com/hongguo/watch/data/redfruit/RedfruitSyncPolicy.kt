@@ -49,9 +49,15 @@ internal object RedfruitSyncPolicy {
         rows
             .groupBy { it.seriesId }
             .values
-            .mapNotNull { entries -> entries.maxWithOrNull(compareBy<WatchHistoryEntity> { it.episodeNumber }
-                .thenBy { it.updatedAt }
-                .thenBy { it.positionMs }) }
+            .mapNotNull { entries ->
+                val best = entries.maxWithOrNull(
+                    compareBy<WatchHistoryEntity> { it.episodeNumber }
+                        .thenBy { it.updatedAt }
+                        .thenBy { it.positionMs },
+                ) ?: return@mapNotNull null
+                val maxCount = entries.maxOf { it.episodeCount }
+                if (maxCount > best.episodeCount) best.copy(episodeCount = maxCount) else best
+            }
 
     fun mergedFavorites(
         local: List<FavoriteEntity>,

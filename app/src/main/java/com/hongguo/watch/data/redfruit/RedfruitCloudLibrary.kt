@@ -395,13 +395,14 @@ internal class RedfruitCloudLibrary(
         require(history.episodeNumber in 1 until Int.MAX_VALUE) { "红果进度分集位置无效" }
         val duration = history.durationMs.coerceAtLeast(0L)
         val position = history.positionMs.coerceAtLeast(0L)
+        val total = maxOf(episodeCount, history.episodeCount).coerceAtLeast(0)
         val entry = JSONObject()
             .put("book_id", history.seriesId)
             .put("item_id", history.episodeId)
             .put("vid_index", history.episodeNumber)
             .put("current_play_time", position)
             .put("current_total_time", duration)
-            .put("episode_count", episodeCount.coerceAtLeast(0))
+            .put("episode_count", total)
             .put("read_timestamp_ms", history.updatedAt.coerceAtLeast(0L))
             .put("book_type", 2)
             .put(
@@ -1021,6 +1022,7 @@ internal fun parseHistory(rows: JSONArray): List<WatchHistoryEntity> {
         if (row.booleanValue("is_delete")) continue
         val seriesId = row.validSeriesId("book_id_str", "series_id_str", "book_id", "series_id")
             ?: throw RedfruitCloudException("红果观看历史剧集编号无效")
+        val video = row.optJSONObject("video_data") ?: row.optJSONObject("book_data")
         result.add(
             WatchHistoryEntity(
                 seriesId = seriesId,
@@ -1032,6 +1034,7 @@ internal fun parseHistory(rows: JSONArray): List<WatchHistoryEntity> {
                 durationMs = row.boundedNumber("duration", "current_total_time", max = 86_400_000),
                 updatedAt = row.epochMillis("read_timestamp_ms", "last_watch_time"),
                 source = SeriesSource.APP.name,
+                episodeCount = maxOf(row.episodeCount(), video?.episodeCount() ?: 0),
             ),
         )
     }

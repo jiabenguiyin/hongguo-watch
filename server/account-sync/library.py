@@ -63,6 +63,11 @@ def record(value, kind):
             positionMs=integer(value.get("positionMs")),
             durationMs=integer(value.get("durationMs")),
         )
+        # Optional for older clients; defaults to 0 when absent.
+        if "episodeCount" in value and value.get("episodeCount") is not None:
+            result["episodeCount"] = integer(value.get("episodeCount"), 100000)
+        else:
+            result["episodeCount"] = 0
     else:
         result["episodeCount"] = integer(value.get("episodeCount"), 100000)
     return result

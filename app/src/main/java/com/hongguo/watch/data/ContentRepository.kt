@@ -197,6 +197,8 @@ class ContentRepository internal constructor(
         forceCloudSync: Boolean = false,
     ) {
         // 接近片尾记为已看完本集，续播时由调用方决定切下一集；落盘仍保留真实进度。
+        val existing = currentLibrary().history.find(seriesId)
+        val total = episodeCount.coerceAtLeast(0).coerceAtLeast(existing?.episodeCount ?: 0)
         val record = WatchHistoryEntity(
             seriesId = seriesId,
             seriesTitle = seriesTitle,
@@ -207,9 +209,40 @@ class ContentRepository internal constructor(
             durationMs = durationMs.coerceAtLeast(0L),
             updatedAt = System.currentTimeMillis(),
             source = source.name,
+            episodeCount = total,
         )
         currentLibrary().saveProgress(record)
-        onProgressSaved(record, episodeCount.coerceAtLeast(0), forceCloudSync)
+        onProgressSaved(record, total, forceCloudSync)
+    }
+
+    /**
+     * 历史筛选用总集数：优先本行 [WatchHistoryEntity.episodeCount]，再回退收藏。
+     * [resolveMissing] 为 true 时（「是否看完」已选）对仍缺总集的条目拉详情并写回。
+     */
+    suspend fun historyEpisodeTotals(
+        history: List<WatchHistoryEntity>,
+        resolveMissing: Boolean,
+    ): Map<String, Int> = withContext(Dispatchers.IO) {
+        val favTotals = currentLibrary().favorites.list()
+            .associate { it.seriesId to it.episodeCount }
+        val totals = LinkedHashMap<String, Int>(history.size)
+        val missing = ArrayList<String>()
+        for (row in history) {
+            val known = maxOf(row.episodeCount, favTotals[row.seriesId] ?: 0)
+            if (known > 0) {
+                totals[row.seriesId] = known
+            } else {
+                missing += row.seriesId
+            }
+        }
+        if (!resolveMissing || missing.isEmpty()) return@withContext totals
+        for (seriesId in missing) {
+            val total = runCatching { resolveEpisodeTotal(seriesId) }.getOrDefault(0)
+            if (total <= 0) continue
+            totals[seriesId] = total
+            currentLibrary().history.bumpEpisodeCount(seriesId, total)
+        }
+        totals
     }
 
     suspend fun historyFor(seriesId: String): WatchHistoryEntity? = currentLibrary().history.find(seriesId)

@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [WatchHistoryEntity::class, FavoriteEntity::class, LibraryChangeEntity::class, LibrarySyncState::class],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -67,9 +67,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val migration4To5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE watch_history ADD COLUMN episodeCount INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
         fun create(context: Context, name: String = "hongguo_watch.db"): AppDatabase {
             return Room.databaseBuilder(context, AppDatabase::class.java, name)
-                .addMigrations(migration1To2, migration2To3, migration3To4)
+                .addMigrations(migration1To2, migration2To3, migration3To4, migration4To5)
                 .build()
         }
     }

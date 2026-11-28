@@ -113,5 +113,68 @@ class HistoryFilterPolicyTest {
             HistoryFilterPolicy.filter(listOf(today, old), totals, done, nowMs = now)
                 .map { it.seriesId },
         )
+        val notDone = HistoryFilterPolicy.Criteria(
+            complete = HistoryFilterPolicy.CompleteState.NOT_COMPLETED,
+        )
+        assertEquals(
+            listOf("today"),
+            HistoryFilterPolicy.filter(listOf(today, old), totals, notDone, nowMs = now)
+                .map { it.seriesId },
+        )
+    }
+
+    @Test
+    fun completeFilterNeedsTotalsOtherwiseTreatsAsNotDone() {
+        val finished = item(id = "fin", episode = 130, positionMs = 59_000L, durationMs = 60_000L)
+        val mid = item(id = "mid", episode = 66, positionMs = 10_000L, durationMs = 60_000L)
+        val done = HistoryFilterPolicy.Criteria(
+            complete = HistoryFilterPolicy.CompleteState.COMPLETED,
+        )
+        // 无总集数时无法判定已看完 → 「已看完」为空
+        assertEquals(
+            emptyList<String>(),
+            HistoryFilterPolicy.filter(listOf(finished, mid), emptyMap(), done)
+                .map { it.seriesId },
+        )
+        // 有总集数后「已看完」只保留末集近片尾
+        assertEquals(
+            listOf("fin"),
+            HistoryFilterPolicy.filter(
+                listOf(finished, mid),
+                mapOf("fin" to 130, "mid" to 200),
+                done,
+            ).map { it.seriesId },
+        )
+        val notDone = HistoryFilterPolicy.Criteria(
+            complete = HistoryFilterPolicy.CompleteState.NOT_COMPLETED,
+        )
+        assertEquals(
+            listOf("mid"),
+            HistoryFilterPolicy.filter(
+                listOf(finished, mid),
+                mapOf("fin" to 130, "mid" to 200),
+                notDone,
+            ).map { it.seriesId },
+        )
+    }
+
+    @Test
+    fun clearingCompleteCriteriaReturnsAll() {
+        val rows = listOf(
+            item(id = "a", episode = 10, positionMs = 59_000L, durationMs = 60_000L),
+            item(id = "b", episode = 1),
+        )
+        val totals = mapOf("a" to 10, "b" to 40)
+        val filtered = HistoryFilterPolicy.filter(
+            rows,
+            totals,
+            HistoryFilterPolicy.Criteria(complete = HistoryFilterPolicy.CompleteState.COMPLETED),
+        )
+        assertEquals(listOf("a"), filtered.map { it.seriesId })
+        assertEquals(
+            listOf("a", "b"),
+            HistoryFilterPolicy.filter(rows, totals, HistoryFilterPolicy.Criteria())
+                .map { it.seriesId },
+        )
     }
 }

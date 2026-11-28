@@ -198,19 +198,41 @@
             android:indeterminateTint="@color/accent"
             android:visibility="gone" />
 
-        <TextView
-            android:id="@+id/deleteBar"
+        <!-- 编辑底栏：移动到 | 删除（对齐官方收藏夹编辑） -->
+        <LinearLayout
+            android:id="@+id/itemActionBar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="bottom"
             android:background="@color/bg_elevated"
-            android:gravity="center"
-            android:paddingVertical="10dp"
-            android:text="@string/library_delete"
-            android:textColor="@color/accent"
-            android:textSize="@dimen/watch_body"
-            android:textStyle="bold"
-            android:visibility="gone" />
+            android:orientation="horizontal"
+            android:paddingVertical="8dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/moveBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:paddingVertical="6dp"
+                android:text="@string/favorites_folder_move_to"
+                android:textColor="@color/text_primary"
+                android:textSize="@dimen/watch_meta"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/deleteBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:paddingVertical="6dp"
+                android:text="@string/library_delete"
+                android:textColor="@color/accent"
+                android:textSize="@dimen/watch_meta"
+                android:textStyle="bold" />
+        </LinearLayout>
     </FrameLayout>
 
     <TextView

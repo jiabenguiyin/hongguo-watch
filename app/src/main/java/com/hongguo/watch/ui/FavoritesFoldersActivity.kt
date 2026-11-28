@@ -92,6 +92,7 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         binding.editChip.setOnClickListener { enterItemEditMode() }
         binding.selectAllButton.setOnClickListener { toggleSelectAllItems() }
         binding.editDoneButton.setOnClickListener { exitItemEditMode(reload = true) }
+        binding.moveBar.setOnClickListener { showMoveSheet() }
         binding.deleteBar.setOnClickListener { confirmDeleteSelectedItems() }
         onBackPressedDispatcher.addCallback(
             this,
@@ -292,9 +293,7 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
             binding.emptyAction.text = getString(R.string.favorites_folder_add)
             binding.emptyAction.setOnClickListener { showAddItemsPicker(folder) }
             binding.createButton.visibility = View.GONE
-            binding.editChip.visibility = View.GONE
-            binding.editBar.visibility = View.GONE
-            binding.deleteBar.visibility = View.GONE
+            hideItemEditChrome()
         } else {
             binding.emptyPanel.visibility = View.GONE
             refreshItemEditChrome()
@@ -312,18 +311,16 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
             row.copy(selected = row.series.id in selectedSeriesIds)
         }
         posterSnapshot = posters
-        val header = if (itemEditMode) {
-            HomeRow.Header(
-                title = openFolder?.name.orEmpty().ifBlank { getString(R.string.favorites_folders_title) },
-                subtitle = getString(R.string.library_selected_count, selectedSeriesIds.size),
-            )
-        } else {
-            HomeRow.Header(
-                title = openFolder?.name.orEmpty().ifBlank { getString(R.string.favorites_folders_title) },
-                subtitle = getString(R.string.favorites_count, posters.size),
-                actionLabel = if (posters.isEmpty()) "" else getString(R.string.library_edit),
-            )
+        // 编辑态顶栏已是「全选/已选择/完成」，网格不再叠 Header（对齐官方）
+        if (itemEditMode) {
+            itemAdapter.submit(posters)
+            return
         }
+        val header = HomeRow.Header(
+            title = openFolder?.name.orEmpty().ifBlank { getString(R.string.favorites_folders_title) },
+            subtitle = getString(R.string.favorites_count, posters.size),
+            actionLabel = if (posters.isEmpty()) "" else getString(R.string.library_edit),
+        )
         itemAdapter.submit(listOf(header) + posters)
     }
 
@@ -345,6 +342,7 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         itemEditMode = false
         selectedSeriesIds.clear()
         itemAdapter.selectionMode = false
+        binding.backButton.visibility = View.VISIBLE
         hideItemEditChrome()
         if (wasEditing && reload && openFolder != null) {
             reload(fromSwipe = false)
@@ -354,7 +352,7 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
     private fun hideItemEditChrome() {
         binding.editChip.visibility = View.GONE
         binding.editBar.visibility = View.GONE
-        binding.deleteBar.visibility = View.GONE
+        binding.itemActionBar.visibility = View.GONE
     }
 
     private fun refreshItemEditChrome() {
@@ -364,22 +362,31 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         }
         if (!itemEditMode) {
             binding.editBar.visibility = View.GONE
-            binding.deleteBar.visibility = View.GONE
+            binding.itemActionBar.visibility = View.GONE
             binding.editChip.visibility = View.VISIBLE
+            binding.backButton.visibility = View.VISIBLE
+            binding.subtitleView.visibility = View.VISIBLE
             return
         }
         binding.editChip.visibility = View.GONE
         binding.editBar.visibility = View.VISIBLE
-        binding.deleteBar.visibility = View.VISIBLE
+        binding.itemActionBar.visibility = View.VISIBLE
+        // 顶栏对齐官方：全选 | 夹名+已选择N个 | 完成（夹名仍用 titleView）
+        binding.backButton.visibility = View.GONE
+        binding.manageButton.visibility = View.GONE
+        binding.subtitleView.visibility = View.GONE
         val n = selectedSeriesIds.size
-        binding.selectedCount.text = getString(R.string.library_selected_count, n)
+        binding.selectedCount.text = getString(R.string.favorites_folder_selected_count, n)
         val allIds = posterSnapshot.map { it.series.id }.toSet()
         val allSelected = allIds.isNotEmpty() && selectedSeriesIds.containsAll(allIds)
         binding.selectAllButton.text = getString(
             if (allSelected) R.string.library_deselect_all else R.string.library_select_all,
         )
-        binding.deleteBar.isEnabled = n > 0
-        binding.deleteBar.alpha = if (n > 0) 1f else 0.4f
+        val enabled = n > 0
+        binding.moveBar.isEnabled = enabled
+        binding.deleteBar.isEnabled = enabled
+        binding.moveBar.alpha = if (enabled) 1f else 0.4f
+        binding.deleteBar.alpha = if (enabled) 1f else 0.4f
     }
 
     private fun toggleItemSelection(seriesId: String) {
@@ -403,11 +410,14 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         refreshItemEditChrome()
     }
 
+    private fun selectedFolderItems(): List<RedfruitBookshelfFolderItem> {
+        val ids = selectedSeriesIds
+        return folderItems.filter { it.seriesId in ids }
+    }
+
     private fun confirmDeleteSelectedItems() {
         val folder = openFolder ?: return
-        val ids = selectedSeriesIds.toList()
-        if (ids.isEmpty()) return
-        val toRemove = folderItems.filter { it.seriesId in ids }
+        val toRemove = selectedFolderItems()
         if (toRemove.isEmpty()) return
         val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
             .setTitle(R.string.favorites_folder_items_delete_confirm_title)
@@ -436,6 +446,85 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
             .setNegativeButton(R.string.update_cancel, null)
             .create()
         showWatchDialog(dialog)
+    }
+
+    /** 官方「选择收藏夹」：列表 + 新建；手表深色对话框。 */
+    private fun showMoveSheet() {
+        val origin = openFolder ?: return
+        val moving = selectedFolderItems()
+        if (moving.isEmpty()) return
+        lifecycleScope.launch {
+            try {
+                val folders = container.redfruitAccount.libraryBookshelfFolders().orEmpty()
+                val destinations = folders.filter { it.id != origin.id }
+                presentMoveSheet(origin, moving, destinations)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Toast.makeText(
+                    this@FavoritesFoldersActivity,
+                    error.message ?: getString(R.string.favorites_folder_save_failed),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
+    }
+
+    private fun presentMoveSheet(
+        origin: RedfruitBookshelfFolder,
+        moving: List<RedfruitBookshelfFolderItem>,
+        destinations: List<RedfruitBookshelfFolder>,
+    ) {
+        val view = layoutInflater.inflate(R.layout.dialog_favorites_folder_pick, null)
+        val list = view.findViewById<RecyclerView>(R.id.pickList)
+        val empty = view.findViewById<TextView>(R.id.pickEmpty)
+        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
+            .setView(view)
+            .create()
+        list.layoutManager = LinearLayoutManager(this)
+        fun bindDestinations(rows: List<RedfruitBookshelfFolder>) {
+            empty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+            list.adapter = FolderPickAdapter(rows) { target ->
+                dialog.dismiss()
+                moveSelectedItems(origin, target, moving)
+            }
+        }
+        bindDestinations(destinations)
+        view.findViewById<TextView>(R.id.pickClose).setOnClickListener { dialog.dismiss() }
+        view.findViewById<TextView>(R.id.pickCreate).setOnClickListener {
+            dialog.dismiss()
+            showCreateOrEditDialog(existing = null) {
+                // 新建后重新打开选择表，便于立刻移入新夹
+                showMoveSheet()
+            }
+        }
+        showWatchDialog(dialog)
+    }
+
+    private fun moveSelectedItems(
+        origin: RedfruitBookshelfFolder,
+        target: RedfruitBookshelfFolder,
+        moving: List<RedfruitBookshelfFolderItem>,
+    ) {
+        lifecycleScope.launch {
+            try {
+                container.redfruitAccount.moveBookshelfFolderItems(origin.id, target.id, moving)
+                Toast.makeText(
+                    this@FavoritesFoldersActivity,
+                    getString(R.string.favorites_folder_moved_count, moving.size),
+                    Toast.LENGTH_SHORT,
+                ).show()
+                exitItemEditMode(reload = true)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Toast.makeText(
+                    this@FavoritesFoldersActivity,
+                    error.message ?: getString(R.string.favorites_folder_save_failed),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
     }
 
     private fun applyListLayout() {
@@ -492,7 +581,10 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         return true
     }
 
-    private fun showCreateOrEditDialog(existing: RedfruitBookshelfFolder?) {
+    private fun showCreateOrEditDialog(
+        existing: RedfruitBookshelfFolder?,
+        onCreated: (() -> Unit)? = null,
+    ) {
         if (!container.redfruitAccount.hasCloudSession()) {
             Toast.makeText(this, R.string.favorites_folders_need_login, Toast.LENGTH_SHORT).show()
             return
@@ -544,7 +636,11 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
                         ).show()
                     }
                     dialog.dismiss()
-                    reload(fromSwipe = false)
+                    if (existing == null && onCreated != null) {
+                        onCreated.invoke()
+                    } else {
+                        reload(fromSwipe = false)
+                    }
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
@@ -691,6 +787,53 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         dialog.window?.let { window ->
             window.setLayout(WatchUi.dialogContentWidthPx(this), WindowManager.LayoutParams.WRAP_CONTENT)
             window.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)
+        }
+    }
+
+    private class FolderPickAdapter(
+        private val rows: List<RedfruitBookshelfFolder>,
+        private val onClick: (RedfruitBookshelfFolder) -> Unit,
+    ) : RecyclerView.Adapter<FolderPickAdapter.Holder>() {
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
+            val view = LayoutInflater.from(parent.context)
+                .inflate(R.layout.item_favorites_folder_pick, parent, false)
+            return Holder(view)
+        }
+
+        override fun getItemCount(): Int = rows.size
+
+        override fun onBindViewHolder(holder: Holder, position: Int) {
+            holder.bind(rows[position], onClick)
+        }
+
+        class Holder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+            private val cover = itemView.findViewById<ImageView>(R.id.pickCover)
+            private val name = itemView.findViewById<TextView>(R.id.pickName)
+            private val meta = itemView.findViewById<TextView>(R.id.pickMeta)
+
+            fun bind(folder: RedfruitBookshelfFolder, onClick: (RedfruitBookshelfFolder) -> Unit) {
+                name.text = folder.name
+                val privacy = itemView.context.getString(
+                    if (folder.published) R.string.favorites_folder_public_label
+                    else R.string.favorites_folder_private_label,
+                )
+                meta.text = itemView.context.getString(
+                    R.string.favorites_folder_card_meta,
+                    folder.itemCount,
+                    privacy,
+                )
+                val url = folder.covers.firstOrNull().orEmpty()
+                if (url.isBlank()) {
+                    cover.setImageDrawable(null)
+                    cover.setBackgroundResource(R.drawable.bg_cover)
+                } else {
+                    cover.load(CoverUrls.normalize(url)) {
+                        transformations(RoundedCornersTransformation(4f))
+                        crossfade(true)
+                    }
+                }
+                itemView.setOnClickListener { onClick(folder) }
+            }
         }
     }
 

@@ -173,6 +173,13 @@
     <string name="favorites_folder_items_delete_confirm_title">从收藏夹移除？</string>
     <string name="favorites_folder_items_delete_confirm_body">将从本收藏夹移除 %1$d 部，不会从全部收藏删除。</string>
     <string name="favorites_folder_items_deleted_count">已从收藏夹移除 %1$d 部</string>
+    <string name="favorites_folder_move_to">移动到</string>
+    <string name="favorites_folder_pick_title">选择收藏夹</string>
+    <string name="favorites_folder_pick_create">新建</string>
+    <string name="favorites_folder_pick_close">∨</string>
+    <string name="favorites_folder_pick_empty">暂无其他收藏夹，可先新建</string>
+    <string name="favorites_folder_moved_count">已移动 %1$d 部</string>
+    <string name="favorites_folder_selected_count">已选择%1$d个</string>
     <string name="favorites_folder_card_meta">共%1$d条内容 · %2$s</string>
     <string name="favorites_folder_detail_meta">%1$d条内容 · %2$s</string>
     <string name="favorites_folder_created">已新建收藏夹</string>

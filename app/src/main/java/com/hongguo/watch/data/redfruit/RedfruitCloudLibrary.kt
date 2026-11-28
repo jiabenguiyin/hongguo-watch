@@ -671,6 +671,41 @@ internal class RedfruitCloudLibrary(
         )
     }
 
+    /**
+     * 夹间移动条目：`operate_type=3`，带 `origin_folder_id`。
+     */
+    suspend fun moveBookshelfFolderItems(
+        credentials: RedfruitCredentials,
+        originFolderId: Long,
+        targetFolderId: Long,
+        items: List<RedfruitBookshelfFolderItem>,
+    ) {
+        require(originFolderId > 0L && targetFolderId > 0L) { "收藏夹编号无效" }
+        require(originFolderId != targetFolderId) { "目标收藏夹与当前相同" }
+        require(items.isNotEmpty()) { "未选择要移动的内容" }
+        val modifyTime = System.currentTimeMillis()
+        val operators = JSONArray()
+        for (item in items.distinctBy { it.itemId }) {
+            require(item.itemId.isSeriesId()) { "红果收藏条目编号无效" }
+            operators.put(
+                folderItemOperator(
+                    operateType = FOLDER_ITEM_OP_MOVE,
+                    itemId = item.itemId,
+                    folderId = targetFolderId,
+                    bookType = item.bookType.takeIf { it > 0 } ?: 2,
+                    contentType = item.contentType.coerceAtLeast(1),
+                )
+                    .put("origin_folder_id", originFolderId)
+                    .put("modify_time", modifyTime),
+            )
+        }
+        postFolderJson(
+            credentials,
+            FOLDER_ITEM_UPDATE_PATH,
+            JSONObject().put("operators", operators),
+        )
+    }
+
     private fun folderItemOperator(
         operateType: Int,
         itemId: String,
@@ -877,6 +912,7 @@ internal class RedfruitCloudLibrary(
         const val FOLDER_OP_UPDATE = 3L
         const val FOLDER_ITEM_OP_ADD = 1
         const val FOLDER_ITEM_OP_REMOVE = 2
+        const val FOLDER_ITEM_OP_MOVE = 3
         const val FOLDER_CONTENT_SHORT_SERIES = 1
         const val FOLDER_PAGE_SIZE = 20
         const val FOLDER_PREVIEW_LIMIT = 4

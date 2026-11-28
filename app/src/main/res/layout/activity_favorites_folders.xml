@@ -209,56 +209,79 @@
             android:indeterminate="true"
             android:indeterminateTint="@color/accent"
             android:visibility="gone" />
-
-        <!-- 编辑底栏：对齐历史 libraryDeleteBar —— 全宽贴底叠加，非悬浮灰条 -->
-        <LinearLayout
-            android:id="@+id/itemActionBar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:background="@color/bg_elevated"
-            android:orientation="horizontal"
-            android:visibility="gone">
-
-            <TextView
-                android:id="@+id/moveBar"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:paddingVertical="10dp"
-                android:text="@string/favorites_folder_move_to"
-                android:textColor="@color/text_primary"
-                android:textSize="@dimen/watch_body"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/deleteBar"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:paddingVertical="10dp"
-                android:text="@string/library_delete"
-                android:textColor="@color/accent"
-                android:textSize="@dimen/watch_body"
-                android:textStyle="bold" />
-        </LinearLayout>
     </FrameLayout>
 
-    <!-- 新建/添加：对齐 display saveButton（bottomChrome） -->
-    <TextView
-        android:id="@+id/createButton"
+    <!-- 编辑底栏：对齐筛选 清空|确定 —— 双钮中间留缝，避开左右下角 -->
+    <LinearLayout
+        android:id="@+id/itemActionBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/watch_pad_tight"
-        android:background="@drawable/bg_control_button"
-        android:gravity="center"
-        android:minHeight="@dimen/watch_control_h"
-        android:paddingHorizontal="@dimen/watch_pad"
-        android:text="@string/favorites_folder_create_plus"
-        android:textColor="@color/text_primary"
-        android:textSize="@dimen/watch_body"
-        android:textStyle="bold"
-        android:visibility="gone" />
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/moveBar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="6dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_history_filter_clear"
+            android:gravity="center"
+            android:minHeight="@dimen/watch_control_h"
+            android:text="@string/favorites_folder_move_to"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/deleteBar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/bg_history_filter_confirm"
+            android:gravity="center"
+            android:minHeight="@dimen/watch_control_h"
+            android:text="@string/library_delete"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- 新建/添加：宽条拆成双钮（同筛选 清空|确定），避免圆角裁切 refs 34 -->
+    <LinearLayout
+        android:id="@+id/createActionBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/watch_pad_tight"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/createButtonLeft"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="6dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_history_filter_clear"
+            android:gravity="center"
+            android:minHeight="@dimen/watch_control_h"
+            android:text="@string/favorites_folder_create_plus"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/createButtonRight"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/bg_history_filter_confirm"
+            android:gravity="center"
+            android:minHeight="@dimen/watch_control_h"
+            android:text="@string/favorites_folder_create_plus"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+    </LinearLayout>
 </LinearLayout>

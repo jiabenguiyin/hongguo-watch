@@ -7,7 +7,6 @@ import android.content.Intent
 import android.os.Bundle
 import android.text.InputType
 import android.view.View
-import android.view.WindowManager
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
@@ -203,20 +202,11 @@ class SettingsActivity : WatchDisplayActivity() {
         }
     }
 
-    private fun watchDialogBuilder(): AlertDialog.Builder {
-        return AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
-    }
+    private fun watchDialogBuilder(): AlertDialog.Builder = WatchAlertDialogs.builder(this)
 
-    /** 弹窗近全宽（减圆角安全边），避免两侧黑边过大、底栏被裁。 */
-    private fun showWatchDialog(dialog: AlertDialog): AlertDialog {
-        dialog.show()
-        dialog.window?.let { window ->
-            val width = WatchUi.dialogContentWidthPx(this)
-            window.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT)
-            window.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)
-        }
-        return dialog
-    }
+    /** 弹窗近全宽（减圆角安全边），避免两侧黑边过大、底栏被裁；列表项强制浅色字。 */
+    private fun showWatchDialog(dialog: AlertDialog): AlertDialog =
+        WatchAlertDialogs.show(this, dialog)
 
     private fun checkForUpdate() {
         if (updateChecking) return

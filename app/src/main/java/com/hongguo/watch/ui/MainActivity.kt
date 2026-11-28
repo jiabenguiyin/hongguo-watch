@@ -9,7 +9,6 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
-import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.TextView
@@ -1612,12 +1611,7 @@ class MainActivity : WatchDisplayActivity() {
     }
 
     private fun showWatchDialog(dialog: AlertDialog) {
-        dialog.show()
-        dialog.window?.let { window ->
-            val width = WatchUi.dialogContentWidthPx(this)
-            window.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT)
-            window.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)
-        }
+        WatchAlertDialogs.show(this, dialog)
     }
 
     private fun showFirstRunNotice(onDismiss: () -> Unit): Boolean {

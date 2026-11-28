@@ -154,7 +154,7 @@ class TimeLockActivity : WatchDisplayActivity() {
         lifecycleScope.launch {
             val current = timeLock.dailyLimitMinutesNow()
             val checked = options.indexOf(TimeLockStore.normalizeLimit(current)).coerceAtLeast(0)
-            val dialog = AlertDialog.Builder(this@TimeLockActivity, R.style.Theme_HongguoWatch_AlertDialog)
+            val dialog = WatchAlertDialogs.builder(this@TimeLockActivity)
                 .setTitle(lightLabel(getText(R.string.time_lock_daily_limit)))
                 .setSingleChoiceItems(labels, checked) { chooser, index ->
                     chooser.dismiss()
@@ -202,7 +202,7 @@ class TimeLockActivity : WatchDisplayActivity() {
             orientation = LinearLayout.VERTICAL
             addView(input)
         }
-        val dialog = AlertDialog.Builder(this, R.style.Theme_HongguoWatch_AlertDialog)
+        val dialog = WatchAlertDialogs.builder(this)
             .setTitle(title)
             .setView(column)
             .setNegativeButton(R.string.update_cancel) { _, _ -> onCancel?.invoke() }
@@ -222,13 +222,6 @@ class TimeLockActivity : WatchDisplayActivity() {
         input.requestFocus()
     }
 
-    private fun showWatchDialog(dialog: AlertDialog): AlertDialog {
-        dialog.show()
-        dialog.window?.let { window ->
-            val width = WatchUi.dialogContentWidthPx(this)
-            window.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT)
-            window.setBackgroundDrawableResource(R.drawable.bg_alert_dialog)
-        }
-        return dialog
-    }
+    private fun showWatchDialog(dialog: AlertDialog): AlertDialog =
+        WatchAlertDialogs.show(this, dialog)
 }

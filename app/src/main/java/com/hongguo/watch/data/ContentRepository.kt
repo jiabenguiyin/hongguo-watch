@@ -181,6 +181,9 @@ class ContentRepository internal constructor(
 
     suspend fun recentHistory(): List<WatchHistoryEntity> = currentLibrary().history.recent()
 
+    /** 库历史列表/筛选用：全量按 updatedAt 降序（不截断 50）。 */
+    suspend fun allHistory(): List<WatchHistoryEntity> = currentLibrary().history.allForSync()
+
     suspend fun saveProgress(
         seriesId: String,
         seriesTitle: String,

@@ -67,6 +67,8 @@ sealed class HomeRow {
     /**
      * 库收藏等三列海报。
      * 默认 meta 为进度「已看集/总集」；[metaLabel] 非空时覆盖。
+     * [progressPercent] 非空时在封面底边画细进度条（历史）。
+     * [recentWatching] 为「最近在看」角标（历史最新一条）。
      */
     data class Poster(
         val series: Series,
@@ -75,6 +77,8 @@ sealed class HomeRow {
         val hasUpdate: Boolean = false,
         val selected: Boolean = false,
         val metaLabel: String? = null,
+        val progressPercent: Int? = null,
+        val recentWatching: Boolean = false,
     ) : HomeRow()
 }
 
@@ -114,10 +118,15 @@ class SeriesListAdapter(
     }
 
     fun appendItems(items: List<HomeRow.Item>) {
-        if (items.isEmpty()) return
+        appendRows(items)
+    }
+
+    /** 首页续页：列表行或三列海报均可追加。 */
+    fun appendRows(more: List<HomeRow>) {
+        if (more.isEmpty()) return
         val start = rows.size
-        rows.addAll(items)
-        notifyItemRangeInserted(start, items.size)
+        rows.addAll(more)
+        notifyItemRangeInserted(start, more.size)
     }
 
     /** 更新某剧收藏态（历史行 ♡），找不到则忽略。 */
@@ -379,6 +388,15 @@ class SeriesListAdapter(
                 binding.posterMeta.visibility = View.VISIBLE
                 binding.posterMeta.text = meta
             }
+            val percent = row.progressPercent
+            if (percent != null) {
+                binding.posterProgress.visibility = View.VISIBLE
+                binding.posterProgress.progress = percent.coerceIn(0, 100)
+            } else {
+                binding.posterProgress.visibility = View.GONE
+            }
+            binding.recentWatchingBadge.visibility =
+                if (!selectionMode && row.recentWatching) View.VISIBLE else View.GONE
             binding.updateBadge.visibility =
                 if (!selectionMode && row.hasUpdate) View.VISIBLE else View.GONE
             if (selectionMode) {

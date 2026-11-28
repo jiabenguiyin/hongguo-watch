@@ -19,4 +19,6 @@
     <color name="banner_scrim_end">#CC000000</color>
     <color name="rating_good">#34C759</color>
     <color name="heat">#FF6B4A</color>
+    <!-- 历史封面观看进度条沿用品牌红，与筛选/确定一致 -->
+    <color name="history_progress">@color/accent</color>
 </resources>

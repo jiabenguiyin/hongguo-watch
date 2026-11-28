@@ -187,6 +187,87 @@
             android:textSize="@dimen/watch_meta" />
     </LinearLayout>
 
+    <!-- 历史快捷筛选：全部 / 看10集以上 / 筛选 / 编辑 -->
+    <HorizontalScrollView
+        android:id="@+id/historyFilterChipScroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:clipToPadding="false"
+        android:overScrollMode="never"
+        android:scrollbars="none"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/historyFilterChipRow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingBottom="2dp">
+
+            <TextView
+                android:id="@+id/historyChipAll"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_history_filter_chip"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:minHeight="28dp"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="4dp"
+                android:text="@string/chip_all"
+                android:textColor="@color/text_primary"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/historyChipEp10"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/bg_history_filter_chip"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:minHeight="28dp"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="4dp"
+                android:text="@string/history_filter_ep_over_10"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/historyChipFilter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/bg_history_filter_chip"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:minHeight="28dp"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="4dp"
+                android:text="@string/history_filter"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/historyChipEdit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/bg_history_filter_chip"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:minHeight="28dp"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="4dp"
+                android:text="@string/library_edit"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
     <!-- 非离线段时展示占用摘要；点按进入离线段 -->
     <TextView
         android:id="@+id/libraryCacheHook"

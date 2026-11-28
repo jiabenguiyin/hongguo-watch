@@ -29,6 +29,7 @@ import com.hongguo.watch.data.model.SeriesSource
 import com.hongguo.watch.data.redfruit.RedfruitBookshelfFolder
 import com.hongguo.watch.data.redfruit.RedfruitBookshelfFolderItem
 import com.hongguo.watch.databinding.ActivityFavoritesFoldersBinding
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -156,10 +157,16 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
                     folderItems = items
                     renderFolderDetail(openFolder!!, items)
                 }
+            } catch (error: CancellationException) {
+                // onResume / 下拉会取消上一次加载，绝不能把 JobCancellationException 甩成 Toast
+                throw error
             } catch (error: Exception) {
-                val message = error.message?.takeIf { it.isNotBlank() }
-                    ?: getString(R.string.favorites_folders_load_failed)
-                Toast.makeText(this@FavoritesFoldersActivity, message, Toast.LENGTH_SHORT).show()
+                if (isCancellationNoise(error)) return@launch
+                Toast.makeText(
+                    this@FavoritesFoldersActivity,
+                    R.string.favorites_folders_load_failed,
+                    Toast.LENGTH_SHORT,
+                ).show()
                 if (current == null) {
                     binding.emptyPanel.visibility = View.VISIBLE
                     binding.emptyText.text = getString(R.string.favorites_folders_load_failed)
@@ -332,12 +339,10 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
                     }
                     dialog.dismiss()
                     reload(fromSwipe = false)
+                } catch (error: CancellationException) {
+                    throw error
                 } catch (error: Exception) {
-                    Toast.makeText(
-                        this@FavoritesFoldersActivity,
-                        error.message ?: getString(R.string.favorites_folder_save_failed),
-                        Toast.LENGTH_SHORT,
-                    ).show()
+                    toastFolderError(error)
                 }
             }
         }
@@ -358,12 +363,10 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
                     Toast.LENGTH_SHORT,
                 ).show()
                 reload(fromSwipe = false)
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
-                Toast.makeText(
-                    this@FavoritesFoldersActivity,
-                    error.message ?: getString(R.string.favorites_folder_save_failed),
-                    Toast.LENGTH_SHORT,
-                ).show()
+                toastFolderError(error)
             }
         }
     }
@@ -386,12 +389,10 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
                             folderItems = emptyList()
                         }
                         reload(fromSwipe = false)
+                    } catch (error: CancellationException) {
+                        throw error
                     } catch (error: Exception) {
-                        Toast.makeText(
-                            this@FavoritesFoldersActivity,
-                            error.message ?: getString(R.string.favorites_folder_save_failed),
-                            Toast.LENGTH_SHORT,
-                        ).show()
+                        toastFolderError(error)
                     }
                 }
             }
@@ -435,26 +436,48 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
                                     Toast.LENGTH_SHORT,
                                 ).show()
                                 reload(fromSwipe = false)
+                            } catch (error: CancellationException) {
+                                throw error
                             } catch (error: Exception) {
-                                Toast.makeText(
-                                    this@FavoritesFoldersActivity,
-                                    error.message ?: getString(R.string.favorites_folder_save_failed),
-                                    Toast.LENGTH_SHORT,
-                                ).show()
+                                toastFolderError(error)
                             }
                         }
                     }
                     .setNegativeButton(R.string.update_cancel, null)
                     .create()
                 showWatchDialog(dialog)
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
-                Toast.makeText(
-                    this@FavoritesFoldersActivity,
-                    error.message ?: getString(R.string.favorites_folder_save_failed),
-                    Toast.LENGTH_SHORT,
-                ).show()
+                toastFolderError(error)
             }
         }
+    }
+
+    /** 协程/OkHttp 取消噪声：绝不 Toast（含 “t0 was cancelled”）。 */
+    private fun isCancellationNoise(error: Throwable): Boolean {
+        if (error is CancellationException) return true
+        var cursor: Throwable? = error
+        while (cursor != null) {
+            if (cursor is CancellationException) return true
+            val msg = cursor.message.orEmpty()
+            if (msg.contains("cancelled", ignoreCase = true) ||
+                msg.contains("canceled", ignoreCase = true)
+            ) {
+                return true
+            }
+            cursor = cursor.cause
+        }
+        return false
+    }
+
+    private fun toastFolderError(error: Throwable) {
+        if (isCancellationNoise(error)) return
+        Toast.makeText(
+            this,
+            R.string.favorites_folder_save_failed,
+            Toast.LENGTH_SHORT,
+        ).show()
     }
 
     private fun showWatchDialog(dialog: AlertDialog) {

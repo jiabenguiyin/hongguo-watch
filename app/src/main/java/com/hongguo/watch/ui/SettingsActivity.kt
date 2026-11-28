@@ -276,14 +276,13 @@ class SettingsActivity : WatchDisplayActivity() {
                         .create(),
                 )
             }.onFailure { err ->
-                Toast.makeText(
-                    this@SettingsActivity,
-                    getString(
-                        R.string.diag_upload_failed,
-                        err.message ?: getString(R.string.error_network),
-                    ),
-                    Toast.LENGTH_LONG,
-                ).show()
+                // 仅展示中文提示，不把英文服务端正文 / 通道细节甩给用户
+                val message = when (err) {
+                    is DiagUploader.UploadFailedException -> err.message
+                        ?: getString(R.string.diag_upload_failed)
+                    else -> getString(R.string.diag_upload_failed)
+                }
+                Toast.makeText(this@SettingsActivity, message, Toast.LENGTH_LONG).show()
             }
         }
     }

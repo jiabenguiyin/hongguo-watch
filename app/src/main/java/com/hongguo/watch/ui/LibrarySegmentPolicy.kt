@@ -8,8 +8,8 @@ import kotlin.math.abs
  * 点赞 / 预约 / 追更 云端未打通前不进分段（避免失败空页与转圈）。
  * 左右滑只在库内相邻分段之间移动；到边即停，不循环。
  *
- * 三列 / 列表是全局布局模式（设置开关），对各分段共用；
- * 离线钻入分集时仍用列表。
+ * 三列 / 列表是全局布局模式（设置 `library_layout_classic`），
+ * 首页推荐/榜单/分类与库各分段共用；离线钻入分集时仍用列表。
  */
 object LibrarySegmentPolicy {
     enum class Segment {
@@ -25,12 +25,18 @@ object LibrarySegmentPolicy {
     )
 
     /**
-     * 是否用三列海报格。
+     * 首页与库共用：是否用三列海报格。
+     * [listMode] true=列表；false=三列（默认）。
+     */
+    fun usesPosterGrid(listMode: Boolean): Boolean = !listMode
+
+    /**
+     * 库分段是否用三列海报格。
      * [listMode] true=列表；false=三列（默认）。
      * 离线钻入分集时调用方应强制列表。
      */
     fun usesPosterGrid(segment: Segment, listMode: Boolean): Boolean {
-        if (listMode) return false
+        if (!usesPosterGrid(listMode)) return false
         return segment in ORDER
     }
 

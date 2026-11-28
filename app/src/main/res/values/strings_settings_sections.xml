@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="settings_section_library">库</string>
+    <string name="settings_section_library">布局</string>
     <string name="settings_section_playback">播放</string>
     <string name="settings_section_time">时间管理</string>
     <string name="settings_section_compatibility">播放兼容性</string>

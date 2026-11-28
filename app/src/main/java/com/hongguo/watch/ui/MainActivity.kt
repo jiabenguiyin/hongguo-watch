@@ -87,7 +87,7 @@ class MainActivity : WatchDisplayActivity() {
     private var searchChipId: String = SEARCH_CHIP_ALL
     private var hotBatchOffset: Int = 0
     private lateinit var librarySegmentGesture: GestureDetector
-    /** 库布局：true=列表模式；false=三列模式（默认）。各分段共用。 */
+    /** 首页+库布局：true=列表模式；false=三列模式（默认）。键 library_layout_classic。 */
     private var libraryLayoutList = false
 
     /** 离线三列模式下暂存分组，点海报钻入分集。 */
@@ -402,8 +402,22 @@ class MainActivity : WatchDisplayActivity() {
         }
         when (mode) {
             Mode.LIBRARY -> showLibrary()
-            Mode.HOME -> Unit
+            Mode.HOME -> refreshHomeLayoutIfNeeded()
             Mode.MINE -> showMine()
+        }
+    }
+
+    /** 从设置返回时：列表/三列偏好变了则重刷首页内容布局。 */
+    private fun refreshHomeLayoutIfNeeded() {
+        lifecycleScope.launch {
+            val listMode = container.settings.libraryLayoutListNow()
+            if (mode != Mode.HOME || listMode == libraryLayoutList) return@launch
+            libraryLayoutList = listMode
+            when {
+                homeNav == HomeNav.SEARCH && lastQuery.isNotBlank() -> runSearch()
+                homeNav == HomeNav.SEARCH -> showSearchDiscovery()
+                else -> showHome(forceReload = true)
+            }
         }
     }
 
@@ -476,6 +490,8 @@ class MainActivity : WatchDisplayActivity() {
                 adapter.showResumeHint = false
                 listJob = lifecycleScope.launch {
                     try {
+                        ensureHomeLayoutPreference()
+                        if (token != listGeneration || mode != Mode.HOME) return@launch
                         loadHomeNavigation(token)
                     } catch (e: Exception) {
                         if (token != listGeneration || mode != Mode.HOME) return@launch
@@ -500,7 +516,6 @@ class MainActivity : WatchDisplayActivity() {
         binding.libraryEditBar.visibility = View.GONE
         binding.libraryDeleteBar.visibility = View.GONE
         highlightBottomTabs(home = true)
-        useSeriesAdapter()
         if (homeNav == HomeNav.SEARCH && !forceReload && !switchingToHome) {
             applyHomeChrome()
             highlightHomeNav()
@@ -529,6 +544,8 @@ class MainActivity : WatchDisplayActivity() {
         if (clear) binding.seriesList.scrollToPosition(0)
         listJob = lifecycleScope.launch {
             try {
+                ensureHomeLayoutPreference()
+                if (token != listGeneration || mode != Mode.HOME) return@launch
                 loadHomeNavigation(token, forceCategories = forceReload)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -544,6 +561,13 @@ class MainActivity : WatchDisplayActivity() {
                 }
             }
         }
+    }
+
+    /** 读取与库共用的列表/三列偏好，并套到首页 RecyclerView。 */
+    private suspend fun ensureHomeLayoutPreference() {
+        libraryLayoutList = container.settings.libraryLayoutListNow()
+        if (mode != Mode.HOME) return
+        useSeriesAdapter(posterGrid = LibrarySegmentPolicy.usesPosterGrid(libraryLayoutList))
     }
 
     private suspend fun loadHomeNavigation(token: Int, forceCategories: Boolean = false) {
@@ -849,13 +873,13 @@ class MainActivity : WatchDisplayActivity() {
             binding.emptyView.visibility = View.GONE
             val rows = if (cat.isRank) {
                 fresh.mapIndexed { index, series ->
-                    HomeRow.Item(series, rank = startRank + index + 1)
+                    homeContentRow(series, rank = startRank + index + 1)
                 }
             } else {
-                // 推荐 Banner 已占首条：续页全部进列表
-                fresh.map { HomeRow.Item(it) }
+                // 推荐 Banner 已占首条：续页跟当前布局（三列海报或列表）
+                fresh.map { homeContentRow(it) }
             }
-            adapter.appendItems(rows)
+            adapter.appendRows(rows)
             hideCenterLoadingIfContentVisible()
         } else {
             feedItems.clear()
@@ -874,16 +898,16 @@ class MainActivity : WatchDisplayActivity() {
                 // 手表推荐流本身可下滑续页；「更多」曾误绑搜索换一批，已去掉。
                 rows += HomeRow.Header(title = getString(R.string.section_for_you))
                 rows += HomeNavPolicy.listSeriesAfterBanner(fresh, banners.size)
-                    .map { HomeRow.Item(it) }
+                    .map { homeContentRow(it) }
             } else {
                 rows += HomeRow.Header(
                     title = cat.label,
                     subtitle = if (cat.isRank) getString(R.string.rank_header_hint) else "",
                 )
                 rows += if (cat.isRank) {
-                    fresh.mapIndexed { index, series -> HomeRow.Item(series, rank = index + 1) }
+                    fresh.mapIndexed { index, series -> homeContentRow(series, rank = index + 1) }
                 } else {
-                    fresh.map { HomeRow.Item(it) }
+                    fresh.map { homeContentRow(it) }
                 }
             }
             adapter.submit(rows)
@@ -897,6 +921,24 @@ class MainActivity : WatchDisplayActivity() {
             }
             if (!empty) hideCenterLoadingIfContentVisible()
         }
+    }
+
+    /**
+     * 首页内容行：跟库同一偏好。
+     * 列表 → [HomeRow.Item]；三列 → [HomeRow.Poster]（榜单把名次写进 meta）。
+     */
+    private fun homeContentRow(
+        series: com.hongguo.watch.data.model.Series,
+        rank: Int? = null,
+    ): HomeRow {
+        if (libraryLayoutList) {
+            return HomeRow.Item(series, rank = rank)
+        }
+        return HomeRow.Poster(
+            series = series,
+            totalEpisodes = series.episodeCount.takeIf { it > 0 },
+            metaLabel = rank?.takeIf { it > 0 }?.toString(),
+        )
     }
 
     private fun maybeLoadMoreFeed() {
@@ -1061,11 +1103,13 @@ class MainActivity : WatchDisplayActivity() {
         val token = beginListLoad(clearAdapter = true)
         listJob = lifecycleScope.launch {
             try {
+                ensureHomeLayoutPreference()
+                if (token != listGeneration || mode != Mode.HOME) return@launch
                 val page = repo.search(query, page = 1)
                 if (token != listGeneration || mode != Mode.HOME) return@launch
                 val rows = mutableListOf<HomeRow>()
                 rows += HomeRow.Header(getString(R.string.app_section))
-                rows += page.items.map { HomeRow.Item(it) }
+                rows += page.items.map { homeContentRow(it) }
                 adapter.submit(rows)
                 binding.emptyView.visibility = if (page.items.isEmpty()) View.VISIBLE else View.GONE
                 binding.emptyView.text =
@@ -1108,6 +1152,7 @@ class MainActivity : WatchDisplayActivity() {
         val token = beginListLoad(clearAdapter = true)
         listJob = lifecycleScope.launch {
             try {
+                ensureHomeLayoutPreference()
                 ensureCategories(token)
                 if (token != listGeneration || mode != Mode.HOME || homeNav != HomeNav.SEARCH) {
                     return@launch

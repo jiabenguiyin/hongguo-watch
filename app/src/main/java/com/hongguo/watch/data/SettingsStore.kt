@@ -32,7 +32,7 @@ class SettingsStore(private val context: Context) {
     private val screenOffContinueKey = booleanPreferencesKey("screen_off_continue")
     private val episodeWheelEnabledKey = booleanPreferencesKey("episode_wheel_enabled")
     /**
-     * 库页布局模式（收藏/点赞/预约/追更/历史/离线共用）：
+     * 首页与库共用布局模式（推荐/榜单/分类 + 收藏/历史/离线）：
      * false=三列海报（默认）；true=列表（原列表 UI）。
      * 偏好键沿用 library_layout_classic，避免已有设置丢失。
      */
@@ -43,7 +43,7 @@ class SettingsStore(private val context: Context) {
     private val updateMirrorBaseKey = stringPreferencesKey("update_mirror_base")
 
     val wifiOnly: Flow<Boolean> = context.dataStore.data.map { it[wifiOnlyKey] ?: false }
-    /** true = 列表模式；false = 三列模式（默认）。 */
+    /** 首页+库共用：true = 列表模式；false = 三列模式（默认）。 */
     val libraryLayoutList: Flow<Boolean> = context.dataStore.data.map {
         it[libraryLayoutListKey] ?: false
     }

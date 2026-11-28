@@ -36,7 +36,7 @@ import kotlinx.coroutines.launch
 
 /**
  * 云端收藏夹：列表 / 新建 / 打开内容 / 改名·公开·删除；
- * 夹内条目批量移除对齐库页收藏/历史「编辑」流程。
+ * 夹内条目批量编辑：顶栏「编辑」与「管理」并排；进入后全选/完成 + 底栏移动到|删除。
  * 未登录明确引导登录，不假装已同步。
  */
 class FavoritesFoldersActivity : WatchDisplayActivity() {
@@ -89,7 +89,7 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         binding.manageButton.setOnClickListener {
             openFolder?.let(::showManageSheet)
         }
-        binding.editChip.setOnClickListener { enterItemEditMode() }
+        binding.editButton.setOnClickListener { enterItemEditMode() }
         binding.selectAllButton.setOnClickListener { toggleSelectAllItems() }
         binding.editDoneButton.setOnClickListener { exitItemEditMode(reload = true) }
         binding.moveBar.setOnClickListener { showMoveSheet() }
@@ -263,7 +263,10 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
             getString(if (folder.published) R.string.favorites_folder_public_label else R.string.favorites_folder_private_label),
         )
         binding.swipeRefresh.isEnabled = !itemEditMode
-        binding.manageButton.visibility = if (itemEditMode) View.GONE else View.VISIBLE
+        val showFolderChrome = !itemEditMode
+        binding.manageButton.visibility = if (showFolderChrome) View.VISIBLE else View.GONE
+        binding.editButton.visibility =
+            if (showFolderChrome && items.isNotEmpty()) View.VISIBLE else View.GONE
         applyPosterLayout()
         binding.folderList.adapter = itemAdapter
         itemAdapter.selectionMode = itemEditMode
@@ -312,6 +315,7 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         }
         posterSnapshot = posters
         // 编辑态顶栏已是「全选/已选择/完成」，网格不再叠 Header（对齐官方）
+        // 「编辑」已挪到顶栏与「管理」并排，Header 不再重复入口
         if (itemEditMode) {
             itemAdapter.submit(posters)
             return
@@ -319,7 +323,6 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         val header = HomeRow.Header(
             title = openFolder?.name.orEmpty().ifBlank { getString(R.string.favorites_folders_title) },
             subtitle = getString(R.string.favorites_count, posters.size),
-            actionLabel = if (posters.isEmpty()) "" else getString(R.string.library_edit),
         )
         itemAdapter.submit(listOf(header) + posters)
     }
@@ -332,6 +335,7 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         itemAdapter.selectionMode = true
         binding.swipeRefresh.isEnabled = false
         binding.manageButton.visibility = View.GONE
+        binding.editButton.visibility = View.GONE
         binding.createButton.visibility = View.GONE
         refreshItemEditChrome()
         submitItemRows()
@@ -350,7 +354,7 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
     }
 
     private fun hideItemEditChrome() {
-        binding.editChip.visibility = View.GONE
+        binding.editButton.visibility = View.GONE
         binding.editBar.visibility = View.GONE
         binding.itemActionBar.visibility = View.GONE
     }
@@ -363,12 +367,13 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         if (!itemEditMode) {
             binding.editBar.visibility = View.GONE
             binding.itemActionBar.visibility = View.GONE
-            binding.editChip.visibility = View.VISIBLE
+            binding.editButton.visibility = View.VISIBLE
+            binding.manageButton.visibility = View.VISIBLE
             binding.backButton.visibility = View.VISIBLE
             binding.subtitleView.visibility = View.VISIBLE
             return
         }
-        binding.editChip.visibility = View.GONE
+        binding.editButton.visibility = View.GONE
         binding.editBar.visibility = View.VISIBLE
         binding.itemActionBar.visibility = View.VISIBLE
         // 顶栏对齐官方：全选 | 夹名+已选择N个 | 完成（夹名仍用 titleView）

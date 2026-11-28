@@ -38,6 +38,20 @@
             android:textSize="@dimen/watch_title"
             android:textStyle="bold" />
 
+        <!-- 夹内条目编辑入口：顶栏与「管理」并排，去掉左侧重复「编辑」与列表 Header 编辑 -->
+        <TextView
+            android:id="@+id/editButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:background="@drawable/bg_control_button"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="4dp"
+            android:text="@string/library_edit"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/manageButton"
             android:layout_width="wrap_content"
@@ -71,23 +85,6 @@
         android:maxLines="1"
         android:textColor="@color/text_secondary"
         android:textSize="@dimen/watch_meta"
-        android:visibility="gone" />
-
-    <!-- 夹内：编辑芯片（对齐历史/收藏批量编辑入口） -->
-    <TextView
-        android:id="@+id/editChip"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:background="@drawable/bg_history_filter_chip"
-        android:gravity="center"
-        android:includeFontPadding="false"
-        android:minHeight="28dp"
-        android:paddingHorizontal="10dp"
-        android:paddingVertical="4dp"
-        android:text="@string/library_edit"
-        android:textColor="@color/text_secondary"
-        android:textSize="11sp"
         android:visibility="gone" />
 
     <!-- 批量编辑条：全选 | 已选 N | 完成 -->

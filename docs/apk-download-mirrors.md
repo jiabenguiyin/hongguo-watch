@@ -6,7 +6,7 @@
 
 | 模式 | 说明 |
 | --- | --- |
-| **自动镜像**（默认） | 前缀代理：`https://{节点}/` + 完整 GitHub / api.github.com URL。默认节点 `gh.meali.top` |
+| **自动镜像**（默认） | APK 下载用前缀代理（默认节点 `gh.meali.top`）；检查更新走独立 API 代理池 |
 | **GitHub 官方** | 直连 `api.github.com` 与 Release Assets |
 
 **区域：** 自动镜像下，若设备不像中国大陆（系统国家码非 `CN`，且时区也非 `Asia/Shanghai` 等大陆区），**APK 下载跳过 CN 镜像、只走 GitHub 官方**。检查更新 API 仍按其自身备用池，不受此限制。
@@ -25,7 +25,15 @@
 
 已从 APK 主梯队移出（目录中仍可选）：旧首选 `ghproxy.imciel.com`；仅在日本 Dot 表现突出的 `xsadwsd.kdns.fr` / `ghfast.top`。用户取消下载会立即停止，不再试下一个地址。
 
-**发布 API**（检查更新）未随上海 APK 表改序，仍用原备用池，不与 APK 下载列表共用。
+**发布 API**（检查更新）与 APK 池完全独立：忽略设置里选中的 APK 节点，**绝不使用** `gh.meali.top` / `jiashu.1win.eu.org`（meali 对 api.github.com TLS 失败会返回约 2KB 垃圾包）。自动模式下依次尝试：
+
+1. `ghproxy.imciel.com`
+2. `gh-proxy.com`
+3. `cdn.gh-proxy.com`
+4. `ghfast.top`
+5. `gh.ddlc.top`
+6. `gh.monlor.com`
+7. 官方 `api.github.com`
 
 ## 设置
 

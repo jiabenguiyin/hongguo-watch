@@ -6,13 +6,13 @@ import java.util.TimeZone
 /**
  * GitHub Releases 检查 / APK 下载镜像策略。
  *
- * 节点来自 [hiwiki 镜像目录](https://git.hiwiki.org/zh-CN/mirrors) 的 `proxyNodeKeys`，
- * 默认与上海测速首选一致：`https://gh.meali.top/` 前缀代理（`{base}{完整 GitHub URL}`）。
- * 「自动镜像」在大陆网络下失败时依次尝试备用节点，最后回落官方 GitHub。
+ * 节点来自 [hiwiki 镜像目录](https://git.hiwiki.org/zh-CN/mirrors) 的 `proxyNodeKeys`。
+ * 「自动镜像」下 **APK 下载** 与 **检查更新 API** 使用两套独立候选池，禁止混用。
  *
- * APK 下载回退顺序按 2026-11-28 **上海**测速单独维护（日本 Dot 仅作海外参考）；
- * 非大陆网络 APK 下载跳过镜像、直连 GitHub。
- * 发布 API 未随该表测试，仍用 [API_FAILOVER_KEYS]，勿与下载列表混改。
+ * - APK：默认 `gh.meali.top`，按 2026-11-28 **上海**测速梯队回退；非大陆直连 GitHub。
+ * - Releases API：绝不使用 `gh.meali.top`（对 api.github.com TLS 失败）；走
+ *   [API_PROXY_KEYS] 已知可用代理，最后回落官方 `api.github.com`。与设置里选中的
+ *   APK 节点、上海下载梯队无关。
  */
 object UpdateMirrorPolicy {
     enum class Mode {
@@ -140,9 +140,21 @@ object UpdateMirrorPolicy {
     )
 
     /**
-     * 发布 API（api.github.com）备用前缀：未随 2026-11-28 APK 表测试，保持原序。
+     * 仅适合 APK 字节下载、禁止进入 Releases API 池的节点。
+     * `gh.meali.top` 对 api.github.com TLS 失败，会返回 ~2KB 垃圾导致「打开失败」。
      */
-    private val API_FAILOVER_KEYS: List<String> = listOf(
+    val APK_ONLY_MIRROR_KEYS: Set<String> = setOf(
+        "gh.meali.top",
+        "jiashu.1win.eu.org",
+    )
+
+    /**
+     * 发布 API（api.github.com）独立代理池：与 APK 选中节点 / 上海梯队无关。
+     * 顺序为 0.5.8 起验证过的 API 路由（原默认 ghproxy.imciel.com + 原 FAILOVER）。
+     * 禁止写入 [APK_ONLY_MIRROR_KEYS]。
+     */
+    val API_PROXY_KEYS: List<String> = listOf(
+        "ghproxy.imciel.com",
         "gh-proxy.com",
         "cdn.gh-proxy.com",
         "ghfast.top",
@@ -219,10 +231,29 @@ object UpdateMirrorPolicy {
         return base + original
     }
 
+    /**
+     * 检查更新 / Releases API 候选地址。
+     * 与 APK 下载池完全独立：忽略设置中选中的 APK 镜像（含默认 meali），
+     * 仅使用 [API_PROXY_KEYS]，最后回落官方。
+     */
     fun apiCandidateUrls(
         preference: Preference,
         officialApi: String,
-    ): List<String> = candidateUrls(officialApi, preference, API_FAILOVER_KEYS)
+    ): List<String> {
+        val original = officialApi.trim()
+        if (original.isEmpty()) return emptyList()
+        if (preference.mode == Mode.OFFICIAL) return listOf(original)
+
+        val out = LinkedHashSet<String>()
+        for (key in API_PROXY_KEYS) {
+            check(key !in APK_ONLY_MIRROR_KEYS) {
+                "API_PROXY_KEYS must not include APK-only mirror: $key"
+            }
+            out += rewrite(original, "https://$key/")
+        }
+        out += original
+        return out.toList()
+    }
 
     /**
      * APK 下载候选地址。
@@ -240,22 +271,11 @@ object UpdateMirrorPolicy {
         if (preference.mode == Mode.OFFICIAL || !mainlandChina) {
             return listOf(original)
         }
-        return candidateUrls(original, preference, DOWNLOAD_FAILOVER_KEYS)
-    }
-
-    private fun candidateUrls(
-        officialUrl: String,
-        preference: Preference,
-        failoverKeys: List<String>,
-    ): List<String> {
-        val original = officialUrl.trim()
-        if (original.isEmpty()) return emptyList()
-        if (preference.mode == Mode.OFFICIAL) return listOf(original)
 
         val selected = normalizeMirrorBase(preference.mirrorBase)
         val out = LinkedHashSet<String>()
         out += rewrite(original, selected)
-        for (key in failoverKeys) {
+        for (key in DOWNLOAD_FAILOVER_KEYS) {
             val base = "https://$key/"
             if (base.equals(selected, ignoreCase = true)) continue
             out += rewrite(original, base)

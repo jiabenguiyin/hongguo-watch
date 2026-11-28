@@ -103,12 +103,13 @@ class UpdateMirrorPolicyTest {
     }
 
     @Test
-    fun apiFailoverKeepsLegacyOrder() {
+    fun apiPoolIsIndependentFromApkSelectedMirror() {
         val api = "https://api.github.com/repos/jiabenguiyin/hongguo-watch/releases/latest"
+        // 即使设置默认/选中 meali（APK 首选），检查更新也不得走 meali
         val urls = UpdateMirrorPolicy.apiCandidateUrls(
             UpdateMirrorPolicy.Preference(
                 mode = UpdateMirrorPolicy.Mode.AUTO,
-                mirrorBase = "https://ghproxy.imciel.com/",
+                mirrorBase = UpdateMirrorPolicy.DEFAULT_MIRROR_BASE,
             ),
             api,
         )
@@ -124,6 +125,27 @@ class UpdateMirrorPolicyTest {
             ),
             urls,
         )
+        assertFalse(urls.any { it.contains("gh.meali.top") })
+        assertFalse(urls.any { it.contains("jiashu.1win.eu.org") })
+        assertEquals(api, urls.last())
+        UpdateMirrorPolicy.API_PROXY_KEYS.forEach { key ->
+            assertFalse(UpdateMirrorPolicy.APK_ONLY_MIRROR_KEYS.contains(key))
+        }
+    }
+
+    @Test
+    fun apiPoolIgnoresApkPreferenceEvenWhenNonDefault() {
+        val api = "https://api.github.com/repos/jiabenguiyin/hongguo-watch/releases/latest"
+        val urls = UpdateMirrorPolicy.apiCandidateUrls(
+            UpdateMirrorPolicy.Preference(
+                mode = UpdateMirrorPolicy.Mode.AUTO,
+                mirrorBase = "https://free.cn.eu.org/",
+            ),
+            api,
+        )
+        assertFalse(urls.any { it.contains("free.cn.eu.org") })
+        assertEquals("https://ghproxy.imciel.com/$api", urls.first())
+        assertEquals(api, urls.last())
     }
 
     @Test

@@ -220,6 +220,17 @@ class MainActivity : WatchDisplayActivity() {
         binding.segmentOffline.setOnClickListener {
             showLibrary(segment = LibrarySegmentPolicy.Segment.OFFLINE)
         }
+        binding.favoritesFilterAll.setOnClickListener {
+            // 全部：停留在本页收藏列表
+            styleFavoritesFilterChips(foldersSelected = false)
+            if (mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.FAVORITES) {
+                loadFavoritesList(fromSwipe = false)
+            }
+        }
+        binding.favoritesFilterFolders.setOnClickListener {
+            styleFavoritesFilterChips(foldersSelected = true)
+            startActivity(Intent(this, FavoritesFoldersActivity::class.java))
+        }
         binding.librarySelectAll.setOnClickListener { toggleSelectAllLibrary() }
         binding.libraryEditDone.setOnClickListener { exitLibraryEditMode(reload = true) }
         binding.libraryDeleteBar.setOnClickListener { confirmDeleteSelectedLibrary() }
@@ -362,6 +373,10 @@ class MainActivity : WatchDisplayActivity() {
         container.redfruitAccount.onForeground()
         if (recreateForDisplaySizeChange()) return
         if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
+        // 从收藏夹页返回时恢复「全部」芯片（收藏夹是独立页入口）
+        if (mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.FAVORITES) {
+            styleFavoritesFilterChips(foldersSelected = false)
+        }
         // 时间锁：额度用尽则锁住应用直至 PIN
         TimeLockGate.enforceIfBlocked(
             activity = this,
@@ -473,6 +488,7 @@ class MainActivity : WatchDisplayActivity() {
             HomeNav.SEARCH -> {
                 adapter.showResumeHint = false
                 binding.librarySegmentRow.visibility = View.GONE
+                binding.favoritesFilterRow.visibility = View.GONE
                 binding.searchInput.requestFocus()
                 showSearchDiscovery()
             }
@@ -648,6 +664,7 @@ class MainActivity : WatchDisplayActivity() {
             if (HomeNavPolicy.showHomeNavChrome(home)) View.VISIBLE else View.GONE
         binding.brandRow.visibility = View.VISIBLE
         binding.librarySegmentRow.visibility = View.GONE
+        binding.favoritesFilterRow.visibility = View.GONE
         binding.searchRow.visibility =
             if (home && HomeNavPolicy.showSearchRow(homeNav)) View.VISIBLE else View.GONE
         binding.categoryScroll.visibility =
@@ -673,6 +690,7 @@ class MainActivity : WatchDisplayActivity() {
         binding.searchRow.visibility = View.GONE
         binding.categoryScroll.visibility = View.GONE
         binding.librarySegmentRow.visibility = View.GONE
+        binding.favoritesFilterRow.visibility = View.GONE
         binding.librarySearchToggle.visibility = View.GONE
         binding.librarySearchRow.visibility = View.GONE
         binding.historyFilterChipScroll.visibility = View.GONE
@@ -1316,6 +1334,7 @@ class MainActivity : WatchDisplayActivity() {
         binding.librarySearchToggle.visibility = View.VISIBLE
         refreshLibrarySearchRowVisibility()
         highlightLibrarySegment(librarySegment)
+        refreshFavoritesFilterRow()
         binding.brandTitle.text = getString(R.string.tab_library)
         lifecycleScope.launch {
             libraryLayoutList = container.settings.libraryLayoutListNow()
@@ -1991,6 +2010,29 @@ class MainActivity : WatchDisplayActivity() {
             watchedEpisode = history?.episodeNumber,
             totalEpisodes = fav.episodeCount.takeIf { it > 0 },
         )
+    }
+
+    private fun refreshFavoritesFilterRow() {
+        val show = mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.FAVORITES
+        binding.favoritesFilterRow.visibility = if (show) View.VISIBLE else View.GONE
+        if (show) styleFavoritesFilterChips(foldersSelected = false)
+    }
+
+    /** 与历史筛选芯片同一套：选中红描边+红字，未选深灰底灰字。 */
+    private fun styleFavoritesFilterChips(foldersSelected: Boolean) {
+        fun style(view: TextView, selected: Boolean) {
+            view.isSelected = selected
+            view.setTextColor(
+                ContextCompat.getColor(
+                    this,
+                    if (selected) R.color.accent else R.color.text_secondary,
+                ),
+            )
+            view.paint.isFakeBoldText = selected
+            view.invalidate()
+        }
+        style(binding.favoritesFilterAll, !foldersSelected)
+        style(binding.favoritesFilterFolders, foldersSelected)
     }
 
     private fun highlightLibrarySegment(segment: LibrarySegmentPolicy.Segment) {

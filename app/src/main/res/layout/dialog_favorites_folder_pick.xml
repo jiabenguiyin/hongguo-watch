@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_alert_dialog"
+    android:orientation="vertical"
+    android:paddingHorizontal="@dimen/watch_pad"
+    android:paddingTop="@dimen/watch_pad_tight"
+    android:paddingBottom="@dimen/watch_pad">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingBottom="6dp">
+
+        <TextView
+            android:id="@+id/pickClose"
+            android:layout_width="@dimen/watch_control_h"
+            android:layout_height="@dimen/watch_control_h"
+            android:background="@drawable/bg_control_button"
+            android:gravity="center"
+            android:text="@string/favorites_folder_pick_close"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/pickTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/favorites_folder_pick_title"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_body"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/pickCreate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="4dp"
+            android:text="@string/favorites_folder_pick_create"
+            android:textColor="@color/accent"
+            android:textSize="@dimen/watch_meta"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/pickList"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:nestedScrollingEnabled="false"
+        android:overScrollMode="never" />
+
+    <TextView
+        android:id="@+id/pickEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:paddingVertical="16dp"
+        android:text="@string/favorites_folder_pick_empty"
+        android:textColor="@color/text_secondary"
+        android:textSize="@dimen/watch_meta"
+        android:visibility="gone" />
+</LinearLayout>

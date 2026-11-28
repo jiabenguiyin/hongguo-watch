@@ -181,6 +181,160 @@ class RedfruitCloudLibraryTest {
     }
 
     @Test
+    fun bookshelfFoldersPostsOfficialListPath() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val cloud = cloud(
+            requests,
+            responseBody = """{"code":0,"data":{"folders":[
+                {"folder_id":1001,"folder_name":"测试夹","item_count":2,"is_publish":true,
+                 "items":[{"video_detail":{"series_cover_url":"https://example.com/a.jpg"}}]}
+            ],"has_more":false}}""",
+        )
+
+        val rows = cloud.bookshelfFolders(credentials)
+
+        assertEquals(1, requests.size)
+        assertEquals("POST", requests.single().method)
+        assertEquals("/reading/distribution/bookshelf_folder/list/v1/", requests.single().url.encodedPath)
+        val body = JSONObject(requests.single().bodyText())
+        assertEquals(0, body.getInt("offset"))
+        assertEquals(20, body.getInt("count"))
+        assertEquals(4, body.getInt("preview_items_limit"))
+        assertTrue(body.getBoolean("has_detail"))
+        assertEquals(1, rows.size)
+        assertEquals(1001L, rows.single().id)
+        assertEquals("测试夹", rows.single().name)
+        assertEquals(2, rows.single().itemCount)
+        assertTrue(rows.single().published)
+        assertEquals(1, rows.single().covers.size)
+    }
+
+    @Test
+    fun createBookshelfFolderPostsOperateTypeCreate() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val cloud = cloud(requests)
+
+        cloud.createBookshelfFolder(credentials, "新夹", publish = true)
+
+        assertEquals(1, requests.size)
+        assertEquals("/reading/distribution/bookshelf_folder/update/v1/", requests.single().url.encodedPath)
+        val op = JSONObject(requests.single().bodyText())
+            .getJSONArray("operate_data").getJSONObject(0)
+        assertEquals(1, op.getInt("operate_type"))
+        assertEquals("新夹", op.getString("folder_name"))
+        assertTrue(op.getBoolean("is_publish"))
+    }
+
+    @Test
+    fun updateAndDeleteBookshelfFolderUseOfficialOperateTypes() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val cloud = cloud(requests)
+
+        cloud.updateBookshelfFolder(credentials, 1001L, "改名", publish = false)
+        cloud.deleteBookshelfFolder(credentials, 1001L)
+
+        assertEquals(2, requests.size)
+        val update = JSONObject(requests[0].bodyText()).getJSONArray("operate_data").getJSONObject(0)
+        assertEquals(3, update.getInt("operate_type"))
+        assertEquals(1001L, update.getLong("folder_id"))
+        assertEquals("改名", update.getString("folder_name"))
+        assertFalse(update.getBoolean("is_publish"))
+        val delete = JSONObject(requests[1].bodyText()).getJSONArray("operate_data").getJSONObject(0)
+        assertEquals(2, delete.getInt("operate_type"))
+        assertEquals(1001L, delete.getLong("folder_id"))
+    }
+
+    @Test
+    fun addBookshelfFolderItemsPostsItemUpdateOperators() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val cloud = cloud(requests)
+
+        cloud.addBookshelfFolderItems(credentials, 1001L, listOf("9999999999999999999"))
+
+        assertEquals(1, requests.size)
+        assertEquals(
+            "/reading/distribution/bookshelf_folder/item/update/v1/",
+            requests.single().url.encodedPath,
+        )
+        val op = JSONObject(requests.single().bodyText()).getJSONArray("operators").getJSONObject(0)
+        assertEquals(1, op.getInt("operate_type"))
+        assertEquals("9999999999999999999", op.getString("item_id"))
+        assertEquals(1001L, op.getLong("folder_id"))
+        assertEquals(2, op.getInt("book_type"))
+        assertEquals(1, op.getInt("content_type"))
+    }
+
+    @Test
+    fun removeBookshelfFolderItemsPostsOperateType2() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val cloud = cloud(requests)
+
+        cloud.removeBookshelfFolderItems(
+            credentials,
+            1001L,
+            listOf(
+                RedfruitBookshelfFolderItem(
+                    itemId = "9999999999999999999",
+                    seriesId = "9999999999999999999",
+                    title = "测",
+                    cover = "",
+                    episodeCount = 10,
+                    contentType = 1,
+                    bookType = 2,
+                ),
+            ),
+        )
+
+        val op = JSONObject(requests.single().bodyText()).getJSONArray("operators").getJSONObject(0)
+        assertEquals(2, op.getInt("operate_type"))
+        assertEquals("9999999999999999999", op.getString("item_id"))
+        assertEquals(1001L, op.getLong("folder_id"))
+        assertEquals(2, op.getInt("book_type"))
+        assertEquals(1, op.getInt("content_type"))
+    }
+
+    @Test
+    fun moveBookshelfFolderItemsPostsOperateType3WithOrigin() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val cloud = cloud(requests)
+
+        cloud.moveBookshelfFolderItems(
+            credentials,
+            originFolderId = 1001L,
+            targetFolderId = 2002L,
+            items = listOf(
+                RedfruitBookshelfFolderItem(
+                    itemId = "9999999999999999999",
+                    seriesId = "9999999999999999999",
+                    title = "测",
+                    cover = "",
+                    episodeCount = 10,
+                    contentType = 1,
+                    bookType = 2,
+                ),
+            ),
+        )
+
+        val op = JSONObject(requests.single().bodyText()).getJSONArray("operators").getJSONObject(0)
+        assertEquals(3, op.getInt("operate_type"))
+        assertEquals("9999999999999999999", op.getString("item_id"))
+        assertEquals(2002L, op.getLong("folder_id"))
+        assertEquals(1001L, op.getLong("origin_folder_id"))
+        assertTrue(op.getLong("modify_time") > 0L)
+    }
+
+    @Test
+    fun validatedFolderNameRejectsBlankAndOverlong() {
+        assertEquals("短名", validatedFolderName(" 短名 "))
+        assertEquals("0123456789ABCDE", validatedFolderName("0123456789ABCDE"))
+        val tooLong = "0123456789ABCDEF"
+        val overlong = runCatching { validatedFolderName(tooLong) }.exceptionOrNull()
+        assertTrue(overlong is RedfruitCloudException)
+        val blank = runCatching { validatedFolderName("   ") }.exceptionOrNull()
+        assertTrue(blank is RedfruitCloudException)
+    }
+
+    @Test
     fun setFavoriteUsesOfficialVideoShelfPayloadForAddAndRemove() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val cloud = cloud(requests)

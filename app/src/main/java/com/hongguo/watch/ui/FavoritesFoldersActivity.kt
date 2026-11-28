@@ -132,30 +132,43 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
      * 与 [SettingsActivity] / [DisplaySettingsActivity] 同一路径：
      * [WatchUi.applySafePadding](root, topChrome[, bottomChrome])。
      *
-     * 「+ 新建」作 bottomChrome（同显示设置保存钮）。
-     * 编辑「移动到|删除」对齐历史 [libraryDeleteBar]：全宽贴底叠加，**不作** bottomChrome，
-     * 否则四角侧 margin 会把它挤成悬浮灰条（refs 33）。
+     * - 「+ 新建」：整钮 margin 内收（同显示设置保存钮）。
+     * - 编辑「移动到|删除」：历史 [libraryDeleteBar] 全宽底色 +
+     *   [bottomChromeContentPadding] 用设置页同套四角量内收文字（避免 margin 悬浮灰条，refs 33；
+     *   并清左右下角裁字，refs 用户跟进）。
      */
     private fun applyFoldersChrome() {
-        // 清掉曾当 bottomChrome 时留下的侧 margin，避免灰条残留
-        (binding.itemActionBar.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
-            if (lp.leftMargin != 0 || lp.rightMargin != 0 || lp.bottomMargin != 0) {
-                lp.leftMargin = 0
-                lp.rightMargin = 0
-                lp.bottomMargin = 0
-                binding.itemActionBar.layoutParams = lp
+        when {
+            binding.itemActionBar.visibility == View.VISIBLE -> {
+                // 新建钮若仍挂着旧 margin，先清零（编辑态已隐藏）
+                (binding.createButton.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
+                    if (lp.leftMargin != 0 || lp.rightMargin != 0) {
+                        lp.leftMargin = 0
+                        lp.rightMargin = 0
+                        binding.createButton.layoutParams = lp
+                    }
+                }
+                WatchUi.applySafePadding(
+                    binding.foldersRoot,
+                    topChrome = binding.foldersTopChrome,
+                    bottomChrome = binding.itemActionBar,
+                    bottomChromeContentPadding = true,
+                )
+            }
+            binding.createButton.visibility == View.VISIBLE -> {
+                WatchUi.applySafePadding(
+                    binding.foldersRoot,
+                    topChrome = binding.foldersTopChrome,
+                    bottomChrome = binding.createButton,
+                )
+            }
+            else -> {
+                WatchUi.applySafePadding(
+                    binding.foldersRoot,
+                    topChrome = binding.foldersTopChrome,
+                )
             }
         }
-        val bottomChrome = if (binding.createButton.visibility == View.VISIBLE) {
-            binding.createButton
-        } else {
-            null
-        }
-        WatchUi.applySafePadding(
-            binding.foldersRoot,
-            topChrome = binding.foldersTopChrome,
-            bottomChrome = bottomChrome,
-        )
     }
 
     private fun onEmptyAction() {

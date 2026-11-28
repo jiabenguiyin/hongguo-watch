@@ -174,8 +174,17 @@ object WatchUi {
     /**
      * 手表安全边距。小屏沉浸式时**忽略** systemBars inset——
      * 系统栏已隐藏，若仍按其高度 padding，底 Tab 会被挤出可视区。
+     *
+     * @param bottomChromeContentPadding 为 true 时，底栏用与设置页相同的四角几何，
+     * 但以 **padding** 内收文字（全宽底色保留，避免 margin 挤成悬浮灰条）。
+     * 显示设置保存钮等仍默认 false（整钮 margin 内收）。
      */
-    fun applySafePadding(view: View, topChrome: View? = null, bottomChrome: View? = null) {
+    fun applySafePadding(
+        view: View,
+        topChrome: View? = null,
+        bottomChrome: View? = null,
+        bottomChromeContentPadding: Boolean = false,
+    ) {
         fun apply(insets: WindowInsetsCompat?) {
             val context = view.context
             val preferred = preferredInsets(context)
@@ -204,7 +213,16 @@ object WatchUi {
                 if (bottomChrome != null) {
                     val reported = roundedCornerRadius(insets, RoundedCorner.POSITION_BOTTOM_LEFT, RoundedCorner.POSITION_BOTTOM_RIGHT)
                     val radius = if (round || reported == 0) fallback else reported
-                    bottom = applyBarInsets(bottomChrome, bottom, left, right, shortEdge, radius, settings)
+                    bottom = applyBarInsets(
+                        bottomChrome,
+                        bottom,
+                        left,
+                        right,
+                        shortEdge,
+                        radius,
+                        settings,
+                        useContentPadding = bottomChromeContentPadding,
+                    )
                 }
             }
             view.setPadding(left, top, right, bottom)
@@ -241,17 +259,30 @@ object WatchUi {
         shortEdge: Int,
         radius: Int,
         settings: WatchDisplaySettings,
+        useContentPadding: Boolean = false,
     ): Int {
         val safeVertical = WatchDisplayGeometry.barVerticalInset(vertical, shortEdge, radius, settings.verticalPercent < 0)
         val params = bar.layoutParams as? ViewGroup.MarginLayoutParams ?: return safeVertical
         val arcInset = WatchDisplayGeometry.cornerSideInset(radius, safeVertical)
         val side = if (settings.horizontalPercent < 0 && arcInset > 0) arcInset + dp(bar.context, 2f) else 0
-        val leftMargin = (side - left).coerceAtLeast(0)
-        val rightMargin = (side - right).coerceAtLeast(0)
-        if (params.leftMargin != leftMargin || params.rightMargin != rightMargin) {
-            params.leftMargin = leftMargin
-            params.rightMargin = rightMargin
-            bar.layoutParams = params
+        val extra = (side - left).coerceAtLeast(0)
+        val extraRight = (side - right).coerceAtLeast(0)
+        if (useContentPadding) {
+            // 全宽底色 + 内容内收：清 margin，避免悬浮灰条；左右用与设置页相同的侧向安全量
+            if (params.leftMargin != 0 || params.rightMargin != 0) {
+                params.leftMargin = 0
+                params.rightMargin = 0
+                bar.layoutParams = params
+            }
+            if (bar.paddingLeft != extra || bar.paddingRight != extraRight) {
+                bar.setPadding(extra, bar.paddingTop, extraRight, bar.paddingBottom)
+            }
+        } else {
+            if (params.leftMargin != extra || params.rightMargin != extraRight) {
+                params.leftMargin = extra
+                params.rightMargin = extraRight
+                bar.layoutParams = params
+            }
         }
         return safeVertical
     }

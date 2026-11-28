@@ -44,7 +44,6 @@ import java.util.zip.GZIPOutputStream
  */
 object DeviceRegister {
     /** 注册接口的域名。`is.snssdk.com` 与 `log5-applog-lf` 等价，抓包里两个都在用。 */
-    private const val HOST = "https://log5-applog-lf.fqnovel.com"
     private const val PATH = "/service/2/device_register/"
     private const val QUERY =
         "?tt_data=a&cronet_version=8d40f833_2026-03-03&ttnet_version=4.2.243.31-douyin&use_store_region_cookie=1"
@@ -201,7 +200,7 @@ object DeviceRegister {
             "x-ss-stub" to digest("MD5", body).hex().uppercase(),
         )
 
-    fun url() = HOST + PATH + QUERY
+    fun url() = UpstreamEndpoints.registerBaseUrl() + PATH + QUERY
 
     /**
      * 解析注册响应。

@@ -1,0 +1,32 @@
+# 自托管播放代理（对应手表 设置 → 播放代理）
+#
+# 1) 仓库根目录：./gradlew :proxy:installDist
+# 2) 复制 proxy/.env.example → proxy/.env 并改令牌
+# 3) docker compose -f proxy/docker-compose.yml up -d --build
+#
+# MetaSec 可选：把私有资产挂到 /opt/hongguo-playback-proxy/metasec
+
+services:
+  playback-proxy:
+    build:
+      context: ..
+      dockerfile: proxy/Dockerfile
+    image: hongguo-playback-proxy:local
+    container_name: hongguo-playback-proxy
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8787}:8787"
+    env_file:
+      - .env
+    environment:
+      BIND: "0.0.0.0"
+      PORT: "8787"
+    volumes:
+      # 可选：宿主机 MetaSec 资产（勿提交仓库）
+      - ${METASEC_HOST_DIR:-./metasec-data}:/opt/hongguo-playback-proxy/metasec
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8787/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

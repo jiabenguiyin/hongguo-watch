@@ -50,6 +50,11 @@ signing/*.keystore
 # 例外：公开 debug 证书，供侧载包互相覆盖升级（密码 android/android）
 !signing/debug.keystore
 
+# Playback proxy local secrets / private MetaSec mounts
+proxy/.env
+proxy/metasec-data/**
+!proxy/metasec-data/.gitkeep
+
 # OS
 .DS_Store
 Thumbs.db

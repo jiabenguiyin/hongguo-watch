@@ -265,6 +265,35 @@ class RedfruitCloudLibraryTest {
     }
 
     @Test
+    fun removeBookshelfFolderItemsPostsOperateType2() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val cloud = cloud(requests)
+
+        cloud.removeBookshelfFolderItems(
+            credentials,
+            1001L,
+            listOf(
+                RedfruitBookshelfFolderItem(
+                    itemId = "9999999999999999999",
+                    seriesId = "9999999999999999999",
+                    title = "测",
+                    cover = "",
+                    episodeCount = 10,
+                    contentType = 1,
+                    bookType = 2,
+                ),
+            ),
+        )
+
+        val op = JSONObject(requests.single().bodyText()).getJSONArray("operators").getJSONObject(0)
+        assertEquals(2, op.getInt("operate_type"))
+        assertEquals("9999999999999999999", op.getString("item_id"))
+        assertEquals(1001L, op.getLong("folder_id"))
+        assertEquals(2, op.getInt("book_type"))
+        assertEquals(1, op.getInt("content_type"))
+    }
+
+    @Test
     fun validatedFolderNameRejectsBlankAndOverlong() {
         assertEquals("短名", validatedFolderName(" 短名 "))
         assertEquals("0123456789ABCDE", validatedFolderName("0123456789ABCDE"))

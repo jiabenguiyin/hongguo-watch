@@ -73,6 +73,66 @@
         android:textSize="@dimen/watch_meta"
         android:visibility="gone" />
 
+    <!-- 夹内：编辑芯片（对齐历史/收藏批量编辑入口） -->
+    <TextView
+        android:id="@+id/editChip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/bg_history_filter_chip"
+        android:gravity="center"
+        android:includeFontPadding="false"
+        android:minHeight="28dp"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="4dp"
+        android:text="@string/library_edit"
+        android:textColor="@color/text_secondary"
+        android:textSize="11sp"
+        android:visibility="gone" />
+
+    <!-- 批量编辑条：全选 | 已选 N | 完成 -->
+    <LinearLayout
+        android:id="@+id/editBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/bg_panel"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="4dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/selectAllButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="6dp"
+            android:text="@string/library_select_all"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/selectedCount"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:textColor="@color/text_secondary"
+            android:textSize="@dimen/watch_meta" />
+
+        <TextView
+            android:id="@+id/editDoneButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="6dp"
+            android:text="@string/library_edit_done"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta"
+            android:textStyle="bold" />
+    </LinearLayout>
+
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -136,6 +196,20 @@
             android:layout_gravity="center"
             android:indeterminate="true"
             android:indeterminateTint="@color/accent"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/deleteBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:background="@color/bg_elevated"
+            android:gravity="center"
+            android:paddingVertical="10dp"
+            android:text="@string/library_delete"
+            android:textColor="@color/accent"
+            android:textSize="@dimen/watch_body"
+            android:textStyle="bold"
             android:visibility="gone" />
     </FrameLayout>
 

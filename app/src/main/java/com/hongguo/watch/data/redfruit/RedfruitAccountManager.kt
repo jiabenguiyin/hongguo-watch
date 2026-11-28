@@ -202,6 +202,17 @@ internal class RedfruitAccountManager(
         }
     }
 
+    /** 从收藏夹移出条目；未登录抛错。 */
+    suspend fun removeBookshelfFolderItems(folderId: Long, items: List<RedfruitBookshelfFolderItem>) {
+        val credentials = session ?: throw RedfruitCloudException("请先登录红果账号", authenticationRejected = true)
+        if (mutableStatus.value.needsInitialMergeChoice) {
+            throw RedfruitCloudException("请先完成登录合并选择")
+        }
+        withContext(Dispatchers.IO) {
+            cloud.removeBookshelfFolderItems(credentials, folderId, items)
+        }
+    }
+
     private fun libraryForAccount(accountId: String): LocalLibrary {
         val key = MessageDigest.getInstance("SHA-256")
             .digest(accountId.encodeToByteArray())

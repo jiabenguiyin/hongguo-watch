@@ -624,12 +624,13 @@ internal class RedfruitCloudLibrary(
         for (seriesId in seriesIds.distinct()) {
             require(seriesId.isSeriesId()) { "红果收藏剧集编号无效" }
             operators.put(
-                JSONObject()
-                    .put("operate_type", FOLDER_ITEM_OP_ADD)
-                    .put("item_id", seriesId)
-                    .put("folder_id", folderId)
-                    .put("book_type", 2)
-                    .put("content_type", contentType.coerceAtLeast(1)),
+                folderItemOperator(
+                    operateType = FOLDER_ITEM_OP_ADD,
+                    itemId = seriesId,
+                    folderId = folderId,
+                    bookType = 2,
+                    contentType = contentType.coerceAtLeast(1),
+                ),
             )
         }
         postFolderJson(
@@ -638,6 +639,50 @@ internal class RedfruitCloudLibrary(
             JSONObject().put("operators", operators),
         )
     }
+
+    /**
+     * 从收藏夹移出条目（不删全部收藏）。
+     * `POST …/bookshelf_folder/item/update/v1/`，`operate_type=2`。
+     */
+    suspend fun removeBookshelfFolderItems(
+        credentials: RedfruitCredentials,
+        folderId: Long,
+        items: List<RedfruitBookshelfFolderItem>,
+    ) {
+        require(folderId > 0L) { "收藏夹编号无效" }
+        require(items.isNotEmpty()) { "未选择要移除的内容" }
+        val operators = JSONArray()
+        for (item in items.distinctBy { it.itemId }) {
+            require(item.itemId.isSeriesId()) { "红果收藏条目编号无效" }
+            operators.put(
+                folderItemOperator(
+                    operateType = FOLDER_ITEM_OP_REMOVE,
+                    itemId = item.itemId,
+                    folderId = folderId,
+                    bookType = item.bookType.takeIf { it > 0 } ?: 2,
+                    contentType = item.contentType.coerceAtLeast(1),
+                ),
+            )
+        }
+        postFolderJson(
+            credentials,
+            FOLDER_ITEM_UPDATE_PATH,
+            JSONObject().put("operators", operators),
+        )
+    }
+
+    private fun folderItemOperator(
+        operateType: Int,
+        itemId: String,
+        folderId: Long,
+        bookType: Int,
+        contentType: Int,
+    ): JSONObject = JSONObject()
+        .put("operate_type", operateType)
+        .put("item_id", itemId)
+        .put("folder_id", folderId)
+        .put("book_type", bookType)
+        .put("content_type", contentType)
 
     private suspend fun postFolderJson(
         credentials: RedfruitCredentials,
@@ -831,6 +876,7 @@ internal class RedfruitCloudLibrary(
         const val FOLDER_OP_DELETE = 2L
         const val FOLDER_OP_UPDATE = 3L
         const val FOLDER_ITEM_OP_ADD = 1
+        const val FOLDER_ITEM_OP_REMOVE = 2
         const val FOLDER_CONTENT_SHORT_SERIES = 1
         const val FOLDER_PAGE_SIZE = 20
         const val FOLDER_PREVIEW_LIMIT = 4

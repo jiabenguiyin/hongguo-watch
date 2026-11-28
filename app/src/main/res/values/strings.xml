@@ -170,6 +170,9 @@
     <string name="favorites_folder_add_none">没有可添加的收藏（先在详情页点♡）</string>
     <string name="favorites_folder_added_count">已添加 %1$d 部</string>
     <string name="favorites_folder_items_empty">收藏夹暂无内容</string>
+    <string name="favorites_folder_items_delete_confirm_title">从收藏夹移除？</string>
+    <string name="favorites_folder_items_delete_confirm_body">将从本收藏夹移除 %1$d 部，不会从全部收藏删除。</string>
+    <string name="favorites_folder_items_deleted_count">已从收藏夹移除 %1$d 部</string>
     <string name="favorites_folder_card_meta">共%1$d条内容 · %2$s</string>
     <string name="favorites_folder_detail_meta">%1$d条内容 · %2$s</string>
     <string name="favorites_folder_created">已新建收藏夹</string>

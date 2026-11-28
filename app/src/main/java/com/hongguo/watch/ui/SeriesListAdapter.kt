@@ -114,10 +114,15 @@ class SeriesListAdapter(
     }
 
     fun appendItems(items: List<HomeRow.Item>) {
-        if (items.isEmpty()) return
+        appendRows(items)
+    }
+
+    /** 首页续页：列表行或三列海报均可追加。 */
+    fun appendRows(more: List<HomeRow>) {
+        if (more.isEmpty()) return
         val start = rows.size
-        rows.addAll(items)
-        notifyItemRangeInserted(start, items.size)
+        rows.addAll(more)
+        notifyItemRangeInserted(start, more.size)
     }
 
     /** 更新某剧收藏态（历史行 ♡），找不到则忽略。 */

@@ -9,23 +9,33 @@
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
-        <!-- 手表强制深色弹窗，避免 DayNight 亮底 + 浅色按钮字 -->
+        <!-- 手表强制深色弹窗，避免 DayNight 亮底 + 浅色按钮字 / 列表黑字 -->
         <item name="alertDialogTheme">@style/Theme.HongguoWatch.AlertDialog</item>
         <item name="materialAlertDialogTheme">@style/Theme.HongguoWatch.AlertDialog</item>
     </style>
 
-    <style name="Theme.HongguoWatch.AlertDialog" parent="ThemeOverlay.MaterialComponents.Dialog.Alert">
+    <!--
+      用完整 MaterialComponents.Dialog.Alert（暗色，非 ThemeOverlay / Light）：
+      Overlay 叠在 DayNight 亮色底上时，列表项常仍走黑字。
+      再配自定义 listItemLayout，把字色钉死为 text_primary。
+    -->
+    <style name="Theme.HongguoWatch.AlertDialog" parent="Theme.MaterialComponents.Dialog.Alert">
         <item name="android:windowBackground">@drawable/bg_alert_dialog</item>
         <item name="android:colorBackground">@color/bg_elevated</item>
         <item name="android:background">@color/bg_elevated</item>
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
-        <!-- single-choice 默认字色常跟 DayNight 浅色走，强制白字 -->
+        <!-- AppCompat 列表用无 android: 前缀的 attr；系统布局用 android: 前缀——两边都钉白 -->
+        <item name="textColorAlertDialogListItem">@color/text_primary</item>
         <item name="android:textColorAlertDialogListItem">@color/text_primary</item>
         <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorOnBackground">@color/text_primary</item>
+        <item name="android:textColor">@color/text_primary</item>
         <item name="colorPrimary">@color/accent</item>
         <item name="colorAccent">@color/text_primary</item>
+        <item name="colorControlNormal">@color/text_secondary</item>
         <item name="colorControlActivated">@color/accent</item>
+        <item name="alertDialogStyle">@style/Widget.HongguoWatch.AlertDialog</item>
         <item name="buttonBarPositiveButtonStyle">@style/Widget.HongguoWatch.DialogButton.Positive</item>
         <item name="buttonBarNegativeButtonStyle">@style/Widget.HongguoWatch.DialogButton</item>
         <item name="buttonBarNeutralButtonStyle">@style/Widget.HongguoWatch.DialogButton</item>
@@ -35,6 +45,12 @@
         <!-- 手表近全宽：避免系统默认窄弹窗两侧黑边过大 -->
         <item name="android:windowMinWidthMajor">92%</item>
         <item name="android:windowMinWidthMinor">92%</item>
+    </style>
+
+    <style name="Widget.HongguoWatch.AlertDialog" parent="AlertDialog.AppCompat">
+        <item name="listItemLayout">@layout/watch_select_dialog_item</item>
+        <item name="multiChoiceItemLayout">@layout/watch_select_dialog_multichoice</item>
+        <item name="singleChoiceItemLayout">@layout/watch_select_dialog_singlechoice</item>
     </style>
 
     <style name="TextAppearance.HongguoWatch.DialogTitle" parent="TextAppearance.MaterialComponents.Subtitle1">

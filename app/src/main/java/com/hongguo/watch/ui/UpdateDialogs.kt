@@ -194,10 +194,11 @@ internal class UpdateDialogs(
         }
     }
 
-    private fun builder() = AlertDialog.Builder(activity, R.style.Theme_HongguoWatch_AlertDialog)
+    private fun builder() = WatchAlertDialogs.builder(activity)
 
     private fun show(dialog: AlertDialog) {
         activeDialog = dialog
         showWatchDialog(dialog)
+        WatchAlertDialogs.ensureListContrast(dialog)
     }
 }

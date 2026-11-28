@@ -71,6 +71,29 @@ internal data class RedfruitReservation(
     val subscribedAt: Long,
 )
 
+/**
+ * 官方「收藏夹」（`/reading/distribution/bookshelf_folder/…`）。
+ * 名称上限 15 个 UTF-16 码元；[published] 对齐 `is_publish`。
+ */
+internal data class RedfruitBookshelfFolder(
+    val id: Long,
+    val name: String,
+    val itemCount: Int,
+    val published: Boolean,
+    val covers: List<String>,
+)
+
+/** 收藏夹内一条内容；短剧 [seriesId] 常与 [itemId] 相同。 */
+internal data class RedfruitBookshelfFolderItem(
+    val itemId: String,
+    val seriesId: String,
+    val title: String,
+    val cover: String,
+    val episodeCount: Int,
+    val contentType: Int,
+    val bookType: Int,
+)
+
 internal class RedfruitCloudException(
     message: String,
     val authenticationRejected: Boolean = false,
@@ -444,6 +467,189 @@ internal class RedfruitCloudLibrary(
         )
     }
 
+    /**
+     * 官方收藏夹列表。
+     * SoT：`POST /reading/distribution/bookshelf_folder/list/v1/`
+     *（hongguo-desktop DistributionApiService / fqapp account_library）。
+     */
+    suspend fun bookshelfFolders(credentials: RedfruitCredentials): List<RedfruitBookshelfFolder> {
+        val folders = ArrayList<RedfruitBookshelfFolder>()
+        var offset = 0L
+        repeat(MAX_FOLDER_PAGES) {
+            val data = postFolderJson(
+                credentials,
+                FOLDER_LIST_PATH,
+                JSONObject()
+                    .put("offset", offset)
+                    .put("count", FOLDER_PAGE_SIZE)
+                    .put("preview_items_limit", FOLDER_PREVIEW_LIMIT)
+                    .put("has_detail", true),
+            ).requireCloudData()
+            val rows = data.optJSONArray("folders") ?: JSONArray()
+            if (rows.length() > MAX_FOLDER_ROWS) {
+                throw RedfruitCloudException("云端收藏夹超出本次读取范围")
+            }
+            for (index in 0 until rows.length()) {
+                val folder = parseBookshelfFolder(rows.optJSONObject(index) ?: continue) ?: continue
+                folders.add(folder)
+            }
+            if (!data.booleanValue("has_more")) return folders
+            val next = data.exactNumber("next_offset")?.toLongOrNull()
+                ?.takeIf { it > offset }
+                ?: throw RedfruitCloudException("云端收藏夹分页未完整返回")
+            offset = next
+        }
+        throw RedfruitCloudException("云端收藏夹超过本次读取范围")
+    }
+
+    /** 收藏夹内容页。 */
+    suspend fun bookshelfFolderItems(
+        credentials: RedfruitCredentials,
+        folderId: Long,
+    ): Pair<RedfruitBookshelfFolder?, List<RedfruitBookshelfFolderItem>> {
+        require(folderId > 0L) { "收藏夹编号无效" }
+        val items = ArrayList<RedfruitBookshelfFolderItem>()
+        var folder: RedfruitBookshelfFolder? = null
+        var offset = 0L
+        repeat(MAX_FOLDER_PAGES) {
+            val data = postFolderJson(
+                credentials,
+                FOLDER_DETAIL_PATH,
+                JSONObject()
+                    .put("folder_id", folderId)
+                    .put("offset", offset)
+                    .put("limit", FOLDER_PAGE_SIZE)
+                    .put("has_detail", true),
+            ).requireCloudData()
+            if (folder == null) {
+                folder = parseBookshelfFolder(data)
+                    ?: data.optJSONObject("folder")?.let(::parseBookshelfFolder)
+            }
+            val rows = data.optJSONArray("items") ?: JSONArray()
+            if (rows.length() > MAX_FOLDER_ITEM_ROWS) {
+                throw RedfruitCloudException("云端收藏夹内容超出本次读取范围")
+            }
+            for (index in 0 until rows.length()) {
+                val item = parseBookshelfFolderItem(rows.optJSONObject(index) ?: continue) ?: continue
+                items.add(item)
+            }
+            if (!data.booleanValue("has_more")) {
+                return folder to items.distinctBy { it.itemId }
+            }
+            val next = data.exactNumber("next_offset")?.toLongOrNull()
+                ?.takeIf { it > offset }
+                ?: throw RedfruitCloudException("云端收藏夹内容分页未完整返回")
+            offset = next
+        }
+        throw RedfruitCloudException("云端收藏夹内容超过本次读取范围")
+    }
+
+    /** 新建收藏夹：`operate_type=1`，名称 1–15。 */
+    suspend fun createBookshelfFolder(
+        credentials: RedfruitCredentials,
+        name: String,
+        publish: Boolean,
+    ) {
+        val folderName = validatedFolderName(name)
+        postFolderJson(
+            credentials,
+            FOLDER_UPDATE_PATH,
+            JSONObject().put(
+                "operate_data",
+                JSONArray().put(
+                    JSONObject()
+                        .put("operate_type", FOLDER_OP_CREATE)
+                        .put("folder_name", folderName)
+                        .put("is_publish", publish),
+                ),
+            ),
+        )
+    }
+
+    /** 修改名称 / 公开性：`operate_type=3`。 */
+    suspend fun updateBookshelfFolder(
+        credentials: RedfruitCredentials,
+        folderId: Long,
+        name: String,
+        publish: Boolean,
+    ) {
+        require(folderId > 0L) { "收藏夹编号无效" }
+        val folderName = validatedFolderName(name)
+        postFolderJson(
+            credentials,
+            FOLDER_UPDATE_PATH,
+            JSONObject().put(
+                "operate_data",
+                JSONArray().put(
+                    JSONObject()
+                        .put("operate_type", FOLDER_OP_UPDATE)
+                        .put("folder_id", folderId)
+                        .put("folder_name", folderName)
+                        .put("is_publish", publish),
+                ),
+            ),
+        )
+    }
+
+    /** 删除收藏夹：`operate_type=2`。 */
+    suspend fun deleteBookshelfFolder(credentials: RedfruitCredentials, folderId: Long) {
+        require(folderId > 0L) { "收藏夹编号无效" }
+        postFolderJson(
+            credentials,
+            FOLDER_UPDATE_PATH,
+            JSONObject().put(
+                "operate_data",
+                JSONArray().put(
+                    JSONObject()
+                        .put("operate_type", FOLDER_OP_DELETE)
+                        .put("folder_id", folderId),
+                ),
+            ),
+        )
+    }
+
+    /**
+     * 向收藏夹添加短剧条目。
+     * `POST …/bookshelf_folder/item/update/v1/`，`operate_type=1`。
+     */
+    suspend fun addBookshelfFolderItems(
+        credentials: RedfruitCredentials,
+        folderId: Long,
+        seriesIds: List<String>,
+        contentType: Int = FOLDER_CONTENT_SHORT_SERIES,
+    ) {
+        require(folderId > 0L) { "收藏夹编号无效" }
+        require(seriesIds.isNotEmpty()) { "未选择要添加的内容" }
+        val operators = JSONArray()
+        for (seriesId in seriesIds.distinct()) {
+            require(seriesId.isSeriesId()) { "红果收藏剧集编号无效" }
+            operators.put(
+                JSONObject()
+                    .put("operate_type", FOLDER_ITEM_OP_ADD)
+                    .put("item_id", seriesId)
+                    .put("folder_id", folderId)
+                    .put("book_type", 2)
+                    .put("content_type", contentType.coerceAtLeast(1)),
+            )
+        }
+        postFolderJson(
+            credentials,
+            FOLDER_ITEM_UPDATE_PATH,
+            JSONObject().put("operators", operators),
+        )
+    }
+
+    private suspend fun postFolderJson(
+        credentials: RedfruitCredentials,
+        path: String,
+        body: JSONObject,
+    ): JSONObject = request(
+        credentials,
+        path,
+        params = emptyMap(),
+        body = body.toString().toByteArray(Charsets.UTF_8),
+    )
+
     private data class FavoriteDetail(val title: String, val cover: String, val episodeCount: Int)
 
     private suspend fun favoriteDetails(
@@ -617,10 +823,112 @@ internal class RedfruitCloudLibrary(
         const val RESERVATIONS_PAGE_SIZE = 100
         /** DEX / aston：点赞 Digg ≈ 3（`UgcActionType` / DiggAction）。 */
         const val UGC_ACTION_TYPE_DIGG = 3
+        const val FOLDER_LIST_PATH = "/reading/distribution/bookshelf_folder/list/v1/"
+        const val FOLDER_DETAIL_PATH = "/reading/distribution/bookshelf_folder/detail/v1/"
+        const val FOLDER_UPDATE_PATH = "/reading/distribution/bookshelf_folder/update/v1/"
+        const val FOLDER_ITEM_UPDATE_PATH = "/reading/distribution/bookshelf_folder/item/update/v1/"
+        const val FOLDER_OP_CREATE = 1L
+        const val FOLDER_OP_DELETE = 2L
+        const val FOLDER_OP_UPDATE = 3L
+        const val FOLDER_ITEM_OP_ADD = 1
+        const val FOLDER_CONTENT_SHORT_SERIES = 1
+        const val FOLDER_PAGE_SIZE = 20
+        const val FOLDER_PREVIEW_LIMIT = 4
+        const val MAX_FOLDER_PAGES = 50
+        const val MAX_FOLDER_ROWS = 2_000
+        const val MAX_FOLDER_ITEM_ROWS = 5_000
+        const val FOLDER_NAME_MAX_UNITS = 15
         const val RECENT_PROGRESS_LIMIT = 50
         val JSON_MEDIA_TYPE = "application/json; charset=UTF-8".toMediaType()
         val SIGNING_DEVICE_KEYS = setOf("device_id", "iid", "cdid", "openudid")
     }
+}
+
+internal fun validatedFolderName(name: String): String {
+    val trimmed = name.trim()
+    // Kotlin String.length == UTF-16 code units（官方上限 15）
+    if (trimmed.isEmpty() || trimmed.length > 15) {
+        throw RedfruitCloudException("收藏夹名称需为 1 至 15 个字符")
+    }
+    return trimmed
+}
+
+internal fun parseBookshelfFolder(row: JSONObject): RedfruitBookshelfFolder? {
+    val id = row.exactNumber("folder_id")?.toLongOrNull()?.takeIf { it > 0 } ?: return null
+    val name = row.firstText("folder_name", "name").trim()
+    if (name.isEmpty()) return null
+    val covers = ArrayList<String>(4)
+    val preview = row.optJSONArray("items")
+    if (preview != null) {
+        for (index in 0 until minOf(preview.length(), 4)) {
+            val item = preview.optJSONObject(index) ?: continue
+            val cover = folderItemCover(item)
+            if (cover.isNotBlank()) covers.add(cover)
+        }
+    }
+    val coverField = safeCover(row.firstText("folder_cover", "cover", "cover_url"))
+    if (covers.isEmpty() && coverField.isNotBlank()) covers.add(coverField)
+    return RedfruitBookshelfFolder(
+        id = id,
+        name = name,
+        itemCount = row.boundedNumber("item_count", "count", max = 100_000).toInt(),
+        published = when {
+            row.has("is_publish") && !row.isNull("is_publish") -> row.optBoolean("is_publish")
+            row.has("published") && !row.isNull("published") -> row.optBoolean("published")
+            else -> row.booleanValue("is_publish") || row.booleanValue("published")
+        },
+        covers = covers,
+    )
+}
+
+internal fun parseBookshelfFolderItem(row: JSONObject): RedfruitBookshelfFolderItem? {
+    val video = row.optJSONObject("video_detail")
+    val videoData = video?.optJSONObject("video_data")
+    val itemId = row.validSeriesId("item_id", "item_id_str", "book_id_str", "book_id", "series_id_str", "series_id")
+        ?: video?.validSeriesId("item_id", "book_id_str", "book_id", "series_id_str", "series_id")
+        ?: videoData?.validSeriesId("series_id_str", "series_id", "book_id_str", "book_id")
+        ?: return null
+    val bookType = row.boundedNumber("book_type", max = 100).toInt()
+        .takeIf { it > 0 }
+        ?: video?.boundedNumber("book_type", max = 100)?.toInt()
+        ?: 2
+    val seriesId = videoData?.validSeriesId("series_id_str", "series_id", "book_id_str", "book_id")
+        ?: video?.validSeriesId("series_id_str", "series_id", "book_id_str", "book_id")
+        ?: row.validSeriesId("series_id_str", "series_id", "book_id_str", "book_id")
+        ?: itemId.takeIf { bookType == 2 }
+        ?: return null
+    val title = row.firstText("series_title", "book_name", "title")
+        .ifBlank { video?.firstText("series_title", "book_name", "title").orEmpty() }
+        .ifBlank { videoData?.firstText("title", "book_name", "series_title").orEmpty() }
+        .ifBlank { "剧集 $seriesId" }
+    val contentType = row.boundedNumber("content_type", max = 10_000).toInt()
+        .takeIf { it > 0 }
+        ?: video?.boundedNumber("content_type", max = 10_000)?.toInt()
+        ?: videoData?.boundedNumber("content_type", max = 10_000)?.toInt()
+        ?: 1
+    return RedfruitBookshelfFolderItem(
+        itemId = itemId,
+        seriesId = seriesId,
+        title = title,
+        cover = folderItemCover(row),
+        episodeCount = maxOf(
+            row.episodeCount(),
+            video?.episodeCount() ?: 0,
+            videoData?.episodeCount() ?: 0,
+        ),
+        contentType = contentType,
+        bookType = bookType,
+    )
+}
+
+private fun folderItemCover(row: JSONObject): String {
+    val video = row.optJSONObject("video_detail")
+    val videoData = video?.optJSONObject("video_data")
+    return safeCover(
+        row.firstText("series_cover_url", "thumb_url", "cover_url", "cover", "folder_cover")
+            .ifBlank { video?.firstText("series_cover_url", "thumb_url", "cover_url", "cover").orEmpty() }
+            .ifBlank { videoData?.firstText("cover", "cover_url", "thumb_url").orEmpty() },
+    )
 }
 
 internal fun parseHistory(rows: JSONArray): List<WatchHistoryEntity> {

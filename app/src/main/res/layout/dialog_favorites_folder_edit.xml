@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="14dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="4dp">
+
+    <EditText
+        android:id="@+id/folderNameInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_panel"
+        android:hint="@string/favorites_folder_name_hint"
+        android:importantForAutofill="no"
+        android:inputType="text"
+        android:maxLength="15"
+        android:maxLines="1"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="10dp"
+        android:textColor="@color/text_primary"
+        android:textColorHint="@color/text_secondary"
+        android:textSize="@dimen/watch_body" />
+
+    <TextView
+        android:id="@+id/folderNameCounter"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:gravity="end"
+        android:text="0/15"
+        android:textColor="@color/text_secondary"
+        android:textSize="@dimen/watch_meta" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="@string/favorites_folder_create_hint"
+        android:textColor="@color/text_secondary"
+        android:textSize="@dimen/watch_meta" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/favorites_folder_public"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/folderPublicSwitch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:thumbTint="@color/accent"
+            android:trackTint="@color/accent_soft" />
+    </LinearLayout>
+</LinearLayout>

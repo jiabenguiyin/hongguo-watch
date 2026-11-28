@@ -148,6 +148,60 @@ internal class RedfruitAccountManager(
     /** 是否已有红果账号会话（点赞/预约云端分段需要）。 */
     fun hasCloudSession(): Boolean = session != null && !mutableStatus.value.needsInitialMergeChoice
 
+    /**
+     * 官方云端收藏夹列表。
+     * 未登录或仍在首登合并确认前返回 null（UI 应引导登录，勿假装已同步）。
+     */
+    suspend fun libraryBookshelfFolders(): List<RedfruitBookshelfFolder>? {
+        val credentials = session ?: return null
+        if (mutableStatus.value.needsInitialMergeChoice) return null
+        return withContext(Dispatchers.IO) { cloud.bookshelfFolders(credentials) }
+    }
+
+    suspend fun libraryBookshelfFolderItems(
+        folderId: Long,
+    ): Pair<RedfruitBookshelfFolder?, List<RedfruitBookshelfFolderItem>>? {
+        val credentials = session ?: return null
+        if (mutableStatus.value.needsInitialMergeChoice) return null
+        return withContext(Dispatchers.IO) { cloud.bookshelfFolderItems(credentials, folderId) }
+    }
+
+    suspend fun createBookshelfFolder(name: String, publish: Boolean) {
+        val credentials = session ?: throw RedfruitCloudException("请先登录红果账号", authenticationRejected = true)
+        if (mutableStatus.value.needsInitialMergeChoice) {
+            throw RedfruitCloudException("请先完成登录合并选择")
+        }
+        withContext(Dispatchers.IO) { cloud.createBookshelfFolder(credentials, name, publish) }
+    }
+
+    suspend fun updateBookshelfFolder(folderId: Long, name: String, publish: Boolean) {
+        val credentials = session ?: throw RedfruitCloudException("请先登录红果账号", authenticationRejected = true)
+        if (mutableStatus.value.needsInitialMergeChoice) {
+            throw RedfruitCloudException("请先完成登录合并选择")
+        }
+        withContext(Dispatchers.IO) {
+            cloud.updateBookshelfFolder(credentials, folderId, name, publish)
+        }
+    }
+
+    suspend fun deleteBookshelfFolder(folderId: Long) {
+        val credentials = session ?: throw RedfruitCloudException("请先登录红果账号", authenticationRejected = true)
+        if (mutableStatus.value.needsInitialMergeChoice) {
+            throw RedfruitCloudException("请先完成登录合并选择")
+        }
+        withContext(Dispatchers.IO) { cloud.deleteBookshelfFolder(credentials, folderId) }
+    }
+
+    suspend fun addBookshelfFolderItems(folderId: Long, seriesIds: List<String>) {
+        val credentials = session ?: throw RedfruitCloudException("请先登录红果账号", authenticationRejected = true)
+        if (mutableStatus.value.needsInitialMergeChoice) {
+            throw RedfruitCloudException("请先完成登录合并选择")
+        }
+        withContext(Dispatchers.IO) {
+            cloud.addBookshelfFolderItems(credentials, folderId, seriesIds)
+        }
+    }
+
     private fun libraryForAccount(accountId: String): LocalLibrary {
         val key = MessageDigest.getInstance("SHA-256")
             .digest(accountId.encodeToByteArray())

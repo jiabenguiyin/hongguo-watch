@@ -106,6 +106,45 @@
             android:textSize="@dimen/watch_meta" />
     </LinearLayout>
 
+    <!-- 收藏内筛选：全部 / 收藏夹（云端；手表精简，不做真人剧/漫剧） -->
+    <LinearLayout
+        android:id="@+id/favoritesFilterRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/favoritesFilterAll"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_top_tab_active"
+            android:gravity="center"
+            android:minHeight="@dimen/watch_chip_min_h"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="6dp"
+            android:text="@string/favorites_filter_all"
+            android:textColor="@color/text_primary"
+            android:textSize="@dimen/watch_meta"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/favoritesFilterFolders"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/bg_top_tab_idle"
+            android:gravity="center"
+            android:minHeight="@dimen/watch_chip_min_h"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="6dp"
+            android:text="@string/favorites_folders_title"
+            android:textColor="@color/text_secondary"
+            android:textSize="@dimen/watch_meta" />
+    </LinearLayout>
+
     <LinearLayout
         android:id="@+id/librarySearchRow"
         android:layout_width="match_parent"

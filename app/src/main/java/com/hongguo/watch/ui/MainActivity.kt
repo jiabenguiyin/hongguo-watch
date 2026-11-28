@@ -230,6 +230,11 @@ class MainActivity : WatchDisplayActivity() {
             styleFavoritesFilterChips(foldersSelected = true)
             startActivity(Intent(this, FavoritesFoldersActivity::class.java))
         }
+        binding.favoritesFilterEdit.setOnClickListener {
+            if (!libraryLayoutList && librarySegmentSupportsBatchEdit()) {
+                enterLibraryEditMode()
+            }
+        }
         binding.librarySelectAll.setOnClickListener { toggleSelectAllLibrary() }
         binding.libraryEditDone.setOnClickListener { exitLibraryEditMode(reload = true) }
         binding.libraryDeleteBar.setOnClickListener { confirmDeleteSelectedLibrary() }
@@ -1922,14 +1927,10 @@ class MainActivity : WatchDisplayActivity() {
                         )
                     }
                     libraryPosterSnapshot = posters
+                    // 「编辑」只留 chip 行，避免与标题行重复（对齐历史）
                     val header = HomeRow.Header(
                         title = getString(R.string.segment_favorites),
                         subtitle = getString(R.string.favorites_count, favorites.size),
-                        actionLabel = if (libraryEditMode || favorites.isEmpty()) {
-                            ""
-                        } else {
-                            getString(R.string.library_edit)
-                        },
                     )
                     if (token != listGeneration || mode != Mode.LIBRARY ||
                         librarySegment != LibrarySegmentPolicy.Segment.FAVORITES
@@ -2007,7 +2008,10 @@ class MainActivity : WatchDisplayActivity() {
     }
 
     private fun refreshFavoritesFilterRow() {
-        val show = mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.FAVORITES
+        // 编辑态隐藏全部/收藏夹/编辑芯片行，只留全选栏（对齐历史）
+        val show = mode == Mode.LIBRARY &&
+            librarySegment == LibrarySegmentPolicy.Segment.FAVORITES &&
+            !libraryEditMode
         binding.favoritesFilterRow.visibility = if (show) View.VISIBLE else View.GONE
         if (show) styleFavoritesFilterChips(foldersSelected = false)
     }
@@ -2027,6 +2031,9 @@ class MainActivity : WatchDisplayActivity() {
         }
         style(binding.favoritesFilterAll, !foldersSelected)
         style(binding.favoritesFilterFolders, foldersSelected)
+        style(binding.favoritesFilterEdit, selected = false)
+        binding.favoritesFilterEdit.visibility =
+            if (libraryLayoutList) View.GONE else View.VISIBLE
     }
 
     private fun highlightLibrarySegment(segment: LibrarySegmentPolicy.Segment) {
@@ -2105,8 +2112,12 @@ class MainActivity : WatchDisplayActivity() {
         librarySelectedIds.clear()
         if (!preselect.isNullOrBlank()) librarySelectedIds += preselect
         adapter.selectionMode = true
-        if (librarySegment == LibrarySegmentPolicy.Segment.HISTORY) {
-            binding.historyFilterChipScroll.visibility = View.GONE
+        when (librarySegment) {
+            LibrarySegmentPolicy.Segment.HISTORY ->
+                binding.historyFilterChipScroll.visibility = View.GONE
+            LibrarySegmentPolicy.Segment.FAVORITES ->
+                binding.favoritesFilterRow.visibility = View.GONE
+            else -> Unit
         }
         refreshLibraryEditChrome()
         submitLibrarySelectionRows()
@@ -2122,7 +2133,10 @@ class MainActivity : WatchDisplayActivity() {
         binding.libraryDeleteBar.visibility = View.GONE
         if (wasEditing && reload && mode == Mode.LIBRARY && librarySegmentSupportsBatchEdit()) {
             when (segment) {
-                LibrarySegmentPolicy.Segment.FAVORITES -> loadFavoritesList(fromSwipe = false)
+                LibrarySegmentPolicy.Segment.FAVORITES -> {
+                    refreshFavoritesFilterRow()
+                    loadFavoritesList(fromSwipe = false)
+                }
                 LibrarySegmentPolicy.Segment.HISTORY -> {
                     binding.historyFilterChipScroll.visibility = View.VISIBLE
                     refreshHistoryFilterChips()

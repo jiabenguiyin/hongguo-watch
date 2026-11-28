@@ -52,7 +52,7 @@ class UpdateMirrorPolicyTest {
     }
 
     @Test
-    fun autoCandidatesPreferSelectedThenFailoverThenOfficial() {
+    fun autoDownloadCandidatesPreferDualSiteFailoverThenOfficial() {
         val apk =
             "https://github.com/jiabenguiyin/hongguo-watch/releases/download/v0.5.8/a.apk"
         val urls = UpdateMirrorPolicy.downloadCandidateUrls(
@@ -63,9 +63,50 @@ class UpdateMirrorPolicyTest {
             apk,
         )
         assertEquals("https://ghproxy.imciel.com/$apk", urls.first())
-        assertTrue(urls.contains("https://gh-proxy.com/$apk"))
+        assertEquals(
+            listOf(
+                "https://ghproxy.imciel.com/$apk",
+                "https://jiashu.1win.eu.org/$apk",
+                "https://xsadwsd.kdns.fr/$apk",
+                "https://gitproxy.127731.xyz/$apk",
+                "https://ghfast.top/$apk",
+                "https://cdn.akaere.online/$apk",
+                "https://gh.chjina.com/$apk",
+                apk,
+            ),
+            urls,
+        )
+        // Dot 云电脑常 0 通过 / 上海弱节点不再进入 APK 下载回退
+        assertFalse(urls.contains("https://gh-proxy.com/$apk"))
+        assertFalse(urls.contains("https://cdn.gh-proxy.com/$apk"))
+        assertFalse(urls.contains("https://gh.monlor.com/$apk"))
+        assertFalse(urls.contains("https://gh.ddlc.top/$apk"))
         assertEquals(apk, urls.last())
         assertEquals(urls.size, urls.toSet().size)
+    }
+
+    @Test
+    fun apiFailoverKeepsLegacyOrder() {
+        val api = "https://api.github.com/repos/jiabenguiyin/hongguo-watch/releases/latest"
+        val urls = UpdateMirrorPolicy.apiCandidateUrls(
+            UpdateMirrorPolicy.Preference(
+                mode = UpdateMirrorPolicy.Mode.AUTO,
+                mirrorBase = "https://ghproxy.imciel.com/",
+            ),
+            api,
+        )
+        assertEquals(
+            listOf(
+                "https://ghproxy.imciel.com/$api",
+                "https://gh-proxy.com/$api",
+                "https://cdn.gh-proxy.com/$api",
+                "https://ghfast.top/$api",
+                "https://gh.ddlc.top/$api",
+                "https://gh.monlor.com/$api",
+                api,
+            ),
+            urls,
+        )
     }
 
     @Test

@@ -93,4 +93,12 @@ class LibrarySegmentPolicyTest {
             assertFalse(LibrarySegmentPolicy.usesPosterGrid(segment, listMode = true))
         }
     }
+
+    @Test
+    fun sharedPosterGridPrefAppliesToHomeAndLibrary() {
+        assertTrue(LibrarySegmentPolicy.usesPosterGrid(listMode = false))
+        assertFalse(LibrarySegmentPolicy.usesPosterGrid(listMode = true))
+        assertTrue(LibrarySegmentPolicy.usesPosterGrid(LibrarySegmentPolicy.Segment.FAVORITES, false))
+        assertFalse(LibrarySegmentPolicy.usesPosterGrid(LibrarySegmentPolicy.Segment.HISTORY, true))
+    }
 }

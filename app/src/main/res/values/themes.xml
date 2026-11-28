@@ -60,4 +60,20 @@
         <!-- 主操作：高对比强调色，深色底上可读 -->
         <item name="android:textColor">@color/accent</item>
     </style>
+
+    <!-- 历史筛选底栏：强制深色，避免亮底浅字 -->
+    <style name="Theme.HongguoWatch.BottomSheet" parent="ThemeOverlay.MaterialComponents.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/Widget.HongguoWatch.BottomSheet</item>
+        <item name="android:colorBackground">@color/bg_elevated</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:navigationBarColor">@color/bg_elevated</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
+
+    <style name="Widget.HongguoWatch.BottomSheet" parent="Widget.MaterialComponents.BottomSheet">
+        <item name="shapeAppearance">@null</item>
+        <item name="backgroundTint">@color/bg_elevated</item>
+        <item name="android:background">@drawable/bg_bottom_sheet_dark</item>
+    </style>
 </resources>

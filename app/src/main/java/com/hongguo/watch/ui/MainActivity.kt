@@ -1660,14 +1660,10 @@ class MainActivity : WatchDisplayActivity() {
                         )
                     }
                     libraryPosterSnapshot = posters
+                    // 「编辑」只留 chip 行，避免与标题行重复
                     val header = HomeRow.Header(
                         title = getString(R.string.segment_history),
                         subtitle = getString(R.string.favorites_count, history.size),
-                        actionLabel = if (libraryEditMode || history.isEmpty()) {
-                            ""
-                        } else {
-                            getString(R.string.library_edit)
-                        },
                     )
                     if (token != listGeneration || mode != Mode.LIBRARY ||
                         librarySegment != LibrarySegmentPolicy.Segment.HISTORY

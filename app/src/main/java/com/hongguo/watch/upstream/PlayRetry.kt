@@ -8,14 +8,10 @@ internal object PlayRetryPlan {
     /**
      * 官方 v1 POST 现行主 host 为 a（hongguoTV 0.33.1）；b/hl/lf 作备选。
      * video_tab 仍优先打 b（见 MobilePlayback）。
+     * 代理可通过 `PROXY_MODEL_HOSTS` 覆盖（见 [UpstreamEndpoints]）。
      */
-    val hosts =
-        listOf(
-            "api5-normal-sinfonlinea.fqnovel.com",
-            "api5-normal-sinfonlineb.fqnovel.com",
-            "api5-normal-hl.fqnovel.com",
-            "api5-normal-lf.fqnovel.com",
-        )
+    val hosts: List<String>
+        get() = UpstreamEndpoints.modelHosts()
 
     fun host(attempt: Int) = hosts[attempt % hosts.size]
 

@@ -70,8 +70,10 @@ internal object MobilePlayback {
     private const val TAB_UA =
         "com.phoenix.read/$VERSION_CODE (Linux; U; Android 9; SM-N9860; Build/PQ3A.190705.10241111;tt-ok/3.12.13.20)"
 
-    /** TV 0.16.14 primary model host for preload/v1. */
-    internal const val PRELOAD_HOST = "reading.snssdk.com"
+    /** TV 0.16.14 primary model host for preload/v1. Proxy: `PROXY_PRELOAD_HOST`. */
+    internal const val PRELOAD_HOST = UpstreamEndpoints.DEFAULT_PRELOAD_HOST
+
+    internal fun preloadHost(): String = UpstreamEndpoints.preloadHost()
 
     private val PLACEHOLDER_HEADERS = setOf(
         "x-gorgon", "x-helios", "x-medusa", "x-argus", "x-ladon", "x-khronos",
@@ -119,13 +121,9 @@ internal object MobilePlayback {
         VIDEO_MODEL(PlaybackRoutePreference.VIDEO_MODEL, "video-model", 2000),
     }
 
-    internal fun modelHosts() = PlayRetryPlan.hosts
+    internal fun modelHosts() = UpstreamEndpoints.modelHosts()
 
-    internal fun videoModelHosts() =
-        listOf(
-            "api5-normal-sinfonlinea.fqnovel.com",
-            "api5-normal-sinfonlinec.fqnovel.com",
-        )
+    internal fun videoModelHosts() = UpstreamEndpoints.videoModelHosts()
 
     fun ladder(
         id: String,
@@ -228,7 +226,7 @@ internal object MobilePlayback {
                         )
                     Route.PRELOAD ->
                         ladderOnHost(
-                            host = PRELOAD_HOST,
+                            host = preloadHost(),
                             id = id,
                             device = device,
                             http = http,
@@ -516,11 +514,7 @@ internal object MobilePlayback {
             put("source", "0")
             put("from_video_id", "")
         }
-        val bases = listOf(
-            "https://api5-normal-sinfonlineb.fqnovel.com/reading/bookapi/video_tab/multi_video_model/v1/",
-            "https://api5-normal-sinfonlineb.fqnovel.com/reading/bookapi/video_tab/video_model/v1/",
-            "https://reading.snssdk.com/reading/bookapi/video_tab/multi_video_model/v1/",
-        )
+        val bases = UpstreamEndpoints.videoTabBases()
         var lastEmpty: EmptyPlaybackResponseException? = null
         var lastTransient: IOException? = null
         for (base in bases) {

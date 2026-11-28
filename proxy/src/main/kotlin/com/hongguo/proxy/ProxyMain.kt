@@ -9,6 +9,7 @@ import com.hongguo.watch.upstream.MobilePlaybackSigner
 import com.hongguo.watch.upstream.MobileSignedRequest
 import com.hongguo.watch.upstream.PlaybackSourceException
 import com.hongguo.watch.upstream.RequestScope
+import com.hongguo.watch.upstream.UpstreamEndpoints
 import com.hongguo.watch.upstream.VendorConstants
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
@@ -41,7 +42,22 @@ fun main() {
     val server = HttpServer.create(InetSocketAddress(bind, port), 0)
     server.executor = Executors.newCachedThreadPool()
     server.createContext("/health") { ex ->
-        writeJson(ex, 200, JSONObject().put("ok", true).put("signer", service.signerLabel()))
+        val upstream = JSONObject()
+        UpstreamEndpoints.healthSnapshot().forEach { (k, v) ->
+            when (v) {
+                is List<*> -> upstream.put(k, JSONArray(v))
+                else -> upstream.put(k, v)
+            }
+        }
+        writeJson(
+            ex,
+            200,
+            JSONObject()
+                .put("ok", true)
+                .put("service", "hongguo-playback-proxy")
+                .put("signer", service.signerLabel())
+                .put("upstream", upstream),
+        )
     }
     server.createContext("/v1/stream") { ex ->
         if (ex.requestMethod != "GET") {
@@ -108,12 +124,17 @@ fun main() {
 
 private val EPISODE = Regex("[0-9]{1,30}")
 
-private fun defaultHttp(): OkHttpClient =
-    OkHttpClient.Builder()
-        .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+private fun defaultHttp(): OkHttpClient {
+    val connectSec =
+        System.getenv("PROXY_CONNECT_TIMEOUT_SEC")?.toLongOrNull()?.coerceIn(3L, 60L) ?: 12L
+    val readSec =
+        System.getenv("PROXY_READ_TIMEOUT_SEC")?.toLongOrNull()?.coerceIn(5L, 120L) ?: 20L
+    return OkHttpClient.Builder()
+        .connectTimeout(connectSec, TimeUnit.SECONDS)
+        .readTimeout(readSec, TimeUnit.SECONDS)
         .followRedirects(true)
         .build()
+}
 
 private fun authorize(ex: HttpExchange, expected: String): Boolean {
     if (expected.isEmpty()) return true
@@ -179,8 +200,10 @@ internal class StreamService(
             "iid" to installId,
             "cdid" to cdid,
         )
+        val deadlineSec =
+            System.getenv("PROXY_STREAM_DEADLINE_SEC")?.toLongOrNull()?.coerceIn(5L, 180L) ?: 14L
         val ladder = RequestScope.withDeadline(
-            System.nanoTime() + TimeUnit.SECONDS.toNanos(14),
+            System.nanoTime() + TimeUnit.SECONDS.toNanos(deadlineSec),
         ) {
             MobilePlayback.ladder(
                 id = episodeId,

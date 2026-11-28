@@ -56,7 +56,7 @@
     <string name="library_delete_confirm_body">将移除 %1$d 部收藏，可稍后再加回。</string>
     <string name="library_deleted_count">已删除 %1$d 部</string>
     <string name="library_layout_list">列表模式</string>
-    <string name="library_layout_list_summary">关=三列海报（默认）；开=列表（原列表 UI）</string>
+    <string name="library_layout_list_summary">关=首页与库三列海报（默认）；开=首页与库列表</string>
     <string name="chase_subtitle_local">本地集数游标（官方追更不可用）</string>
     <string name="chase_subtitle_cloud">官方追更</string>
     <string name="library_search">库内搜索</string>
@@ -114,8 +114,8 @@
     <string name="video_cache_budget_auto">上限按本机剩余与总容量自动计算，预留系统空间</string>
     <string name="video_cache_cleared">视频缓存已清除</string>
     <string name="clear_video_cache">清除视频缓存</string>
+    <!-- 离线段三列海报头副标题：占用摘要 -->
     <string name="library_cache_hook">离线缓存 · %1$s</string>
-    <string name="library_cache_hook_hint">点此查看已缓存分集并清理空间</string>
     <string name="playing_from_cache">本地缓存播放</string>
     <string name="segment_offline">离线</string>
     <string name="offline_title">离线缓存</string>
@@ -170,6 +170,16 @@
     <string name="favorites_folder_add_none">没有可添加的收藏（先在详情页点♡）</string>
     <string name="favorites_folder_added_count">已添加 %1$d 部</string>
     <string name="favorites_folder_items_empty">收藏夹暂无内容</string>
+    <string name="favorites_folder_items_delete_confirm_title">从收藏夹移除？</string>
+    <string name="favorites_folder_items_delete_confirm_body">将从本收藏夹移除 %1$d 部，不会从全部收藏删除。</string>
+    <string name="favorites_folder_items_deleted_count">已从收藏夹移除 %1$d 部</string>
+    <string name="favorites_folder_move_to">移动到</string>
+    <string name="favorites_folder_pick_title">选择收藏夹</string>
+    <string name="favorites_folder_pick_create">新建</string>
+    <string name="favorites_folder_pick_close">∨</string>
+    <string name="favorites_folder_pick_empty">暂无其他收藏夹，可先新建</string>
+    <string name="favorites_folder_moved_count">已移动 %1$d 部</string>
+    <string name="favorites_folder_selected_count">已选择%1$d个</string>
     <string name="favorites_folder_card_meta">共%1$d条内容 · %2$s</string>
     <string name="favorites_folder_detail_meta">%1$d条内容 · %2$s</string>
     <string name="favorites_folder_created">已新建收藏夹</string>
@@ -187,6 +197,34 @@
     <string name="history_delete_confirm_body">将从观看历史移除「%1$s」</string>
     <string name="history_batch_delete_confirm_title">删除选中历史？</string>
     <string name="history_batch_delete_confirm_body">将移除 %1$d 条观看历史。</string>
+    <string name="history_recent_watching">最近在看</string>
+    <string name="history_filter">筛选</string>
+    <string name="history_filter_close">关闭筛选</string>
+    <string name="history_filter_duration">已播放时长</string>
+    <string name="history_filter_episodes">已播放集数</string>
+    <string name="history_filter_time">时间</string>
+    <string name="history_filter_complete">是否看完</string>
+    <string name="history_filter_clear">清空</string>
+    <string name="history_filter_confirm">确定</string>
+    <string name="history_filter_all">全部</string>
+    <string name="history_filter_dur_over_5s">超5秒钟</string>
+    <string name="history_filter_dur_over_1m">超1分钟</string>
+    <string name="history_filter_dur_over_5m">超5分钟</string>
+    <string name="history_filter_dur_over_15m">超15分钟</string>
+    <string name="history_filter_dur_over_30m">超30分钟</string>
+    <string name="history_filter_ep_over_1">看1集以上</string>
+    <string name="history_filter_ep_over_3">看3集以上</string>
+    <string name="history_filter_ep_over_10">看10集以上</string>
+    <string name="history_filter_ep_over_20">看20集以上</string>
+    <string name="history_filter_ep_over_50">看50集以上</string>
+    <string name="history_filter_time_today">今天</string>
+    <string name="history_filter_time_yesterday">昨天</string>
+    <string name="history_filter_time_1m">一个月内</string>
+    <string name="history_filter_time_3m">三个月内</string>
+    <string name="history_filter_time_earlier">更早</string>
+    <string name="history_filter_complete_yes">已看完</string>
+    <string name="history_filter_complete_no">未看完</string>
+    <string name="history_filter_empty">没有符合筛选的历史</string>
     <string name="time_lock_title">时间管理</string>
     <string name="time_lock_label">时间锁</string>
     <string name="time_lock_hint">防沉迷：限制每日观看时长。额度用尽后锁定应用，需输入 4 位密码才能继续</string>

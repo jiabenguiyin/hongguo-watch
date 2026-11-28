@@ -473,7 +473,6 @@ class MainActivity : WatchDisplayActivity() {
             HomeNav.SEARCH -> {
                 adapter.showResumeHint = false
                 binding.librarySegmentRow.visibility = View.GONE
-                binding.libraryCacheHook.visibility = View.GONE
                 binding.searchInput.requestFocus()
                 showSearchDiscovery()
             }
@@ -649,7 +648,6 @@ class MainActivity : WatchDisplayActivity() {
             if (HomeNavPolicy.showHomeNavChrome(home)) View.VISIBLE else View.GONE
         binding.brandRow.visibility = View.VISIBLE
         binding.librarySegmentRow.visibility = View.GONE
-        binding.libraryCacheHook.visibility = View.GONE
         binding.searchRow.visibility =
             if (home && HomeNavPolicy.showSearchRow(homeNav)) View.VISIBLE else View.GONE
         binding.categoryScroll.visibility =
@@ -680,7 +678,6 @@ class MainActivity : WatchDisplayActivity() {
         binding.historyFilterChipScroll.visibility = View.GONE
         binding.libraryEditBar.visibility = View.GONE
         binding.libraryDeleteBar.visibility = View.GONE
-        binding.libraryCacheHook.visibility = View.GONE
         binding.pageSubtitle.visibility = View.GONE
         binding.swipeRefresh.visibility = View.GONE
         binding.emptyView.visibility = View.GONE
@@ -1327,16 +1324,12 @@ class MainActivity : WatchDisplayActivity() {
             when (librarySegment) {
                 LibrarySegmentPolicy.Segment.OFFLINE -> {
                     binding.historyFilterChipScroll.visibility = View.GONE
-                    binding.libraryCacheHook.visibility = View.GONE
                     binding.pageSubtitle.visibility = View.VISIBLE
                     binding.pageSubtitle.text = getString(R.string.offline_subtitle)
                     loadOfflineCacheList(fromSwipe)
                 }
                 LibrarySegmentPolicy.Segment.HISTORY -> {
                     binding.pageSubtitle.visibility = View.GONE
-                    binding.libraryCacheHook.visibility =
-                        if (libraryEditMode) View.GONE else View.VISIBLE
-                    if (!libraryEditMode) refreshLibraryCacheHook()
                     refreshHistoryFilterChips()
                     binding.historyFilterChipScroll.visibility =
                         if (libraryEditMode) View.GONE else View.VISIBLE
@@ -1346,26 +1339,10 @@ class MainActivity : WatchDisplayActivity() {
                 LibrarySegmentPolicy.Segment.FAVORITES -> {
                     binding.historyFilterChipScroll.visibility = View.GONE
                     binding.pageSubtitle.visibility = View.GONE
-                    binding.libraryCacheHook.visibility =
-                        if (libraryEditMode) View.GONE else View.VISIBLE
-                    if (!libraryEditMode) refreshLibraryCacheHook()
                     useSeriesAdapter(posterGrid = poster)
                     loadFavoritesList(fromSwipe)
                 }
             }
-        }
-    }
-
-    /** 收藏/历史顶栏摘要；点按进入离线段。 */
-    private fun refreshLibraryCacheHook() {
-        val summary = container.videoCache.spaceSummary()
-        binding.libraryCacheHook.text = getString(
-            R.string.library_cache_hook,
-            "${summary.usedLabel}/${summary.budgetLabel}",
-        )
-        binding.libraryCacheHook.contentDescription = getString(R.string.library_cache_hook_hint)
-        binding.libraryCacheHook.setOnClickListener {
-            showLibrary(segment = LibrarySegmentPolicy.Segment.OFFLINE)
         }
     }
 
@@ -1551,7 +1528,6 @@ class MainActivity : WatchDisplayActivity() {
                     if (mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.OFFLINE) {
                         loadOfflineCacheList(fromSwipe = false)
                     }
-                    refreshLibraryCacheHook()
                 }
             }
             .setNegativeButton(R.string.update_cancel, null)
@@ -1585,7 +1561,6 @@ class MainActivity : WatchDisplayActivity() {
                         binding.pageSubtitle.text = getString(R.string.offline_subtitle)
                         loadOfflineCacheList(fromSwipe = false)
                     }
-                    refreshLibraryCacheHook()
                 }
             }
             .setNegativeButton(R.string.update_cancel, null)
@@ -1610,7 +1585,6 @@ class MainActivity : WatchDisplayActivity() {
                     if (mode == Mode.LIBRARY && librarySegment == LibrarySegmentPolicy.Segment.OFFLINE) {
                         loadOfflineCacheList(fromSwipe = false)
                     }
-                    refreshLibraryCacheHook()
                 }
             }
             .setNegativeButton(R.string.update_cancel, null)
@@ -2095,7 +2069,6 @@ class MainActivity : WatchDisplayActivity() {
         librarySelectedIds.clear()
         if (!preselect.isNullOrBlank()) librarySelectedIds += preselect
         adapter.selectionMode = true
-        binding.libraryCacheHook.visibility = View.GONE
         if (librarySegment == LibrarySegmentPolicy.Segment.HISTORY) {
             binding.historyFilterChipScroll.visibility = View.GONE
         }
@@ -2112,8 +2085,6 @@ class MainActivity : WatchDisplayActivity() {
         binding.libraryEditBar.visibility = View.GONE
         binding.libraryDeleteBar.visibility = View.GONE
         if (wasEditing && reload && mode == Mode.LIBRARY && librarySegmentSupportsBatchEdit()) {
-            binding.libraryCacheHook.visibility = View.VISIBLE
-            refreshLibraryCacheHook()
             when (segment) {
                 LibrarySegmentPolicy.Segment.FAVORITES -> loadFavoritesList(fromSwipe = false)
                 LibrarySegmentPolicy.Segment.HISTORY -> {
@@ -2297,7 +2268,6 @@ class MainActivity : WatchDisplayActivity() {
         binding.seriesList.setOnTouchListener(isolateLibraryTouch)
         binding.swipeRefresh.setOnTouchListener(isolateLibraryTouch)
         binding.librarySegmentRow.setOnTouchListener(isolateLibraryTouch)
-        binding.libraryCacheHook.setOnTouchListener(isolateLibraryTouch)
     }
 
     private fun openSeries(series: Series) {

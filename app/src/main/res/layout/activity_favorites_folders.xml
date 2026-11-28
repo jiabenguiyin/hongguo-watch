@@ -209,47 +209,44 @@
             android:indeterminate="true"
             android:indeterminateTint="@color/accent"
             android:visibility="gone" />
+
+        <!-- 编辑底栏：对齐历史 libraryDeleteBar —— 全宽贴底叠加，非悬浮灰条 -->
+        <LinearLayout
+            android:id="@+id/itemActionBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:background="@color/bg_elevated"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/moveBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:paddingVertical="10dp"
+                android:text="@string/favorites_folder_move_to"
+                android:textColor="@color/text_primary"
+                android:textSize="@dimen/watch_body"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/deleteBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:paddingVertical="10dp"
+                android:text="@string/library_delete"
+                android:textColor="@color/accent"
+                android:textSize="@dimen/watch_body"
+                android:textStyle="bold" />
+        </LinearLayout>
     </FrameLayout>
 
-    <!-- 编辑底栏：与显示设置 saveButton 同为 content 下方兄弟（不再叠在列表上） -->
-    <LinearLayout
-        android:id="@+id/itemActionBar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/watch_pad_tight"
-        android:background="@color/bg_elevated"
-        android:orientation="horizontal"
-        android:paddingVertical="8dp"
-        android:visibility="gone">
-
-        <TextView
-            android:id="@+id/moveBar"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:minHeight="@dimen/watch_control_h"
-            android:paddingVertical="6dp"
-            android:text="@string/favorites_folder_move_to"
-            android:textColor="@color/text_primary"
-            android:textSize="@dimen/watch_meta"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/deleteBar"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:minHeight="@dimen/watch_control_h"
-            android:paddingVertical="6dp"
-            android:text="@string/library_delete"
-            android:textColor="@color/accent"
-            android:textSize="@dimen/watch_meta"
-            android:textStyle="bold" />
-    </LinearLayout>
-
-    <!-- 新建/添加：对齐 display saveButton -->
+    <!-- 新建/添加：对齐 display saveButton（bottomChrome） -->
     <TextView
         android:id="@+id/createButton"
         android:layout_width="match_parent"

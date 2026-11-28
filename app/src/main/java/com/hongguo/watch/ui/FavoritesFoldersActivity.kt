@@ -130,14 +130,26 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
 
     /**
      * 与 [SettingsActivity] / [DisplaySettingsActivity] 同一路径：
-     * [WatchUi.applySafePadding](root, topChrome, bottomChrome)。
-     * 底栏「+ 新建」或「移动到|删除」是 content 下方兄弟，不叠列表。
+     * [WatchUi.applySafePadding](root, topChrome[, bottomChrome])。
+     *
+     * 「+ 新建」作 bottomChrome（同显示设置保存钮）。
+     * 编辑「移动到|删除」对齐历史 [libraryDeleteBar]：全宽贴底叠加，**不作** bottomChrome，
+     * 否则四角侧 margin 会把它挤成悬浮灰条（refs 33）。
      */
     private fun applyFoldersChrome() {
-        val bottomChrome = when {
-            binding.itemActionBar.visibility == View.VISIBLE -> binding.itemActionBar
-            binding.createButton.visibility == View.VISIBLE -> binding.createButton
-            else -> null
+        // 清掉曾当 bottomChrome 时留下的侧 margin，避免灰条残留
+        (binding.itemActionBar.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
+            if (lp.leftMargin != 0 || lp.rightMargin != 0 || lp.bottomMargin != 0) {
+                lp.leftMargin = 0
+                lp.rightMargin = 0
+                lp.bottomMargin = 0
+                binding.itemActionBar.layoutParams = lp
+            }
+        }
+        val bottomChrome = if (binding.createButton.visibility == View.VISIBLE) {
+            binding.createButton
+        } else {
+            null
         }
         WatchUi.applySafePadding(
             binding.foldersRoot,

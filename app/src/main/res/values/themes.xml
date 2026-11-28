@@ -77,7 +77,19 @@
         <item name="android:textColor">@color/accent</item>
     </style>
 
-    <!-- 历史筛选底栏：强制深色，避免亮底浅字 -->
+    <!-- 历史筛选：全屏面板（弃用 BottomSheet 首测叠底栏）；深色 + 非 floating 以便 WatchUi 收 inset -->
+    <style name="Theme.HongguoWatch.FilterPanel" parent="Theme.MaterialComponents.Dialog">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+    </style>
+
+    <!-- 保留旧 BottomSheet 主题名以免残留引用崩编译；筛选已改走 FilterPanel -->
     <style name="Theme.HongguoWatch.BottomSheet" parent="ThemeOverlay.MaterialComponents.BottomSheetDialog">
         <item name="bottomSheetStyle">@style/Widget.HongguoWatch.BottomSheet</item>
         <item name="android:colorBackground">@color/bg_elevated</item>

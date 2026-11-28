@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  与设置 / 显示设置同一套 chrome：
+  root(padding) → topChrome → content(weight=1) → bottomChrome(新建|编辑底栏)。
+  底栏是 Scroll/List 的兄弟，不叠在列表上；四角交给 WatchUi.applySafePadding。
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/foldersRoot"
     android:layout_width="match_parent"
@@ -6,9 +11,10 @@
     android:background="@color/bg"
     android:orientation="vertical"
     android:paddingHorizontal="@dimen/watch_pad"
-    android:paddingTop="@dimen/watch_pad_tight">
+    android:paddingTop="@dimen/watch_pad_tight"
+    android:paddingBottom="@dimen/watch_pad_tight">
 
-    <!-- 顶栏 chrome：与设置/显示设置一样交给 WatchUi.applySafePadding(topChrome=…) -->
+    <!-- 顶栏 chrome：对齐 settingsToolbar（44dp 返回 + 标题 + 时钟） -->
     <LinearLayout
         android:id="@+id/foldersTopChrome"
         android:layout_width="match_parent"
@@ -21,12 +27,12 @@
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingBottom="2dp">
+            android:paddingBottom="4dp">
 
             <TextView
                 android:id="@+id/backButton"
-                android:layout_width="@dimen/watch_control_h"
-                android:layout_height="@dimen/watch_control_h"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:background="@drawable/bg_control_button"
                 android:gravity="center"
                 android:text="@string/back"
@@ -37,16 +43,16 @@
                 android:id="@+id/titleView"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="4dp"
+                android:layout_marginStart="6dp"
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:maxLines="1"
                 android:text="@string/favorites_folders_title"
-                android:textColor="@color/text_primary"
+                android:textColor="@color/accent"
                 android:textSize="@dimen/watch_title"
                 android:textStyle="bold" />
 
-            <!-- 夹内条目编辑入口：顶栏与「管理」并排，去掉左侧重复「编辑」与列表 Header 编辑 -->
+            <!-- 夹内条目编辑入口：顶栏与「管理」并排 -->
             <TextView
                 android:id="@+id/editButton"
                 android:layout_width="wrap_content"
@@ -156,7 +162,7 @@
                 android:layout_height="match_parent"
                 android:clipToPadding="false"
                 android:overScrollMode="never"
-                android:paddingBottom="56dp" />
+                android:paddingBottom="@dimen/watch_pad" />
         </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
         <LinearLayout
@@ -203,53 +209,54 @@
             android:indeterminate="true"
             android:indeterminateTint="@color/accent"
             android:visibility="gone" />
-
-        <!-- 编辑底栏：移动到 | 删除（对齐官方收藏夹编辑） -->
-        <LinearLayout
-            android:id="@+id/itemActionBar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:background="@color/bg_elevated"
-            android:orientation="horizontal"
-            android:paddingVertical="8dp"
-            android:visibility="gone">
-
-            <TextView
-                android:id="@+id/moveBar"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:paddingVertical="6dp"
-                android:text="@string/favorites_folder_move_to"
-                android:textColor="@color/text_primary"
-                android:textSize="@dimen/watch_meta"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/deleteBar"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:paddingVertical="6dp"
-                android:text="@string/library_delete"
-                android:textColor="@color/accent"
-                android:textSize="@dimen/watch_meta"
-                android:textStyle="bold" />
-        </LinearLayout>
     </FrameLayout>
 
+    <!-- 编辑底栏：仅不同操作才双钮（移动到|删除，refs 37）；对齐筛选清空|确定 -->
+    <LinearLayout
+        android:id="@+id/itemActionBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/watch_pad_tight"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/moveBar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="6dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_history_filter_clear"
+            android:gravity="center"
+            android:minHeight="@dimen/watch_control_h"
+            android:text="@string/favorites_folder_move_to"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/deleteBar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/bg_history_filter_confirm"
+            android:gravity="center"
+            android:minHeight="@dimen/watch_control_h"
+            android:text="@string/library_delete"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- 新建/添加：单钮（勿复制同文案双钮 refs 35–36）；四角靠 WatchUi bottomChrome -->
     <TextView
         android:id="@+id/createButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:layout_marginBottom="6dp"
-        android:background="@drawable/bg_control_button"
+        android:layout_marginTop="@dimen/watch_pad_tight"
+        android:background="@drawable/bg_history_filter_confirm"
         android:gravity="center"
-        android:paddingVertical="10dp"
+        android:minHeight="@dimen/watch_control_h"
         android:text="@string/favorites_folder_create_plus"
         android:textColor="@color/text_primary"
         android:textSize="@dimen/watch_body"

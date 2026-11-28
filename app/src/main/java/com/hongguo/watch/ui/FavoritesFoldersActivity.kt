@@ -116,7 +116,10 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
 
     override fun onResume() {
         super.onResume()
-        recreateForDisplaySizeChange()
+        if (recreateForDisplaySizeChange()) return
+        // 与 SettingsActivity 一致：每次回前台重套四角安全边（真机 inset 偶发首帧不全）
+        if (WatchUi.isCompactWatch(this)) WatchUi.applyImmersive(this)
+        applyFoldersChrome()
         if (openFolder == null) reload(fromSwipe = false)
     }
 
@@ -126,20 +129,31 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
     }
 
     /**
-     * 列表底栏「+ 新建/添加」、编辑底栏「移动到|删除」随模式切换；
-     * 顶栏含返回/标题/全选·完成，与 [DisplaySettingsActivity] 同用 [WatchUi.applySafePadding]。
+     * 与 [SettingsActivity] / [DisplaySettingsActivity] 同一路径：
+     * [WatchUi.applySafePadding](root, topChrome[, bottomChrome])。
+     *
+     * - 编辑「移动到|删除」：不同操作才双钮（refs 37），整行 bottomChrome。
+     * - 「新建/添加」：单钮（refs 35–36 禁止同文案双份），同显示设置保存钮 margin 内收。
      */
     private fun applyFoldersChrome() {
-        val bottomChrome = if (binding.itemActionBar.visibility == View.VISIBLE) {
-            binding.itemActionBar
-        } else {
-            binding.createButton
+        val bottomChrome = when {
+            binding.itemActionBar.visibility == View.VISIBLE -> binding.itemActionBar
+            binding.createButton.visibility == View.VISIBLE -> binding.createButton
+            else -> null
         }
         WatchUi.applySafePadding(
             binding.foldersRoot,
             topChrome = binding.foldersTopChrome,
             bottomChrome = bottomChrome,
         )
+    }
+
+    private fun setCreateActionVisible(visible: Boolean) {
+        binding.createButton.visibility = if (visible) View.VISIBLE else View.GONE
+    }
+
+    private fun setCreateActionText(text: CharSequence) {
+        binding.createButton.text = text
     }
 
     private fun onEmptyAction() {
@@ -223,7 +237,7 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
                     binding.emptyText.text = getString(R.string.favorites_folders_load_failed)
                     binding.emptyAction.text = getString(R.string.favorites_folder_retry)
                     binding.emptyAction.setOnClickListener { reload(fromSwipe = false) }
-                    binding.createButton.visibility = View.GONE
+                    setCreateActionVisible(false)
                     folderAdapter.submit(emptyList())
                 }
             } finally {
@@ -238,7 +252,7 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         binding.titleView.text = getString(R.string.favorites_folders_title)
         binding.subtitleView.visibility = View.GONE
         binding.manageButton.visibility = View.GONE
-        binding.createButton.visibility = View.GONE
+        setCreateActionVisible(false)
         hideItemEditChrome()
         // 未登录：禁用下拉「同步」假象，只留登录引导（对齐点赞/预约 need_login）
         binding.swipeRefresh.isEnabled = false
@@ -263,14 +277,14 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         applyListLayout()
         binding.folderList.adapter = folderAdapter
         folderAdapter.submit(folders)
-        binding.createButton.visibility = View.VISIBLE
-        binding.createButton.text = getString(R.string.favorites_folder_create_plus)
+        setCreateActionVisible(true)
+        setCreateActionText(getString(R.string.favorites_folder_create_plus))
         if (folders.isEmpty()) {
             binding.emptyPanel.visibility = View.VISIBLE
             binding.emptyText.text = getString(R.string.favorites_folders_empty)
             binding.emptyAction.text = getString(R.string.favorites_folder_create)
             binding.emptyAction.setOnClickListener { showCreateOrEditDialog(existing = null) }
-            binding.createButton.visibility = View.GONE
+            setCreateActionVisible(false)
         } else {
             binding.emptyPanel.visibility = View.GONE
         }
@@ -318,15 +332,15 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
             binding.emptyText.text = getString(R.string.favorites_folder_items_empty)
             binding.emptyAction.text = getString(R.string.favorites_folder_add)
             binding.emptyAction.setOnClickListener { showAddItemsPicker(folder) }
-            binding.createButton.visibility = View.GONE
+            setCreateActionVisible(false)
             hideItemEditChrome()
         } else {
             binding.emptyPanel.visibility = View.GONE
             if (itemEditMode) {
-                binding.createButton.visibility = View.GONE
+                setCreateActionVisible(false)
             } else {
-                binding.createButton.visibility = View.VISIBLE
-                binding.createButton.text = getString(R.string.favorites_folder_add)
+                setCreateActionVisible(true)
+                setCreateActionText(getString(R.string.favorites_folder_add))
             }
             refreshItemEditChrome()
         }
@@ -360,7 +374,7 @@ class FavoritesFoldersActivity : WatchDisplayActivity() {
         binding.swipeRefresh.isEnabled = false
         binding.manageButton.visibility = View.GONE
         binding.editButton.visibility = View.GONE
-        binding.createButton.visibility = View.GONE
+        setCreateActionVisible(false)
         refreshItemEditChrome()
         submitItemRows()
     }

@@ -1,44 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- match_parent：底栏展开后 ScrollView weight 才能在首帧正确分配高度，避免拖一下才正常。 -->
+<!--
+  与显示设置同一结构：root → topChrome → Scroll weight=1 → bottomChrome。
+  不用 BottomSheet：真机上 Behavior 首测仍会叠底栏；全屏 Dialog + WatchUi.applySafePadding。
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/historyFilterRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/bg_bottom_sheet_dark"
-    android:orientation="vertical">
+    android:background="@color/bg"
+    android:orientation="vertical"
+    android:paddingHorizontal="@dimen/watch_pad"
+    android:paddingTop="@dimen/watch_pad_tight"
+    android:paddingBottom="@dimen/watch_pad_tight">
 
+    <!-- 顶栏：对齐设置 settingsToolbar（44dp 关闭钮 + 标题） -->
     <LinearLayout
         android:id="@+id/historyFilterHeader"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingHorizontal="10dp"
-        android:paddingBottom="6dp">
+        android:paddingBottom="4dp">
 
         <ImageButton
             android:id="@+id/historyFilterDismiss"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_control_button"
             android:contentDescription="@string/history_filter_close"
-            android:padding="8dp"
+            android:padding="10dp"
             android:scaleType="centerInside"
             android:src="@drawable/ic_close"
-            android:tint="@color/text_secondary" />
+            android:tint="@color/text_primary" />
 
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
             android:layout_weight="1"
             android:gravity="center"
             android:text="@string/history_filter"
             android:textColor="@color/text_primary"
-            android:textSize="14sp"
+            android:textSize="@dimen/watch_title"
             android:textStyle="bold" />
 
         <View
-            android:layout_width="36dp"
-            android:layout_height="36dp" />
+            android:layout_width="44dp"
+            android:layout_height="44dp" />
     </LinearLayout>
 
     <androidx.core.widget.NestedScrollView
@@ -47,14 +55,13 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:fillViewport="true"
-        android:overScrollMode="never">
+        android:overScrollMode="ifContentScrolls">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingHorizontal="10dp"
-            android:paddingBottom="8dp">
+            android:paddingBottom="@dimen/watch_pad">
 
             <TextView
                 android:layout_width="match_parent"
@@ -125,23 +132,23 @@
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 
+    <!-- 底栏：与显示设置 saveButton 同为 Scroll 下方兄弟，不会盖住芯片 -->
     <LinearLayout
         android:id="@+id/historyFilterActions"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:paddingHorizontal="10dp"
-        android:paddingTop="6dp"
-        android:paddingBottom="10dp">
+        android:layout_marginTop="@dimen/watch_pad_tight"
+        android:orientation="horizontal">
 
         <TextView
             android:id="@+id/historyFilterClear"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="wrap_content"
             android:layout_marginEnd="6dp"
             android:layout_weight="1"
             android:background="@drawable/bg_history_filter_clear"
             android:gravity="center"
+            android:minHeight="@dimen/watch_control_h"
             android:text="@string/history_filter_clear"
             android:textColor="@color/text_primary"
             android:textSize="13sp"
@@ -150,10 +157,11 @@
         <TextView
             android:id="@+id/historyFilterConfirm"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="wrap_content"
             android:layout_weight="1"
             android:background="@drawable/bg_history_filter_confirm"
             android:gravity="center"
+            android:minHeight="@dimen/watch_control_h"
             android:text="@string/history_filter_confirm"
             android:textColor="@color/text_primary"
             android:textSize="13sp"
